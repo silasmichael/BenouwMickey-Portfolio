@@ -1,3 +1,4 @@
 [[edge-functions]]
   path = "/get-prices"
   function = "update-prices"
+  schedule = "0 19 * * 1-5" # This means 7pm, Mon-Fri
