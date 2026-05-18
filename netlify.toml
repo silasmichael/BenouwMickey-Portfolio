@@ -1,6 +1,0 @@
-[build]
-  publish = "."
-
-[[edge-functions]]
-  path = "/get-prices"
-  function = "update-prices"
