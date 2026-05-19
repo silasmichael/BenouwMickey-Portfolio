@@ -58,6 +58,7 @@ tr:nth-child(odd) td{background:#111118}
   .mob-hide{display:none!important}
 }
 @keyframes spin { 100% { transform: rotate(360deg); } }
+@keyframes spin { 100% { transform: rotate(360deg); } }
 .loading-spin { display: inline-block; animation: spin 0.7s linear infinite; width:12px;height:12px;border:2px solid #00C89633;border-top:2px solid var(--g);border-radius:50%;vertical-align:middle; }
 .btn-success { background: #00C896 !important; color: #000 !important; border-color: #00C896 !important; }
 
@@ -1378,7 +1379,7 @@ function renderStocks() {
               <div class="sec">Update Price</div>
               <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 11px;background:#0A1A10;border-radius:8px;border:1px solid ${s.color}30">
                 <span style="font-size:15px;font-weight:800;color:${s.color}">${fT(s.currentPrice)}</span>
-                <button onclick="editPrice(${si})" style="background:${s.color}22;border:1px solid ${s.color}44;color:${s.color};border-radius:7px;padding:6px 12px;font-size:11px;font-weight:700">✏️ Update</button>
+                <button onclick="event.stopPropagation();editPrice(${si})" style="background:${s.color}22;border:1px solid ${s.color}44;color:${s.color};border-radius:7px;padding:6px 12px;font-size:11px;font-weight:700">✏️ Update</button>
               </div>
             </div>
             <div style="background:#0D1A10;border:1px solid ${s.color}22;border-radius:9px;padding:12px">
@@ -1600,7 +1601,7 @@ function renderFunds() {
               <div class="sec">Update NAV</div>
               <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 11px;background:#1A1200;border-radius:8px;border:1px solid ${fn.color}30">
                 <span style="font-size:15px;font-weight:800;color:${fn.color}">${fn.nav.toFixed(4)}</span>
-                <button onclick="editNav(${fi})" style="background:${fn.color}22;border:1px solid ${fn.color}44;color:${fn.color};border-radius:7px;padding:6px 12px;font-size:11px;font-weight:700">✏️ Update</button>
+                <button onclick="event.stopPropagation();editNav(${fi})" style="background:${fn.color}22;border:1px solid ${fn.color}44;color:${fn.color};border-radius:7px;padding:6px 12px;font-size:11px;font-weight:700">✏️ Update</button>
               </div>
             </div>
             <div style="background:#0D1A10;border:1px solid ${fn.color}22;border-radius:9px;padding:12px">
@@ -2755,7 +2756,10 @@ function editSnapshot(label) {
 }
 
 
-function openModal(id)  { document.getElementById(id).classList.add('open'); }
+function openModal(id)  {
+  document.querySelectorAll('.modal-bg.open').forEach(m => m.classList.remove('open'));
+  document.getElementById(id).classList.add('open');
+}
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 
 // ── Sector → type ────────────────────────────────────────────────────────────
@@ -4175,7 +4179,7 @@ async function syncLivePrices() {
 
     const latestPrices = await response.json();
 
-    // Update stocks — keys are uppercase e.g. CRDB, NMB, NICOL, IEACLC
+    // Update stocks
     if (typeof stocks !== 'undefined') {
       stocks.forEach(s => {
         if (latestPrices[s.id]) s.currentPrice = latestPrices[s.id];
@@ -4198,7 +4202,7 @@ async function syncLivePrices() {
     stampPriceUpdate(latestPrices['_igrowthDate'] || null);
 
     icon.classList.remove('loading-spin');
-    btn.innerHTML = '<span>✓</span> Updated';
+    btn.innerHTML          = '<span>✓</span> Updated';
     btn.style.background   = 'var(--g)';
     btn.style.color        = '#000';
     btn.style.borderColor  = 'var(--g)';
@@ -4208,8 +4212,8 @@ async function syncLivePrices() {
   } catch (err) {
     console.error('Sync error:', err);
     icon.classList.remove('loading-spin');
-    btn.innerHTML    = '⚠️ Retry';
-    btn.style.color  = 'var(--r)';
+    btn.innerHTML     = '⚠️ Retry';
+    btn.style.color   = 'var(--r)';
     btn.style.opacity = '1';
     setTimeout(() => {
       btn.innerHTML        = originalHTML;
