@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Michael's Portfolio — DSE Tanzania</title>
+  <link rel="stylesheet" href="style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<body>
+
+<!-- LOGIN SCREEN -->
+<div id="login-screen" style="display:flex">
+  <div class="login-box">
+    <div class="login-logo">Tanzania Capital Markets</div>
+    <div class="login-title">Michael's Portfolio</div>
+    <div class="login-sub">Tap below to receive your secure login link</div>
+    <div style="background:#111118;border:1px solid #1E2A3A;border-radius:8px;padding:10px 14px;margin-bottom:4px;font-size:13px;color:#888">
+      <span style="color:#555;font-size:10px;display:block;margin-bottom:2px;text-transform:uppercase;letter-spacing:1px">Authorized account</span>
+      silasmichael27@gmail.com
+    </div>
+    <button class="login-btn" id="login-btn" onclick="sendMagicLink()">Send Magic Link</button>
+    <div class="login-msg" id="login-msg"></div>
+    <hr class="login-divider">
+    <div class="login-note">A login link will be sent to your email · Valid for 60 minutes</div>
+  </div>
+</div>
+
+<!-- Mobile-only button strip — top of page, hidden on desktop/iPad -->
+<div id="hdr-mobile-btns" style="display:none;gap:6px;padding:7px 14px;background:#0D1117;border-bottom:1px solid #1A2230">
+  <button id="sync-btn-mob" onclick="syncLivePrices()" class="hdr-btn" style="flex:1;background:transparent;border:1px solid #333;color:#555;padding:5px 8px;font-size:9px;border-radius:5px;display:flex;align-items:center;justify-content:center;gap:4px;transition:background .3s,color .3s,border-color .3s">
+    <span id="sync-icon-mob"></span> Update Prices
+  </button>
+  <button onclick="openModal('modal-statement')" class="hdr-btn" style="flex:1;background:#F4A62310;border:1px solid #F4A62328;color:#F4A623;padding:5px 8px;font-size:9px;border-radius:5px">Statement</button>
+  <button onclick="signOut()" class="hdr-btn" style="flex:1;background:#E0565610;border:1px solid #E0565628;color:#E05656;padding:5px 8px;font-size:9px;border-radius:5px">Sign Out</button>
+</div>
+
+<!-- HEADER -->
+<div style="background:linear-gradient(135deg,#0D1117,#161B27);border-bottom:1px solid #1E2A3A;padding:14px 16px 0">
+  <div id="hdr-flex" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px">
+    <div id="hdr-left" style="border-left:3px solid var(--g);padding-left:12px">
+      <div style="font-size:9px;color:var(--g);letter-spacing:3px;text-transform:uppercase;margin-bottom:4px">Tanzania Capital Markets</div>
+      <div id="hdr-title" style="font-size:22px;font-weight:900;font-family:Georgia,serif">Michael's Portfolio</div>
+      <div id="hdr-price-time" style="font-size:10px;color:#555;margin-top:4px"></div>
+    </div>
+    <div id="hdr-right" style="text-align:right">
+      <div id="hdr-btns" style="display:flex;gap:6px;justify-content:flex-end;margin-bottom:8px">
+  			<button id="sync-btn" onclick="syncLivePrices()" class="hdr-btn" style="background:transparent;border:1px solid #333;color:#555;padding:4px 11px;font-size:10px;border-radius:6px;letter-spacing:.5px;display:flex;align-items:center;gap:5px;transition:background .3s,color .3s,border-color .3s">
+    			<span id="sync-icon"></span> Update Prices
+  			</button>
+  			<button onclick="openModal('modal-statement')" class="hdr-btn" style="background:#F4A62310;border:1px solid #F4A62328;color:#F4A623;padding:4px 11px;font-size:10px;border-radius:6px;letter-spacing:.5px">Statement</button>
+  			<button onclick="signOut()" class="hdr-btn" style="background:#E0565610;border:1px solid #E0565628;color:#E05656;padding:4px 11px;font-size:10px;border-radius:6px;letter-spacing:.5px">Sign Out</button>
+		  </div>
+      <div style="font-size:9px;color:#555;text-transform:uppercase;letter-spacing:1px">Portfolio Value</div>
+      <div id="hdr-total" style="font-size:26px;font-weight:900;color:var(--g);font-family:Georgia,serif">—</div>
+      <div id="hdr-pl" style="font-size:12px;font-weight:700;margin-top:2px">—</div>
+      <div id="hdr-save" style="font-size:9px;color:#555;margin-top:2px"></div>
+    </div>
+  </div>
+  <div class="tab-bar">
+    <button class="tab" onclick="showTab('overview',this)">Overview</button>
+    <button class="tab" onclick="showTab('stocks',this)">Stocks</button>
+    <button class="tab" onclick="showTab('funds',this)">Funds</button>
+    <button class="tab" onclick="showTab('bonds',this)">Bonds</button>
+    <button class="tab" onclick="showTab('reserves',this)">Reserves</button>
+    <button class="tab" onclick="showTab('projection',this)">Projection</button>
+    <button class="tab" onclick="showTab('planner',this)">📐 Planner</button>
+  </div>
+</div>
+
+<div id="pane-overview" class="pane on"></div>
+<div id="pane-stocks" class="pane"></div>
+<div id="pane-funds" class="pane"></div>
+<div id="pane-reserves" class="pane"></div>
+<div id="pane-projection" class="pane"></div>
+<div id="pane-bonds" class="pane"></div>
+<div id="pane-planner" class="pane"></div>
+
+<!-- ADD STOCK MODAL -->
+<div class="modal-bg" id="modal-stock">
+  <div class="modal" style="max-height:90vh;overflow-y:auto;width:min(520px,calc(100vw - 32px))">
+    <div style="font-size:13px;font-weight:800;color:var(--g);margin-bottom:12px">Add New Company</div>
+    <div class="g2" style="margin-bottom:8px">
+      <div><div class="sec" style="margin-bottom:3px">Ticker</div><input id="ns-ticker" placeholder="e.g. NMB"></div>
+      <div><div class="sec" style="margin-bottom:3px">Company Name</div><input id="ns-name" placeholder="NMB Bank Plc"></div>
+    </div>
+    <div class="g2" style="margin-bottom:8px">
+      <div>
+        <div class="sec" style="margin-bottom:3px">Sector</div>
+        <select id="ns-sector" onchange="nsSectorChanged()" style="width:100%;background:#0D1F12;border:1px solid #1A2A1A;color:#F0EAD6;padding:7px 9px;border-radius:6px;font-size:12px">
+          <option value="">— Select —</option>
+          <optgroup label="Financial">
+            <option value="Commercial Bank">Commercial Bank</option>
+            <option value="Investment Bank">Investment Bank</option>
+            <option value="Microfinance">Microfinance</option>
+            <option value="Insurance">Insurance</option>
+            <option value="Holding Company">Holding Company</option>
+          </optgroup>
+          <optgroup label="Services">
+            <option value="Aviation Services">Aviation Services</option>
+            <option value="Telecoms">Telecoms</option>
+            <option value="Logistics">Logistics</option>
+          </optgroup>
+          <optgroup label="Industry">
+            <option value="Manufacturing">Manufacturing</option>
+            <option value="Brewing &amp; Beverages">Brewing &amp; Beverages</option>
+            <option value="Energy">Energy</option>
+            <option value="Construction">Construction</option>
+          </optgroup>
+          <optgroup label="Other">
+            <option value="ETF / Unit Trust">ETF / Unit Trust</option>
+            <option value="Real Estate">Real Estate</option>
+            <option value="Other">Other</option>
+          </optgroup>
+        </select>
+      </div>
+      <div>
+        <div class="sec" style="margin-bottom:3px">Company Type</div>
+        <select id="ns-type" onchange="renderReportFields('ns-r-')" style="width:100%;background:#0D1F12;border:1px solid #1A2A1A;color:#F0EAD6;padding:7px 9px;border-radius:6px;font-size:12px">
+          <option value="bank">Bank</option>
+          <option value="holding">Holding Company</option>
+          <option value="aviation">Aviation / Services</option>
+          <option value="industrial">Industrial / General</option>
+          <option value="insurance">Insurance</option>
+          <option value="etf">ETF / Unit Trust</option>
+          <option value="general">Other</option>
+        </select>
+      </div>
+    </div>
+    <div class="g3" style="margin-bottom:8px">
+      <div><div class="sec" style="margin-bottom:3px">Shares to Buy</div><input id="ns-shares" type="number"></div>
+      <div><div class="sec" style="margin-bottom:3px">Buy Price (TSh)</div><input id="ns-buyprice" type="number"></div>
+      <div><div class="sec" style="margin-bottom:3px">Date</div><input type="date" id="ns-date" max="2027-12-31"></div>
+    </div>
+    <div class="g2" style="margin-bottom:10px">
+      <div><div class="sec" style="margin-bottom:3px">Signal</div><input id="ns-signal" value="WATCH"></div>
+      <div><div class="sec" style="margin-bottom:3px">Color (hex, optional)</div><input id="ns-color" placeholder="auto-assigned"></div>
+    </div>
+    <div style="display:flex;gap:0;margin-bottom:12px;border:1px solid #1A2A1A;border-radius:7px;overflow:hidden">
+      <button id="ns-tab-basic" onclick="nsTab('basic')" style="flex:1;padding:7px;font-size:10px;font-weight:700;background:#00C89622;color:var(--g);border:none;cursor:pointer;text-transform:uppercase;letter-spacing:.5px">Basic Only</button>
+      <button id="ns-tab-report" onclick="nsTab('report')" style="flex:1;padding:7px;font-size:10px;font-weight:700;background:transparent;color:#444;border:none;cursor:pointer;text-transform:uppercase;letter-spacing:.5px">From Report</button>
+    </div>
+    <div id="ns-panel-basic">
+      <div class="g2" style="margin-bottom:12px">
+        <div><div class="sec" style="margin-bottom:3px">Current Price (TSh)</div><input id="ns-curprice" type="number"></div>
+        <div><div class="sec" style="margin-bottom:3px">Buy Zone (text)</div><input id="ns-zone" placeholder="e.g. 10,000–12,500"></div>
+      </div>
+    </div>
+    <div id="ns-panel-report" style="display:none">
+      <div style="font-size:9px;color:#555;margin-bottom:10px">TSh millions unless noted. Sector/Type changes the fields.</div>
+      <div id="ns-r-fields"></div>
+      <div id="ns-r-preview" style="background:#0A1A10;border:1px solid #1A2A1A;border-radius:7px;padding:10px 12px;min-height:20px;margin-bottom:12px;font-size:11px"></div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button onclick="saveNewStock()" style="background:#00C89622;border:1px solid #00C89644;color:var(--g)">Save Company</button>
+      <button onclick="closeModal('modal-stock')" style="background:#E0565622;border:1px solid #E0565644;color:var(--r)">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ADD BOND MODAL -->
+<div class="modal-bg" id="modal-bond">
+  <div class="modal" style="max-height:90vh;overflow-y:auto;width:min(480px,calc(100vw - 32px))">
+    <div style="font-size:13px;font-weight:800;color:#4A90E2;margin-bottom:12px">Add Bond</div>
+    <div class="g2" style="margin-bottom:8px">
+      <div><div class="sec" style="margin-bottom:3px">Bond Name / Label</div><input id="nb-name" placeholder="e.g. GOT 2029 10.54%"></div>
+      <div><div class="sec" style="margin-bottom:3px">Issuer</div><input id="nb-issuer" placeholder="e.g. Govt of Tanzania"></div>
+    </div>
+    <div class="g2" style="margin-bottom:8px">
+      <div>
+        <div class="sec" style="margin-bottom:3px">Bond Type</div>
+        <select id="nb-type" style="width:100%;background:#0D1F12;border:1px solid #1A2A1A;color:#F0EAD6;padding:7px 9px;border-radius:6px;font-size:12px">
+          <option value="Government">Government Bond</option>
+          <option value="Treasury Bill">Treasury Bill</option>
+          <option value="Corporate">Corporate Bond</option>
+          <option value="Municipal">Municipal Bond</option>
+        </select>
+      </div>
+      <div>
+        <div class="sec" style="margin-bottom:3px">Coupon Frequency</div>
+        <select id="nb-freq" style="width:100%;background:#0D1F12;border:1px solid #1A2A1A;color:#F0EAD6;padding:7px 9px;border-radius:6px;font-size:12px">
+          <option value="2">Semi-Annual (×2/yr)</option>
+          <option value="4">Quarterly (×4/yr)</option>
+          <option value="1">Annual (×1/yr)</option>
+          <option value="12">Monthly (×12/yr)</option>
+        </select>
+      </div>
+    </div>
+    <div class="g3" style="margin-bottom:8px">
+      <div><div class="sec" style="margin-bottom:3px">Face Value / Unit (TSh)</div><input id="nb-face" type="number" placeholder="e.g. 1000000"></div>
+      <div><div class="sec" style="margin-bottom:3px">Units / Bonds Held</div><input id="nb-units" type="number" placeholder="e.g. 10"></div>
+      <div><div class="sec" style="margin-bottom:3px">Coupon Rate (% p.a.)</div><input id="nb-coupon" type="number" step="0.01" placeholder="e.g. 10.54"></div>
+    </div>
+    <div class="g2" style="margin-bottom:8px">
+      <div><div class="sec" style="margin-bottom:3px">Purchase Date</div><input type="date" id="nb-date" max="2030-12-31"></div>
+      <div><div class="sec" style="margin-bottom:3px">Maturity Date</div><input type="date" id="nb-maturity" max="2060-12-31"></div>
+    </div>
+    <div class="g2" style="margin-bottom:8px">
+      <div><div class="sec" style="margin-bottom:3px">Purchase Price (TSh, optional)</div><input id="nb-price" type="number" placeholder="leave blank if bought at par"></div>
+      <div><div class="sec" style="margin-bottom:3px">YTM (%, optional)</div><input id="nb-ytm" type="number" step="0.01" placeholder="auto if not given"></div>
+    </div>
+    <div id="nb-preview" style="background:#0A1420;border:1px solid #1A2A3A;border-radius:7px;padding:10px 12px;margin-bottom:12px;font-size:11px;display:none"></div>
+    <div style="display:flex;gap:8px">
+      <button onclick="saveNewBond()" style="background:#4A90E222;border:1px solid #4A90E244;color:#4A90E2">Save Bond</button>
+      <button onclick="closeModal('modal-bond')" style="background:#E0565622;border:1px solid #E0565644;color:var(--r)">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- EDIT FUNDAMENTALS MODAL -->
+<div class="modal-bg" id="modal-edit-fund">
+  <div class="modal" style="max-height:90vh;overflow-y:auto;width:min(520px,calc(100vw - 32px))">
+    <div style="font-size:13px;font-weight:800;color:var(--g);margin-bottom:4px">Edit Fundamentals</div>
+    <div id="ef-stockname" style="font-size:10px;color:#555;margin-bottom:12px"></div>
+    <div style="display:flex;gap:0;margin-bottom:12px;border:1px solid #1A2A1A;border-radius:7px;overflow:hidden">
+      <button id="ef-tab-manual" onclick="efTab('manual')" style="flex:1;padding:7px;font-size:10px;font-weight:700;background:#00C89622;color:var(--g);border:none;cursor:pointer;text-transform:uppercase;letter-spacing:.5px">Manual</button>
+      <button id="ef-tab-report" onclick="efTab('report')" style="flex:1;padding:7px;font-size:10px;font-weight:700;background:transparent;color:#444;border:none;cursor:pointer;text-transform:uppercase;letter-spacing:.5px">From Report</button>
+    </div>
+    <div id="ef-panel-manual">
+      <div class="g2" style="margin-bottom:8px">
+        <div><div class="sec" style="margin-bottom:3px">Current Price (TSh)</div><input id="ef-curprice" type="number" oninput="checkEfSave()"></div>
+        <div>
+          <div class="sec" style="margin-bottom:3px">Signal</div>
+          <select id="ef-signal" onchange="checkEfSave()" style="width:100%;background:#1A1A28;border:1px solid #2A2A3A;border-radius:6px;padding:6px 9px;color:#F0EAD6;font-size:12px;outline:none">
+            <option value="STRONG BUY">STRONG BUY</option>
+            <option value="BUY">BUY</option>
+            <option value="ACCUMULATE">ACCUMULATE</option>
+            <option value="HOLD & ADD">HOLD & ADD</option>
+            <option value="STRONG HOLD">STRONG HOLD</option>
+            <option value="WATCH">WATCH</option>
+            <option value="SELL">SELL</option>
+          </select>
+        </div>
+      </div>
+      <div class="g3" style="margin-bottom:12px">
+        <div><div class="sec" style="margin-bottom:3px">Fair Value (TSh)</div><input id="ef-fairvalue" type="number" oninput="checkEfSave()"></div>
+        <div><div class="sec" style="margin-bottom:3px">Buy Zone</div><input id="ef-zone" placeholder="e.g. 10,000–12,500" oninput="checkEfSave()"></div>
+        <div><div class="sec" style="margin-bottom:3px">Avoid Above (TSh)</div><input id="ef-avoidabove" type="number" oninput="checkEfSave()"></div>
+      </div>
+    </div>
+    <div id="ef-panel-report" style="display:none">
+      <div style="font-size:9px;color:#555;margin-bottom:8px">TSh millions unless noted. Existing values pre-filled.</div>
+      <div style="margin-bottom:8px">
+        <div class="sec" style="margin-bottom:3px">Company Type</div>
+        <select id="ef-r-type" onchange="renderReportFields('ef-r-')" style="width:100%;background:#0D1F12;border:1px solid #1A2A1A;color:#F0EAD6;padding:7px 9px;border-radius:6px;font-size:12px">
+          <option value="bank">Bank</option>
+          <option value="holding">Holding Company</option>
+          <option value="aviation">Aviation / Services</option>
+          <option value="industrial">Industrial / General</option>
+          <option value="insurance">Insurance</option>
+          <option value="etf">ETF / Unit Trust</option>
+          <option value="general">Other</option>
+        </select>
+      </div>
+      <div id="ef-r-fields"></div>
+      <div id="ef-r-preview" style="background:#0A1A10;border:1px solid #1A2A1A;border-radius:7px;padding:10px 12px;min-height:20px;margin-bottom:12px;font-size:11px"></div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button id="ef-save-btn" onclick="saveEditFundamentals()" disabled style="background:#00C89622;border:1px solid #00C89644;color:var(--g);opacity:0.4;cursor:not-allowed">Save</button>
+      <button onclick="closeModal('modal-edit-fund')" style="background:#E0565622;border:1px solid #E0565644;color:var(--r)">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ADD FUND MODAL -->
+<div class="modal-bg" id="modal-fund">
+  <div class="modal">
+    <div style="font-size:13px;font-weight:800;color:var(--t);margin-bottom:14px">Add New Fund</div>
+    <div class="g2" style="margin-bottom:8px">
+      <div><div class="sec" style="margin-bottom:3px">Fund Name</div><input id="nf-name" placeholder="NBS Fund"></div>
+      <div><div class="sec" style="margin-bottom:3px">Manager</div><input id="nf-manager" placeholder="NBS Bank"></div>
+    </div>
+    <div class="g2" style="margin-bottom:8px">
+      <div><div class="sec" style="margin-bottom:3px">Risk Level</div><input id="nf-risk" placeholder="Low"></div>
+      <div><div class="sec" style="margin-bottom:3px">Redemption</div><input id="nf-redemption" placeholder="5 days"></div>
+    </div>
+    <div class="g3" style="margin-bottom:8px">
+      <div><div class="sec" style="margin-bottom:3px">Units</div><input id="nf-units" type="number" placeholder="0"></div>
+      <div><div class="sec" style="margin-bottom:3px">Current NAV</div><input id="nf-nav" type="number" placeholder="0"></div>
+      <div><div class="sec" style="margin-bottom:3px">Launch NAV</div><input id="nf-lnav" type="number" value="100"></div>
+    </div>
+    <div class="g2" style="margin-bottom:14px">
+      <div><div class="sec" style="margin-bottom:3px">Opening Date</div><input type="date" id="nf-date" max="2026-12-31"></div>
+      <div><div class="sec" style="margin-bottom:3px">Purpose</div><input id="nf-purpose" placeholder="e.g. Emergency Fund"></div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button onclick="saveNewFund()" style="background:#06B6D422;border:1px solid #06B6D444;color:var(--t)">Add Fund</button>
+      <button onclick="closeModal('modal-fund')" style="background:#E0565622;border:1px solid #E0565644;color:var(--r)">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- DIVIDEND LOG MODAL -->
+<div class="modal-bg" id="modal-dividend">
+  <div class="modal" style="width:380px">
+    <div style="font-size:13px;font-weight:800;color:var(--gold);margin-bottom:14px">💰 Log Dividend</div>
+    <div class="g2" style="margin-bottom:10px">
+      <div>
+        <div class="sec" style="margin-bottom:3px">Company</div>
+        <select id="div-stock" style="background:#1A1A28;border:1px solid #2A2A3A;border-radius:6px;padding:6px 9px;color:#F0EAD6;font-size:12px;width:100%;outline:none" onchange="prefillDivShares()"></select>
+      </div>
+      <div>
+        <div class="sec" style="margin-bottom:3px">Payment Date</div>
+        <input type="date" id="div-date" max="2026-12-31">
+      </div>
+    </div>
+    <div class="g2" style="margin-bottom:10px">
+      <div>
+        <div class="sec" style="margin-bottom:3px">Amount per Share (TSh)</div>
+        <input id="div-aps" type="number" placeholder="e.g. 90" oninput="calcDivPreview()">
+      </div>
+      <div>
+        <div class="sec" style="margin-bottom:3px">Shares Held</div>
+        <input id="div-shares" type="number" placeholder="auto-filled" oninput="calcDivPreview()">
+      </div>
+    </div>
+    <div id="div-preview" style="display:none;background:#1A140A;border:1px solid #FFD70030;border-radius:7px;padding:9px 11px;margin-bottom:12px;font-size:11px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+        <span style="color:#888">Total Dividend Income</span>
+        <span id="div-total" style="color:var(--gold);font-weight:800">—</span>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button onclick="saveDividend()" style="background:#FFD70022;border:1px solid #FFD70044;color:var(--gold);font-weight:700">✓ Log Dividend</button>
+      <button onclick="closeModal('modal-dividend')" style="background:#E0565622;border:1px solid #E0565644;color:var(--r)">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- EDIT TRANCHE MODAL -->
+<div class="modal-bg" id="modal-edit-tranche">
+  <div class="modal" style="width:380px">
+    <div id="met-title" style="font-size:13px;font-weight:800;color:var(--g);margin-bottom:14px"></div>
+    <div id="met-body">
+      <!-- injected per call -->
+    </div>
+    <div id="met-preview" style="display:none;background:#0A1A10;border-radius:7px;padding:9px 11px;margin-bottom:10px;font-size:11px;color:#888"></div>
+    <div style="display:flex;gap:8px">
+      <button onclick="saveEditTranche()" style="background:#00C89622;border:1px solid #00C89644;color:var(--g)">✓ Save</button>
+      <button onclick="closeModal('modal-edit-tranche')" style="background:#E0565622;border:1px solid #E0565644;color:var(--r)">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- EDIT PRICE / NAV MODAL -->
+<div class="modal-bg" id="modal-edit">
+  <div class="modal" style="width:300px">
+    <div id="modal-edit-title" style="font-size:13px;font-weight:800;color:var(--g);margin-bottom:14px"></div>
+    <div class="sec" style="margin-bottom:4px">New Value (TSh)</div>
+    <input id="modal-edit-input" type="number" placeholder="Enter new value" style="margin-bottom:14px">
+    <div style="display:flex;gap:8px">
+      <button onclick="confirmEdit()" style="background:#00C89622;border:1px solid #00C89644;color:var(--g)">✓ Update</button>
+      <button onclick="closeModal('modal-edit')" style="background:#E0565622;border:1px solid #E0565644;color:var(--r)">Cancel</button>
+    </div>
+  </div>
+</div>
+<script src="app.js"></script>
+<!-- CONFIRM DELETE MODAL -->
+<div class="modal-bg" id="modal-confirm">
+  <div class="modal" style="width:320px">
+    <div style="font-size:18px;margin-bottom:8px">🗑️</div>
+    <div id="modal-confirm-msg" style="font-size:13px;font-weight:700;margin-bottom:6px">Delete this tranche?</div>
+    <div id="modal-confirm-sub" style="font-size:11px;color:#666;margin-bottom:16px">This action cannot be undone.</div>
+    <div style="display:flex;gap:8px">
+      <button id="modal-confirm-yes" style="background:#E0565622;border:1px solid #E0565644;color:#E05656;font-weight:700">Yes, Delete</button>
+      <button onclick="closeModal('modal-confirm')" style="background:#1A1A24;border:1px solid #333;color:#888;font-weight:700">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- STATEMENT MODAL -->
+<div class="modal-bg" id="modal-statement">
+  <div class="modal" style="width:360px">
+    <div style="font-size:13px;font-weight:800;color:#F4A623;margin-bottom:6px">📄 Download Statement</div>
+    <div style="font-size:11px;color:#555;margin-bottom:14px">Select the date range for your statement.</div>
+    <div class="g2" style="margin-bottom:16px">
+      <div><div class="sec" style="margin-bottom:4px">From</div><input type="date" id="stmt-from" style="width:100%"></div>
+      <div><div class="sec" style="margin-bottom:4px">To</div><input type="date" id="stmt-to" style="width:100%"></div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button onclick="generateStatement()" style="background:#F4A62322;border:1px solid #F4A62344;color:#F4A623;font-weight:700">📄 Download PDF</button>
+      <button onclick="closeModal('modal-statement')" style="background:#E0565622;border:1px solid #E0565644;color:var(--r)">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- NEW RESERVE MODAL -->
+<div class="modal-bg" id="modal-new-reserve">
+  <div class="modal" style="width:340px">
+    <div style="font-size:13px;font-weight:800;color:#F59E0B;margin-bottom:14px">Add Reserve Account</div>
+    <div style="margin-bottom:8px">
+      <div class="sec" style="margin-bottom:3px">Account Name</div>
+      <input id="nrv-name" placeholder="e.g. M-Wekeza" style="width:100%;box-sizing:border-box">
+    </div>
+    <div style="margin-bottom:8px">
+      <div class="sec" style="margin-bottom:3px">Purpose (pill 1)</div>
+      <input id="nrv-purpose" placeholder="e.g. Wedding savings" style="width:100%;box-sizing:border-box">
+    </div>
+    <div style="margin-bottom:8px">
+      <div class="sec" style="margin-bottom:3px">Strategy (pill 2)</div>
+      <input id="nrv-action" placeholder="e.g. Add monthly · withdraw on dips" style="width:100%;box-sizing:border-box">
+    </div>
+    <div style="margin-bottom:16px">
+      <div class="sec" style="margin-bottom:3px">Annual Interest Rate (%)</div>
+      <input id="nrv-rate" type="number" placeholder="e.g. 13" step="0.01" style="width:100%;box-sizing:border-box">
+    </div>
+    <div style="display:flex;gap:8px">
+      <button onclick="saveNewReserve()" style="background:#F59E0B22;border:1px solid #F59E0B44;color:#F59E0B;font-weight:700">Add Account</button>
+      <button onclick="closeModal('modal-new-reserve')" style="background:#1A1A24;border:1px solid #333;color:#888">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- RESERVE TRANSACTION MODAL -->
+<div class="modal-bg" id="modal-rv-tx">
+  <div class="modal" style="width:380px">
+    <div id="rv-modal-title" style="font-size:13px;font-weight:800;color:#F59E0B;margin-bottom:14px">Transaction</div>
+    <div id="rv-modal-balance" style="font-size:11px;color:#555;margin-bottom:10px"></div>
+    <div style="margin-bottom:8px">
+      <div class="sec" style="margin-bottom:3px">Date</div>
+      <input id="rv-modal-date" type="date" style="width:100%;box-sizing:border-box">
+    </div>
+    <div id="rv-modal-amount-row" style="margin-bottom:8px">
+      <div class="sec" style="margin-bottom:3px">Amount (TSh)</div>
+      <input id="rv-modal-amount" type="number" placeholder="e.g. 500000" style="width:100%;box-sizing:border-box">
+    </div>
+    <div id="rv-modal-stock-row" style="display:none;margin-bottom:8px">
+      <div class="sec" style="margin-bottom:3px">Company</div>
+      <select id="rv-modal-stock" style="background:#1A1A28;border:1px solid #2A2A3A;border-radius:6px;padding:7px 9px;color:#F0EAD6;font-size:12px;width:100%;outline:none"></select>
+    </div>
+    <div class="g2">
+      <div id="rv-modal-shares-row" style="display:none;margin-bottom:8px">
+        <div class="sec" style="margin-bottom:3px">Shares to Buy</div>
+        <input id="rv-modal-shares" type="number" placeholder="e.g. 100" style="width:100%;box-sizing:border-box">
+      </div>
+      <div id="rv-modal-price-row" style="display:none;margin-bottom:8px">
+        <div class="sec" style="margin-bottom:3px">Price/Share (TSh)</div>
+        <input id="rv-modal-price" type="number" placeholder="Uses live price" style="width:100%;box-sizing:border-box">
+      </div>
+    </div>
+    <div id="rv-modal-note-row" style="margin-bottom:16px">
+      <div class="sec" style="margin-bottom:3px">Note (optional)</div>
+      <input id="rv-modal-note" placeholder="e.g. Monthly top-up" style="width:100%;box-sizing:border-box">
+    </div>
+    <div style="display:flex;gap:8px">
+      <button onclick="saveReserveTx()" style="background:#F59E0B22;border:1px solid #F59E0B44;color:#F59E0B;font-weight:700">Save</button>
+      <button onclick="closeModal('modal-rv-tx')" style="background:#1A1A24;border:1px solid #333;color:#888">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST NOTIFICATION -->
+<div id="app-toast" style="position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(20px);background:#1E2A3A;border:1px solid #2A3A4A;color:#F0EAD6;padding:9px 18px;border-radius:8px;font-size:12px;font-weight:600;z-index:9999;opacity:0;transition:opacity .25s,transform .25s;pointer-events:none;white-space:nowrap"></div>
+
+</body>
+</html>
