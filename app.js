@@ -3116,6 +3116,12 @@ function renderPlanner() {
         </div>
       </div>
 
+      <!-- Current Position strip — buy card -->
+      <div id="dca-position-card" style="display:none;background:#0D0D16;border:1px solid #1E2A3A;border-radius:9px;padding:12px 14px;margin-bottom:12px">
+        <div style="font-size:9px;color:#555;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Current Position</div>
+        <div id="dca-position-body"></div>
+      </div>
+
       <!-- Summary strip -->
       <div id="dca-summary" style="display:none;background:#0A0E1A;border:1px solid #4A90E222;border-radius:9px;padding:12px 14px;margin-bottom:14px">
         <div class="g4">
@@ -3162,12 +3168,6 @@ function renderPlanner() {
       </div>
     </div>
 
-    <!-- CURRENT POSITION CARD (updates when stock changes) -->
-    <div id="dca-position-card" style="display:none;background:#111118;border:1px solid #1E2A3A;border-radius:12px;padding:16px">
-      <div class="sec" style="margin-bottom:10px">Current Position</div>
-      <div id="dca-position-body"></div>
-    </div>
-
     <!-- SELL CALCULATOR CARD -->
     <div class="card" style="border-color:#E0565633">
       <div class="sec" style="color:#E05656;margin-bottom:14px">💰 Sell Calculator — Profit, Tax & Withdrawal Planner</div>
@@ -3185,6 +3185,12 @@ function renderPlanner() {
           <div class="sec" style="margin-bottom:4px">Sell Price (TSh) <span style="color:#555;font-weight:400">— leave blank to use current</span></div>
           <input id="sell-price" type="number" placeholder="Uses live price" oninput="sellUpdate()" style="font-size:13px">
         </div>
+      </div>
+
+      <!-- Current Position strip — sell card -->
+      <div id="sell-position-card" style="display:none;background:#0D0D16;border:1px solid #1E2A3A;border-radius:9px;padding:12px 14px;margin-bottom:12px">
+        <div style="font-size:9px;color:#555;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Current Position</div>
+        <div id="sell-position-body"></div>
       </div>
 
       <!-- Mode toggle -->
@@ -3263,6 +3269,33 @@ function sellUpdate() {
 
   const s       = stocks.find(x => x.id === sid);
   if (!s) return;
+
+  // Render position strip inside sell card
+  const sellPosCard = document.getElementById('sell-position-card');
+  const sellPosBody = document.getElementById('sell-position-body');
+  if (sellPosCard && sellPosBody) {
+    const t = cS(s);
+    sellPosCard.style.display    = 'block';
+    sellPosCard.style.borderColor = s.color + '33';
+    sellPosBody.innerHTML = `<div class="g4">
+      <div style="background:#111118;border-radius:7px;padding:9px 11px">
+        <div style="font-size:9px;color:#555;text-transform:uppercase;letter-spacing:.8px;margin-bottom:2px">Shares Held</div>
+        <div style="font-size:16px;font-weight:900;color:${s.color}">${t.shares.toLocaleString()}</div>
+      </div>
+      <div style="background:#111118;border-radius:7px;padding:9px 11px">
+        <div style="font-size:9px;color:#555;text-transform:uppercase;letter-spacing:.8px;margin-bottom:2px">Avg Buy</div>
+        <div style="font-size:16px;font-weight:900;color:#FFAA00">${fT(Math.round(t.avgBuy))}</div>
+      </div>
+      <div style="background:#111118;border-radius:7px;padding:9px 11px">
+        <div style="font-size:9px;color:#555;text-transform:uppercase;letter-spacing:.8px;margin-bottom:2px">Current Price</div>
+        <div style="font-size:16px;font-weight:900;color:${s.color}">${fT(s.currentPrice)}</div>
+      </div>
+      <div style="background:#111118;border-radius:7px;padding:9px 11px">
+        <div style="font-size:9px;color:#555;text-transform:uppercase;letter-spacing:.8px;margin-bottom:2px">Unrealised P/L</div>
+        <div style="font-size:16px;font-weight:900;color:${t.gl>=0?'var(--g)':'var(--r)'}">${t.gl>=0?'+':''}${fT(Math.round(t.gl))}</div>
+      </div>
+    </div>`;
+  }
 
   const pos     = cS(s);
   const avgBuy  = calcStockAvgBuy(s);
