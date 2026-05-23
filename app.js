@@ -145,8 +145,11 @@ function signOut() {
 
 // ── SUPABASE SYNC ─────────────────────────────────────────────────────────────
 const CACHE_KEY = 'portfolio_cache_v1';
-function saveToCache() {
-  try { localStorage.setItem(CACHE_KEY, JSON.stringify({ stocks, funds, snapshots, ts: Date.now() })); } catch(_) {}
+function saveToCache(priceDate) {
+  try {
+    const today = priceDate || null;
+    localStorage.setItem(CACHE_KEY, JSON.stringify({ stocks, funds, snapshots, ts: Date.now(), priceDate: today }));
+  } catch(_) {}
 }
 function loadFromCache() {
   try {
@@ -161,10 +164,34 @@ function loadFromCache() {
     applyMigrations(stocks, funds);
     updateMonthlySnapshots();
     renderAll(); updateHeader();
+    setPriceButtonState(d.priceDate || null);
     return true;
   } catch(_) { return false; }
 }
-let _syncFromRunning = false;
+function setPriceButtonState(priceDate) {
+  const today = new Date().toDateString();
+  const isToday = priceDate && new Date(priceDate).toDateString() === today;
+  const allBtns = [
+    document.getElementById('sync-btn'),
+    document.getElementById('sync-btn-mob')
+  ].filter(Boolean);
+  allBtns.forEach(b => {
+    b.disabled         = false;
+    b.style.opacity    = '1';
+    b.style.cursor     = 'pointer';
+    if (isToday) {
+      b.textContent      = 'Updated';
+      b.style.background = 'var(--g)';
+      b.style.color      = '#000';
+      b.style.borderColor= 'var(--g)';
+    } else {
+      b.innerHTML        = '<span id="' + (b.id === 'sync-btn' ? 'sync-icon' : 'sync-icon-mob') + '"></span> Update Prices';
+      b.style.background = 'transparent';
+      b.style.color      = '#555';
+      b.style.borderColor= '#333';
+    }
+  });
+}
 let _dataReady = false; // blocks syncToSupabase until at least one successful read
 let _syncRetries = 0;
 async function syncFromSupabase() {
@@ -3141,6 +3168,55 @@ function renderPlanner() {
       <div id="dca-position-body"></div>
     </div>
 
+    <!-- SELL CALCULATOR CARD -->
+    <div class="card" style="border-color:#E0565633">
+      <div class="sec" style="color:#E05656;margin-bottom:14px">💰 Sell Calculator — Profit, Tax & Withdrawal Planner</div>
+
+      <div class="g2" style="margin-bottom:12px">
+        <div>
+          <div class="sec" style="margin-bottom:4px">Company</div>
+          <select id="sell-stock" style="background:#1A1A28;border:1px solid #2A2A3A;border-radius:6px;padding:7px 9px;color:#F0EAD6;font-size:12px;width:100%;outline:none" onchange="sellUpdate()">
+            ${heldStocks.length > 0
+              ? heldStocks.map(s => `<option value="${s.id}">${s.id} — ${s.name}</option>`).join('')
+              : `<option value="">No holdings yet</option>`}
+          </select>
+        </div>
+        <div>
+          <div class="sec" style="margin-bottom:4px">Sell Price (TSh) <span style="color:#555;font-weight:400">— leave blank to use current</span></div>
+          <input id="sell-price" type="number" placeholder="Uses live price" oninput="sellUpdate()" style="font-size:13px">
+        </div>
+      </div>
+
+      <!-- Mode toggle -->
+      <div style="display:flex;gap:6px;margin-bottom:12px">
+        <button id="sell-mode-shares" onclick="sellSetMode('shares')" style="flex:1;padding:7px;font-size:11px;font-weight:700;border-radius:6px;border:1px solid #E0565644;background:#E0565618;color:#E05656">I know how many shares</button>
+        <button id="sell-mode-target" onclick="sellSetMode('target')" style="flex:1;padding:7px;font-size:11px;font-weight:700;border-radius:6px;border:1px solid #333;background:transparent;color:#555">I want a target amount</button>
+      </div>
+
+      <!-- Shares mode -->
+      <div id="sell-panel-shares">
+        <div style="margin-bottom:12px">
+          <div class="sec" style="margin-bottom:4px">Number of Shares to Sell</div>
+          <input id="sell-shares" type="number" placeholder="e.g. 1000" oninput="sellUpdate()" style="font-size:13px">
+        </div>
+      </div>
+
+      <!-- Target mode -->
+      <div id="sell-panel-target" style="display:none">
+        <div style="margin-bottom:12px">
+          <div class="sec" style="margin-bottom:4px">Amount You Want to Receive (TSh)</div>
+          <input id="sell-target" type="number" placeholder="e.g. 2,000,000" oninput="sellUpdate()" style="font-size:13px">
+        </div>
+      </div>
+
+      <!-- Result strip -->
+      <div id="sell-result" style="display:none;background:#0A0A12;border:1px solid #E0565622;border-radius:9px;padding:14px"></div>
+
+      <div id="sell-empty" style="text-align:center;color:#333;font-size:11px;padding:24px 0">
+        Select a company and enter shares or a target amount.
+      </div>
+    </div>
+
     <!-- FUNDAMENTALS GUIDE -->
     <div class="card" style="border-color:#1A2A1A">
       <div class="sec" style="color:var(--g);margin-bottom:14px">&#128218; Fundamentals Reference Guide</div>
@@ -3151,6 +3227,133 @@ function renderPlanner() {
 
   dcaUpdate();
   renderFundGuide();
+}
+
+let _sellMode = 'shares';
+
+function sellSetMode(mode) {
+  _sellMode = mode;
+  const btnShares = document.getElementById('sell-mode-shares');
+  const btnTarget = document.getElementById('sell-mode-target');
+  const panelShares = document.getElementById('sell-panel-shares');
+  const panelTarget = document.getElementById('sell-panel-target');
+  if (!btnShares) return;
+
+  if (mode === 'shares') {
+    btnShares.style.background = '#E0565618'; btnShares.style.borderColor = '#E0565644'; btnShares.style.color = '#E05656';
+    btnTarget.style.background = 'transparent'; btnTarget.style.borderColor = '#333'; btnTarget.style.color = '#555';
+    panelShares.style.display = 'block';
+    panelTarget.style.display = 'none';
+  } else {
+    btnTarget.style.background = '#E0565618'; btnTarget.style.borderColor = '#E0565644'; btnTarget.style.color = '#E05656';
+    btnShares.style.background = 'transparent'; btnShares.style.borderColor = '#333'; btnShares.style.color = '#555';
+    panelShares.style.display = 'none';
+    panelTarget.style.display = 'block';
+  }
+  sellUpdate();
+}
+
+function sellUpdate() {
+  const resultEl = document.getElementById('sell-result');
+  const emptyEl  = document.getElementById('sell-empty');
+  if (!resultEl) return;
+
+  const sid = document.getElementById('sell-stock')?.value;
+  if (!sid) return;
+
+  const s       = stocks.find(x => x.id === sid);
+  if (!s) return;
+
+  const pos     = cS(s);
+  const avgBuy  = calcStockAvgBuy(s);
+  const livePx  = parseFloat(document.getElementById('sell-price')?.value) || s.currentPrice || 0;
+  if (!livePx) { resultEl.style.display='none'; emptyEl.style.display='block'; return; }
+
+  // ── DSE Capital Gains WHT: 10% of capital gain (profit only, not on loss)
+  const CGT_RATE = 0.10;
+
+  function calcSell(sharesToSell) {
+    if (!sharesToSell || sharesToSell <= 0) return null;
+    const gross      = sharesToSell * livePx;
+    const commission = calcCommission(gross);
+    const proceeds   = gross - commission;
+    const costBasis  = sharesToSell * avgBuy;
+    const gain       = proceeds - costBasis;
+    const wht        = gain > 0 ? gain * CGT_RATE : 0;
+    const netCash    = proceeds - wht;
+    return { sharesToSell, gross, commission, proceeds, costBasis, gain, wht, netCash };
+  }
+
+  let result = null;
+
+  if (_sellMode === 'shares') {
+    const sh = parseFloat(document.getElementById('sell-shares')?.value);
+    if (!sh || sh <= 0) { resultEl.style.display='none'; emptyEl.style.display='block'; return; }
+    if (sh > pos.shares) { resultEl.style.display='none'; emptyEl.style.display='block'; showToast('You only hold '+pos.shares+' shares of '+sid, true); return; }
+    result = calcSell(sh);
+
+  } else {
+    // Reverse calculate — iterate to find shares that yield target net cash
+    const target = parseFloat(document.getElementById('sell-target')?.value);
+    if (!target || target <= 0) { resultEl.style.display='none'; emptyEl.style.display='block'; return; }
+
+    // Binary search for shares needed
+    let lo = 1, hi = pos.shares, found = null;
+    for (let i = 0; i < 60; i++) {
+      const mid = Math.ceil((lo + hi) / 2);
+      const r   = calcSell(mid);
+      if (!r) break;
+      if (r.netCash >= target) { found = r; hi = mid - 1; }
+      else lo = mid + 1;
+    }
+    if (!found) {
+      const maxR = calcSell(pos.shares);
+      resultEl.style.display='none'; emptyEl.style.display='block';
+      showToast('Max you can receive is '+fT(Math.round(maxR?.netCash||0))+' (all '+pos.shares+' shares)', true);
+      return;
+    }
+    result = found;
+  }
+
+  if (!result) { resultEl.style.display='none'; emptyEl.style.display='block'; return; }
+
+  const isProfit = result.gain > 0;
+  const isLoss   = result.gain < 0;
+  const gainColor = isProfit ? 'var(--g)' : isLoss ? 'var(--r)' : '#888';
+
+  const row = (label, val, color, sub) =>
+    `<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid #1A1A24">
+      <div><div style="font-size:11px;color:#888">${label}</div>${sub?`<div style="font-size:9px;color:#444;margin-top:1px">${sub}</div>`:''}</div>
+      <div style="font-size:13px;font-weight:800;color:${color||'#F0EAD6'}">${val}</div>
+    </div>`;
+
+  resultEl.style.display = 'block';
+  emptyEl.style.display  = 'none';
+  resultEl.innerHTML = `
+    <div style="font-size:10px;color:#E05656;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;font-weight:800">
+      Selling ${result.sharesToSell.toLocaleString()} shares of ${sid} @ ${fT(livePx)}
+    </div>
+    ${row('Gross Proceeds', fT(Math.round(result.gross)), '#F0EAD6', 'shares × sell price')}
+    ${row('DSE Commission', '− '+fT(Math.round(result.commission)), '#E05656', calcCommission(result.gross) === result.gross*0.0206 ? '2.06% tier' : result.gross<=50000000 ? '1.86% tier' : '1.16% tier')}
+    ${row('Net after Commission', fT(Math.round(result.proceeds)), '#F0EAD6')}
+    ${row('Cost Basis', fT(Math.round(result.costBasis)), '#888', result.sharesToSell+' shares × avg buy '+fT(Math.round(avgBuy)))}
+    ${row(isProfit ? 'Capital Gain' : isLoss ? 'Capital Loss' : 'Break Even', (isProfit?'+ ':'')+(isLoss?'− ':'')+fT(Math.round(Math.abs(result.gain))), gainColor)}
+    ${result.wht > 0 ? row('WHT on Gain (10%)', '− '+fT(Math.round(result.wht)), '#E05656', 'Capital gains withholding tax') : `<div style="padding:7px 0;border-bottom:1px solid #1A1A24;font-size:11px;color:#444">No WHT — ${isLoss ? 'selling at a loss' : 'no gain'}</div>`}
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0 2px;margin-top:4px">
+      <div style="font-size:12px;font-weight:800;color:var(--g)">You Receive</div>
+      <div style="font-size:20px;font-weight:900;color:var(--g);font-family:Georgia,serif">${fT(Math.round(result.netCash))}</div>
+    </div>
+    <div style="font-size:9px;color:#444;text-align:right;margin-top:2px">After commission${result.wht>0?' + WHT':''}</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;margin-top:8px;background:${result.netCash-result.costBasis>=0?'#00C89610':'#E0565610'};border:1px solid ${result.netCash-result.costBasis>=0?'#00C89630':'#E0565630'};border-radius:7px">
+      <div style="font-size:11px;color:#888">Realised Profit <span style="font-size:9px">(after all deductions)</span></div>
+      <div style="font-size:15px;font-weight:900;color:${result.netCash-result.costBasis>=0?'var(--g)':'var(--r)'}">
+        ${result.netCash-result.costBasis>=0?'+ ':'− '}${fT(Math.round(Math.abs(result.netCash-result.costBasis)))}
+      </div>
+    </div>
+    ${_sellMode === 'target' ? `<div style="margin-top:10px;padding:8px 10px;background:#00C89610;border:1px solid #00C89622;border-radius:6px;font-size:10px;color:var(--g)">To receive your target of ${fT(parseInt(document.getElementById('sell-target').value))}, sell ${result.sharesToSell.toLocaleString()} shares. You have ${pos.shares.toLocaleString()} shares.</div>` : ''}
+    <div style="margin-top:10px;padding:8px 10px;background:#1A1A24;border-radius:6px;font-size:10px;color:#555">
+      Remaining holding after sale: ${(pos.shares - result.sharesToSell).toLocaleString()} shares
+    </div>`;
 }
 
 function renderFundGuide(){
@@ -3800,14 +4003,10 @@ async function syncLivePrices() {
   if (iconMob) iconMob.classList.add('loading-spin');
 
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 35000);
     const response = await fetch('https://brwkhnqnsoormvpjqcmd.supabase.co/functions/v1/get-prices', {
       method: 'GET',
-      signal: controller.signal,
       headers: { 'Authorization': 'Bearer ' + SB_KEY }
     });
-    clearTimeout(timer);
 
     if (!response.ok) throw new Error('Server error ' + response.status);
     const p = await response.json();
@@ -3827,7 +4026,7 @@ async function syncLivePrices() {
     stampPriceUpdate(p['_igrowthDate'] || null);
     setStatus('synced');
 
-    // Success — stays green until reload
+    // Success — green, stays clickable so user can re-run if needed
     if (icon)    icon.classList.remove('loading-spin');
     if (iconMob) iconMob.classList.remove('loading-spin');
     allBtns.forEach(b => {
@@ -3836,33 +4035,41 @@ async function syncLivePrices() {
       b.style.color      = '#000';
       b.style.borderColor= 'var(--g)';
       b.style.opacity    = '1';
+      b.style.cursor     = 'pointer';
       b.disabled         = false;
     });
 
-    // Save to cache and Supabase in background
-    saveToCache();
+    // Save with today's date so button state persists across reloads
+    saveToCache(new Date().toISOString());
     syncToSupabase().catch(e => console.warn('Background sync failed:', e));
 
   } catch (err) {
     if (icon)    icon.classList.remove('loading-spin');
     if (iconMob) iconMob.classList.remove('loading-spin');
-    const label = err.name === 'AbortError' ? 'Timed out — Retry' : 'Failed — Retry';
+    const label = 'Failed — Retry';
     allBtns.forEach(b => {
       b.textContent      = label;
       b.style.color      = 'var(--r)';
       b.style.borderColor= 'var(--r)';
       b.style.background = 'transparent';
       b.style.opacity    = '1';
+      b.style.cursor     = 'pointer';
+      b.disabled         = false;
     });
+    // Reset label after 8 seconds so it doesn't stay as "Retry" forever
     setTimeout(() => {
       allBtns.forEach(b => {
-        b.innerHTML        = originalHTML;
-        b.disabled         = false;
-        b.style.color      = '#555';
-        b.style.background = 'transparent';
-        b.style.borderColor= '#333';
-        b.style.opacity    = '1';
+        if (b.textContent.includes('Retry')) {
+          b.innerHTML        = '<span id="' + (b.id === 'sync-btn' ? 'sync-icon' : 'sync-icon-mob') + '"></span> Update Prices';
+          b.style.color      = '#555';
+          b.style.borderColor= '#333';
+        }
       });
-    }, 35000);
+    }, 8000);
   }
 }
+
+// Reveal page once JS is fully loaded — prevents CSS flash on open
+document.addEventListener('DOMContentLoaded', () => {
+  document.body.style.visibility = 'visible';
+});
