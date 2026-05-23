@@ -1,7 +1,7 @@
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap");
 
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:#080810;color:#F0EAD6;font-family:'Inter',sans-serif;font-size:13px;min-height:100vh}
+body{background:#080810;color:#F0EAD6;font-family:'Inter',sans-serif;font-size:13px;min-height:100vh;visibility:hidden}
 :root{--g:#00C896;--a:#F4A623;--b:#4A90E2;--p:#E056A0;--t:#06B6D4;--pu:#A855F7;--r:#E05656;--gold:#FFD700;--teal:#14B8A6}
 input{background:#1A1A28;border:1px solid #2A2A3A;border-radius:6px;padding:6px 9px;color:#F0EAD6;font-size:12px;width:100%;outline:none}
 input:focus{border-color:var(--g)}
