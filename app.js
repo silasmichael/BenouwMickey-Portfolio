@@ -8,12 +8,6 @@ const SEED_STOCKS = [];
 // first-load only; Supabase overwrites them on sync.
 // Tanzania 5-year treasury bond yield (benchmark) — update periodically
 let TZ_BOND_YIELD = 10.54; // % — Tanzania 5yr treasury bond
-const FUND_META = {
-  liquid:  { purpose: 'Wedding + Construction', purposeColor: '#F4A623', action: 'ADD light · drawdown due' },
-  umoja:   { purpose: '2° Emergency Fund',      purposeColor: '#4A90E2', action: 'ADD light · secondary bucket' },
-  igrowth: { purpose: '1° Emergency Fund',      purposeColor: '#E056A0', action: 'ADD heavy · primary bucket'  },
-};
-
 const SEED_FUNDS = [];
 
 // ── SUPABASE CLIENT ───────────────────────────────────────────────────────────
@@ -1131,8 +1125,9 @@ function renderFunds() {
               <div class="mob-hide" style="font-size:10px;color:#555;margin-top:1px">${fn.manager} · Since ${fn.launchDate}</div>
               <div class="mob-hide" style="margin-top:5px;display:flex;gap:6px;flex-wrap:wrap">
                 ${(()=>{
-                  const m=FUND_META[fn.id]||{};
-                  return bdg(m.purpose||'—', m.purposeColor||'#888')+' '+bdg(m.action||'—',fn.color);
+                  const p = fn.purpose || '';
+                  const a = fn.action  || '';
+                  return (p ? bdg(p, fn.purposeColor||fn.color) : '') + (a ? ' '+bdg(a, fn.color) : '');
                 })()}
               </div>
             </div>
@@ -2679,7 +2674,8 @@ function saveNewFund() {
   const nav     = parseFloat(document.getElementById('nf-nav')?.value);
   const launch  = parseFloat(document.getElementById('nf-lnav')?.value||nav)||nav;
   const dRaw    = (document.getElementById('nf-date')?.value||'').trim();
-  const purpose = (document.getElementById('nf-purpose')?.value||'Investment').trim();
+  const purpose = (document.getElementById('nf-purpose')?.value||'').trim();
+  const action  = (document.getElementById('nf-action')?.value||'').trim();
   if(!name||isNaN(units)||units<=0||isNaN(nav)||nav<=0){
     showToast('Fill Name, Units and Current NAV', true); return;
   }
@@ -2693,11 +2689,11 @@ function saveNewFund() {
     risk: (document.getElementById('nf-risk')?.value||'Medium').trim(),
     signal:'HOLD',
     redemption: (document.getElementById('nf-redemption')?.value||'T+3').trim(),
-    purpose,
+    purpose, action,
     tranches:[{type:'opening',date:d,units,nav:launch||nav,amount:Math.round(units*(launch||nav))}]
   });
   closeModal('modal-fund');
-  ['nf-name','nf-manager','nf-risk','nf-redemption','nf-units','nf-nav','nf-lnav','nf-date','nf-purpose']
+  ['nf-name','nf-manager','nf-risk','nf-redemption','nf-units','nf-nav','nf-lnav','nf-date','nf-purpose','nf-action']
     .forEach(x=>{const el=document.getElementById(x);if(el)el.value='';});
   persist(); renderAll(); updateHeader();
 }
@@ -3187,12 +3183,6 @@ function renderPlanner() {
         </div>
       </div>
 
-      <!-- Current Position strip — sell card -->
-      <div id="sell-position-card" style="display:none;background:#0D0D16;border:1px solid #1E2A3A;border-radius:9px;padding:12px 14px;margin-bottom:12px">
-        <div style="font-size:9px;color:#555;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Current Position</div>
-        <div id="sell-position-body"></div>
-      </div>
-
       <!-- Mode toggle -->
       <div style="display:flex;gap:6px;margin-bottom:12px">
         <button id="sell-mode-shares" onclick="sellSetMode('shares')" style="flex:1;padding:7px;font-size:11px;font-weight:700;border-radius:6px;border:1px solid #E0565644;background:#E0565618;color:#E05656">I know how many shares</button>
@@ -3215,6 +3205,12 @@ function renderPlanner() {
         </div>
       </div>
 
+      <!-- Current Position strip — sell card -->
+      <div id="sell-position-card" style="display:none;background:#0D0D16;border:1px solid #1E2A3A;border-radius:9px;padding:12px 14px;margin-bottom:12px">
+        <div style="font-size:9px;color:#555;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Current Position</div>
+        <div id="sell-position-body"></div>
+      </div>
+
       <!-- Result strip -->
       <div id="sell-result" style="display:none;background:#0A0A12;border:1px solid #E0565622;border-radius:9px;padding:14px"></div>
 
@@ -3232,6 +3228,7 @@ function renderPlanner() {
   </div>`;
 
   dcaUpdate();
+  sellUpdate();
   renderFundGuide();
 }
 
@@ -3267,15 +3264,15 @@ function sellUpdate() {
   const sid = document.getElementById('sell-stock')?.value;
   if (!sid) return;
 
-  const s       = stocks.find(x => x.id === sid);
+  const s = stocks.find(x => x.id === sid);
   if (!s) return;
 
-  // Render position strip inside sell card
+  // Always render position strip when stock is selected — no other input needed
   const sellPosCard = document.getElementById('sell-position-card');
   const sellPosBody = document.getElementById('sell-position-body');
   if (sellPosCard && sellPosBody) {
     const t = cS(s);
-    sellPosCard.style.display    = 'block';
+    sellPosCard.style.display     = 'block';
     sellPosCard.style.borderColor = s.color + '33';
     sellPosBody.innerHTML = `<div class="g4">
       <div style="background:#111118;border-radius:7px;padding:9px 11px">
