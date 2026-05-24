@@ -219,20 +219,23 @@
       <button id="ef-tab-report" onclick="efTab('report')" style="flex:1;padding:7px;font-size:10px;font-weight:700;background:transparent;color:#444;border:none;cursor:pointer;text-transform:uppercase;letter-spacing:.5px">From Report</button>
     </div>
     <div id="ef-panel-manual">
-      <div class="g2" style="margin-bottom:8px">
-        <div><div class="sec" style="margin-bottom:3px">Current Price (TSh)</div><input id="ef-curprice" type="number" oninput="checkEfSave()"></div>
-        <div>
-          <div class="sec" style="margin-bottom:3px">Signal</div>
-          <select id="ef-signal" onchange="checkEfSave()" style="width:100%;background:#1A1A28;border:1px solid #2A2A3A;border-radius:6px;padding:6px 9px;color:#F0EAD6;font-size:12px;outline:none">
-            <option value="STRONG BUY">STRONG BUY</option>
-            <option value="BUY">BUY</option>
-            <option value="ACCUMULATE">ACCUMULATE</option>
-            <option value="HOLD & ADD">HOLD & ADD</option>
-            <option value="STRONG HOLD">STRONG HOLD</option>
-            <option value="WATCH">WATCH</option>
-            <option value="SELL">SELL</option>
-          </select>
+      <div style="margin-bottom:10px">
+        <div class="sec" style="margin-bottom:3px">Current Price (TSh)</div>
+        <input id="ef-curprice" type="number" oninput="checkEfSave()" style="width:100%">
+      </div>
+      <div style="margin-bottom:10px">
+        <div class="sec" style="margin-bottom:6px">Signal</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px" id="ef-signal-picker">
+          <button type="button" onclick="pickStockSignal('STRONG BUY')"  data-sig="STRONG BUY"  style="padding:5px 10px;border-radius:6px;font-size:10px;font-weight:700;border:1px solid #00C89644;background:#00C89618;color:#00C896">STRONG BUY</button>
+          <button type="button" onclick="pickStockSignal('BUY')"         data-sig="BUY"         style="padding:5px 10px;border-radius:6px;font-size:10px;font-weight:700;border:1px solid #10B98144;background:#10B98118;color:#10B981">BUY</button>
+          <button type="button" onclick="pickStockSignal('ACCUMULATE')"  data-sig="ACCUMULATE"  style="padding:5px 10px;border-radius:6px;font-size:10px;font-weight:700;border:1px solid #00C89644;background:#00C89618;color:#00C896">ACCUMULATE</button>
+          <button type="button" onclick="pickStockSignal('HOLD & ADD')"  data-sig="HOLD & ADD"  style="padding:5px 10px;border-radius:6px;font-size:10px;font-weight:700;border:1px solid #4A90E244;background:#4A90E218;color:#4A90E2">HOLD &amp; ADD</button>
+          <button type="button" onclick="pickStockSignal('STRONG HOLD')" data-sig="STRONG HOLD" style="padding:5px 10px;border-radius:6px;font-size:10px;font-weight:700;border:1px solid #F4A62344;background:#F4A62318;color:#F4A623">STRONG HOLD</button>
+          <button type="button" onclick="pickStockSignal('HOLD')"        data-sig="HOLD"        style="padding:5px 10px;border-radius:6px;font-size:10px;font-weight:700;border:1px solid #E056A044;background:#E056A018;color:#E056A0">HOLD</button>
+          <button type="button" onclick="pickStockSignal('WATCH')"       data-sig="WATCH"       style="padding:5px 10px;border-radius:6px;font-size:10px;font-weight:700;border:1px solid #06B6D444;background:#06B6D418;color:#06B6D4">WATCH</button>
+          <button type="button" onclick="pickStockSignal('SELL')"        data-sig="SELL"        style="padding:5px 10px;border-radius:6px;font-size:10px;font-weight:700;border:1px solid #E0565644;background:#E0565618;color:#E05656">SELL</button>
         </div>
+        <input type="hidden" id="ef-signal" value="">
       </div>
       <div class="g3" style="margin-bottom:12px">
         <div><div class="sec" style="margin-bottom:3px">Fair Value (TSh)</div><input id="ef-fairvalue" type="number" oninput="checkEfSave()"></div>
