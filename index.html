@@ -11,6 +11,7 @@
 </head>
 <body>
 
+<!-- LOGIN SCREEN -->
 <div id="login-screen" style="display:flex">
   <div class="login-box">
     <div class="login-logo">Tanzania Capital Markets</div>
@@ -27,6 +28,7 @@
   </div>
 </div>
 
+<!-- MOBILE BUTTON STRIP (hidden on desktop/iPad via CSS) -->
 <div id="hdr-mobile-btns" style="display:none;gap:6px;padding:7px 14px;background:#0D1117;border-bottom:1px solid #1A2230">
   <button id="sync-btn-mob" onclick="syncLivePrices()" class="hdr-btn" style="flex:1;background:transparent;border:1px solid #333;color:#555;padding:5px 8px;font-size:9px;border-radius:5px;display:flex;align-items:center;justify-content:center;gap:4px;transition:background .3s,color .3s,border-color .3s">
     <span id="sync-icon-mob"></span> Update Prices
@@ -35,6 +37,7 @@
   <button onclick="signOut()" class="hdr-btn" style="flex:1;background:#E0565610;border:1px solid #E0565628;color:#E05656;padding:5px 8px;font-size:9px;border-radius:5px">Sign Out</button>
 </div>
 
+<!-- HEADER -->
 <div style="background:linear-gradient(135deg,#0D1117,#161B27);border-bottom:1px solid #1E2A3A;padding:14px 16px 0">
   <div id="hdr-flex" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px">
     <div id="hdr-left" style="border-left:3px solid #333;padding-left:12px">
@@ -67,6 +70,7 @@
   </div>
 </div>
 
+<!-- TAB CONTENT PANES (rendered by JS) -->
 <div id="pane-overview" class="pane on"></div>
 <div id="pane-stocks" class="pane"></div>
 <div id="pane-funds" class="pane"></div>
@@ -75,6 +79,7 @@
 <div id="pane-bonds" class="pane"></div>
 <div id="pane-planner" class="pane"></div>
 
+<!-- MODAL: ADD NEW STOCK -->
 <div class="modal-bg" id="modal-stock">
   <div class="modal" style="max-height:90vh;overflow-y:auto;width:min(520px,calc(100vw - 32px))">
     <div style="font-size:13px;font-weight:800;color:var(--g);margin-bottom:12px">Add New Company</div>
@@ -156,6 +161,7 @@
   </div>
 </div>
 
+<!-- MODAL: ADD BOND -->
 <div class="modal-bg" id="modal-bond">
   <div class="modal" style="max-height:90vh;overflow-y:auto;width:min(480px,calc(100vw - 32px))">
     <div style="font-size:13px;font-weight:800;color:#4A90E2;margin-bottom:12px">Add Bond</div>
@@ -204,6 +210,7 @@
   </div>
 </div>
 
+<!-- MODAL: EDIT STOCK FUNDAMENTALS -->
 <div class="modal-bg" id="modal-edit-fund">
   <div class="modal" style="max-height:90vh;overflow-y:auto;width:min(520px,calc(100vw - 32px))">
     <div style="font-size:13px;font-weight:800;color:var(--g);margin-bottom:4px">Edit Fundamentals</div>
@@ -261,6 +268,7 @@
   </div>
 </div>
 
+<!-- MODAL: ADD FUND -->
 <div class="modal-bg" id="modal-fund">
   <div class="modal">
     <div style="font-size:13px;font-weight:800;color:var(--t);margin-bottom:14px">Add New Fund</div>
@@ -352,6 +360,7 @@
   </div>
 </div>
 
+<!-- MODAL: EDIT PRICE / NAV (quick edit) -->
 <div class="modal-bg" id="modal-edit">
   <div class="modal" style="width:300px">
     <div id="modal-edit-title" style="font-size:13px;font-weight:800;color:var(--g);margin-bottom:14px"></div>
@@ -364,6 +373,7 @@
   </div>
 </div>
 
+<!-- MODAL: CONFIRM DELETE -->
 <div class="modal-bg" id="modal-confirm">
   <div class="modal" style="width:320px">
     <div style="font-size:18px;margin-bottom:8px">🗑️</div>
@@ -376,6 +386,7 @@
   </div>
 </div>
 
+<!-- MODAL: PDF STATEMENT -->
 <div class="modal-bg" id="modal-statement">
   <div class="modal" style="width:360px">
     <div style="font-size:13px;font-weight:800;color:#F4A623;margin-bottom:6px">📄 Download Statement</div>
@@ -454,8 +465,10 @@
   </div>
 </div>
 
+<!-- TOAST NOTIFICATION -->
 <div id="app-toast" style="position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(20px);background:#1E2A3A;border:1px solid #2A3A4A;color:#F0EAD6;padding:9px 18px;border-radius:8px;font-size:12px;font-weight:600;z-index:9999;opacity:0;transition:opacity .25s,transform .25s;pointer-events:none;white-space:nowrap"></div>
 
+<!-- MODAL: FUND META EDIT (purpose + signal) -->
 <div class="modal-bg" id="modal-fund-meta">
   <div class="modal" style="width:380px">
     <div id="fm-title" style="font-size:16px;font-weight:900;margin-bottom:16px"></div>
