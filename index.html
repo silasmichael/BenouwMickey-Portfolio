@@ -286,8 +286,18 @@
       <div><div class="sec" style="margin-bottom:3px">Purpose <span style="color:#555;font-weight:400">e.g. Emergency Fund</span></div><input id="nf-purpose" placeholder="Wedding + Construction"></div>
     </div>
     <div style="margin-bottom:14px">
-      <div class="sec" style="margin-bottom:3px">Action Label <span style="color:#555;font-weight:400">e.g. ADD heavy · primary bucket</span></div>
-      <input id="nf-action" placeholder="ADD heavy · primary bucket">
+      <div class="sec" style="margin-bottom:6px">Signal</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px" id="nf-signal-picker">
+        <button type="button" onclick="pickFundSignal('nf','STRONG BUY')"   data-sig="STRONG BUY"   style="padding:5px 10px;border-radius:6px;font-size:10px;font-weight:700;border:1px solid #00C89644;background:#00C89618;color:#00C896">STRONG BUY</button>
+        <button type="button" onclick="pickFundSignal('nf','BUY')"          data-sig="BUY"          style="padding:5px 10px;border-radius:6px;font-size:10px;font-weight:700;border:1px solid #10B98144;background:#10B98118;color:#10B981">BUY</button>
+        <button type="button" onclick="pickFundSignal('nf','ACCUMULATE')"   data-sig="ACCUMULATE"   style="padding:5px 10px;border-radius:6px;font-size:10px;font-weight:700;border:1px solid #00C89644;background:#00C89618;color:#00C896">ACCUMULATE</button>
+        <button type="button" onclick="pickFundSignal('nf','HOLD & ADD')"   data-sig="HOLD & ADD"   style="padding:5px 10px;border-radius:6px;font-size:10px;font-weight:700;border:1px solid #4A90E244;background:#4A90E218;color:#4A90E2">HOLD &amp; ADD</button>
+        <button type="button" onclick="pickFundSignal('nf','STRONG HOLD')"  data-sig="STRONG HOLD"  style="padding:5px 10px;border-radius:6px;font-size:10px;font-weight:700;border:1px solid #F4A62344;background:#F4A62318;color:#F4A623">STRONG HOLD</button>
+        <button type="button" onclick="pickFundSignal('nf','HOLD')"         data-sig="HOLD"         style="padding:5px 10px;border-radius:6px;font-size:10px;font-weight:700;border:1px solid #E056A044;background:#E056A018;color:#E056A0">HOLD</button>
+        <button type="button" onclick="pickFundSignal('nf','WATCH')"        data-sig="WATCH"        style="padding:5px 10px;border-radius:6px;font-size:10px;font-weight:700;border:1px solid #06B6D444;background:#06B6D418;color:#06B6D4">WATCH</button>
+        <button type="button" onclick="pickFundSignal('nf','SELL')"         data-sig="SELL"         style="padding:5px 10px;border-radius:6px;font-size:10px;font-weight:700;border:1px solid #E0565644;background:#E0565618;color:#E05656">SELL</button>
+      </div>
+      <input type="hidden" id="nf-signal" value="HOLD">
     </div>
     <div style="display:flex;gap:8px">
       <button onclick="saveNewFund()" style="background:#06B6D422;border:1px solid #06B6D444;color:var(--t)">Add Fund</button>
@@ -459,15 +469,25 @@
 
 <!-- FUND META EDIT MODAL -->
 <div class="modal-bg" id="modal-fund-meta">
-  <div class="modal" style="width:360px">
+  <div class="modal" style="width:380px">
     <div id="fm-title" style="font-size:16px;font-weight:900;margin-bottom:16px"></div>
-    <div style="margin-bottom:12px">
+    <div style="margin-bottom:14px">
       <div class="sec" style="margin-bottom:4px">Purpose</div>
       <input id="fm-purpose" placeholder="e.g. Emergency Fund">
     </div>
     <div style="margin-bottom:16px">
-      <div class="sec" style="margin-bottom:4px">Action Label <span style="color:#555;font-weight:400">— uses fund color</span></div>
-      <input id="fm-action" placeholder="e.g. ADD heavy · primary bucket">
+      <div class="sec" style="margin-bottom:6px">Signal</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px" id="fm-signal-picker">
+        <button type="button" onclick="pickFundSignal('fm','STRONG BUY')"   data-sig="STRONG BUY"   style="padding:5px 10px;border-radius:6px;font-size:10px;font-weight:700;border:1px solid #00C89644;background:#00C89618;color:#00C896">STRONG BUY</button>
+        <button type="button" onclick="pickFundSignal('fm','BUY')"          data-sig="BUY"          style="padding:5px 10px;border-radius:6px;font-size:10px;font-weight:700;border:1px solid #10B98144;background:#10B98118;color:#10B981">BUY</button>
+        <button type="button" onclick="pickFundSignal('fm','ACCUMULATE')"   data-sig="ACCUMULATE"   style="padding:5px 10px;border-radius:6px;font-size:10px;font-weight:700;border:1px solid #00C89644;background:#00C89618;color:#00C896">ACCUMULATE</button>
+        <button type="button" onclick="pickFundSignal('fm','HOLD & ADD')"   data-sig="HOLD & ADD"   style="padding:5px 10px;border-radius:6px;font-size:10px;font-weight:700;border:1px solid #4A90E244;background:#4A90E218;color:#4A90E2">HOLD &amp; ADD</button>
+        <button type="button" onclick="pickFundSignal('fm','STRONG HOLD')"  data-sig="STRONG HOLD"  style="padding:5px 10px;border-radius:6px;font-size:10px;font-weight:700;border:1px solid #F4A62344;background:#F4A62318;color:#F4A623">STRONG HOLD</button>
+        <button type="button" onclick="pickFundSignal('fm','HOLD')"         data-sig="HOLD"         style="padding:5px 10px;border-radius:6px;font-size:10px;font-weight:700;border:1px solid #E056A044;background:#E056A018;color:#E056A0">HOLD</button>
+        <button type="button" onclick="pickFundSignal('fm','WATCH')"        data-sig="WATCH"        style="padding:5px 10px;border-radius:6px;font-size:10px;font-weight:700;border:1px solid #06B6D444;background:#06B6D418;color:#06B6D4">WATCH</button>
+        <button type="button" onclick="pickFundSignal('fm','SELL')"         data-sig="SELL"         style="padding:5px 10px;border-radius:6px;font-size:10px;font-weight:700;border:1px solid #E0565644;background:#E0565618;color:#E05656">SELL</button>
+      </div>
+      <input type="hidden" id="fm-signal" value="">
     </div>
     <div style="display:flex;gap:8px">
       <button onclick="saveFundMeta()" style="background:#00C89622;border:1px solid #00C89644;color:var(--g)">Save</button>
