@@ -1126,10 +1126,10 @@ function renderFunds() {
               <div onclick="event.stopPropagation();openFundMeta(${fi})" style="margin-top:5px;display:flex;gap:6px;flex-wrap:wrap;cursor:pointer" title="Edit purpose & action">
                 ${(()=>{
                   const pColor = PURPOSE_PALETTE[fi % PURPOSE_PALETTE.length];
-                  const sigColor = {ACCUMULATE:'#00C896','STRONG HOLD':'#F4A623','HOLD & ADD':'#4A90E2',HOLD:'#E056A0',WATCH:'#06B6D4',SELL:'#E05656','STRONG BUY':'#00C896',BUY:'#10B981','HOLD':'#E056A0'}[fn.signal]||fn.color;
+                  const sigColor = {ACCUMULATE:'#00C896','STRONG HOLD':'#F4A623','HOLD & ADD':'#4A90E2',HOLD:'#E056A0',WATCH:'#06B6D4',SELL:'#E05656','STRONG BUY':'#00C896',BUY:'#10B981'}[fn.signal]||fn.color;
                   return (fn.purpose ? bdg(fn.purpose, pColor) : bdg('+ Add Purpose','#333'))
                        + ' '
-                       + (fn.action ? bdg(fn.action, sigColor) : bdg('+ Add Action','#333'));
+                       + (fn.signal ? bdg(fn.signal, sigColor) : bdg('+ Add Signal','#333'));
                 })()}
               </div>
             </div>
@@ -2581,20 +2581,46 @@ function applyReportToStock(stock,raw,currentPrice){
   if(raw.launchNav)  stock.fundamentals.launchNav=raw.launchNav;
 }
 let _efStockId=null;
+const FUND_SIG_COLORS = {
+  'STRONG BUY':'#00C896','BUY':'#10B981','ACCUMULATE':'#00C896',
+  'HOLD & ADD':'#4A90E2','STRONG HOLD':'#F4A623','HOLD':'#E056A0',
+  'WATCH':'#06B6D4','SELL':'#E05656'
+};
+
+function pickFundSignal(prefix, sig) {
+  const hiddenId = prefix === 'nf' ? 'nf-signal' : 'fm-signal';
+  const pickerId = prefix === 'nf' ? 'nf-signal-picker' : 'fm-signal-picker';
+  const hidden = document.getElementById(hiddenId);
+  const picker = document.getElementById(pickerId);
+  if (hidden) hidden.value = sig;
+  if (picker) {
+    picker.querySelectorAll('button').forEach(btn => {
+      const s = btn.getAttribute('data-sig');
+      const c = FUND_SIG_COLORS[s] || '#888';
+      btn.style.opacity = s === sig ? '1' : '0.35';
+      btn.style.borderWidth = s === sig ? '2px' : '1px';
+    });
+  }
+}
+
 function openFundMeta(fi){
   const fn=funds[fi];if(!fn)return;
   window._fmIdx=fi;
   document.getElementById('fm-title').textContent=fn.name;
   document.getElementById('fm-purpose').value=fn.purpose||'';
-  document.getElementById('fm-action').value=fn.action||'';
+  // Prefill signal picker
+  const sig = fn.signal||'HOLD';
+  document.getElementById('fm-signal').value = sig;
+  pickFundSignal('fm', sig);
   openModal('modal-fund-meta');
 }
 function updateFmPreview(){}
 function saveFundMeta(){
   const fi=window._fmIdx;
   const fn=funds[fi];if(!fn)return;
-  fn.purpose=document.getElementById('fm-purpose').value.trim()||'';
-  fn.action=document.getElementById('fm-action').value.trim()||'';
+  fn.purpose = document.getElementById('fm-purpose').value.trim()||'';
+  const sig  = document.getElementById('fm-signal').value;
+  if (sig) fn.signal = sig;
   closeModal('modal-fund-meta');
   const _oids=getOpenIds();persist();renderAll();updateHeader();restoreOpenIds(_oids);
 }
@@ -2694,7 +2720,7 @@ function saveNewFund() {
   const launch  = parseFloat(document.getElementById('nf-lnav')?.value||nav)||nav;
   const dRaw    = (document.getElementById('nf-date')?.value||'').trim();
   const purpose = (document.getElementById('nf-purpose')?.value||'').trim();
-  const action  = (document.getElementById('nf-action')?.value||'').trim();
+  const signal  = document.getElementById('nf-signal')?.value || 'HOLD';
   if(!name||isNaN(units)||units<=0||isNaN(nav)||nav<=0){
     showToast('Fill Name, Units and Current NAV', true); return;
   }
@@ -2706,14 +2732,18 @@ function saveNewFund() {
     id, name, color, manager,
     nav, launchNav: launch, launchDate: d,
     risk: (document.getElementById('nf-risk')?.value||'Medium').trim(),
-    signal:'HOLD',
+    signal,
     redemption: (document.getElementById('nf-redemption')?.value||'T+3').trim(),
-    purpose, action,
+    purpose,
     tranches:[{type:'opening',date:d,units,nav:launch||nav,amount:Math.round(units*(launch||nav))}]
   });
   closeModal('modal-fund');
-  ['nf-name','nf-manager','nf-risk','nf-redemption','nf-units','nf-nav','nf-lnav','nf-date','nf-purpose','nf-action']
+  ['nf-name','nf-manager','nf-risk','nf-redemption','nf-units','nf-nav','nf-lnav','nf-date','nf-purpose']
     .forEach(x=>{const el=document.getElementById(x);if(el)el.value='';});
+  // Reset signal picker to default
+  const nfSig = document.getElementById('nf-signal');
+  if(nfSig) nfSig.value = 'HOLD';
+  pickFundSignal('nf','HOLD');
   persist(); renderAll(); updateHeader();
 }
 
@@ -3873,7 +3903,7 @@ function saveNewReserve() {
   if (!name || isNaN(rate) || rate<=0) { showToast('Enter name and rate', true); return; }
   const colors = ['#F59E0B','#10B981','#6366F1','#EC4899','#14B8A6'];
   const color  = colors[reserves.length % colors.length];
-  reserves.push({id:'rv_'+Date.now(), name, color, rate, purpose, action, transactions:[]});
+  reserves.push({id:'rv_'+Date.now(), name, color, rate, purpose, transactions:[]});
   closeModal('modal-new-reserve');
   ['nrv-name','nrv-purpose','nrv-action','nrv-rate'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   persist(); renderAll(); updateHeader();
