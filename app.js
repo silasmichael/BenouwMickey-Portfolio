@@ -770,7 +770,7 @@ function renderOverview() {
           <div style="font-size:9px;color:#444;margin-top:4px">S: ${sReal>=0?'+':''}${fT(Math.round(sReal))} · F: ${fReal>=0?'+':''}${fT(Math.round(fReal))}</div>
         </div>`:''}
 
-        <div style="background:#0D0D1A;-radius:8px;padding:10px 14px;flex:1;min-width:100px">
+        <div style="background:#0D0D1A;border-radius:8px;padding:10px 14px;flex:1;min-width:100px">
           <div style="font-size:9px;color:#555;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Total Profit</div>
           <div style="font-size:15px;font-weight:800;color:${cl(totG)}">${totG>=0?'+':''}${fT(Math.round(totG))}</div>
           <div style="font-size:9px;color:#444;margin-top:4px">Unreal: ${pc(roi)} · All-in: ${pc(roiAll)}</div>
