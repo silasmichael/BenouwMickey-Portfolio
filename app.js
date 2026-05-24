@@ -1123,12 +1123,9 @@ function renderFunds() {
             <div>
               <div style="font-size:14px;font-weight:800">${fn.name}</div>
               <div class="mob-hide" style="font-size:10px;color:#555;margin-top:1px">${fn.manager} · Since ${fn.launchDate}</div>
-              <div class="mob-hide" style="margin-top:5px;display:flex;gap:6px;flex-wrap:wrap">
-                ${(()=>{
-                  const p = fn.purpose || '';
-                  const a = fn.action  || '';
-                  return (p ? bdg(p, fn.purposeColor||fn.color) : '') + (a ? ' '+bdg(a, fn.color) : '');
-                })()}
+              <div onclick="event.stopPropagation();openFundMeta(${fi})" style="margin-top:5px;display:flex;gap:6px;flex-wrap:wrap;cursor:pointer" title="Edit purpose & action">
+                ${fn.purpose ? bdg(fn.purpose, fn.purposeColor||fn.color) : bdg('+ Add Purpose','#333')}
+                ${fn.action  ? bdg(fn.action,  fn.color) : bdg('+ Add Action','#333')}
               </div>
             </div>
           </div>
@@ -2579,6 +2576,32 @@ function applyReportToStock(stock,raw,currentPrice){
   if(raw.launchNav)  stock.fundamentals.launchNav=raw.launchNav;
 }
 let _efStockId=null;
+function openFundMeta(fi){
+  const fn=funds[fi];if(!fn)return;
+  window._fmIdx=fi;
+  const el=id=>document.getElementById(id);
+  el('fm-title').textContent=fn.name;
+  el('fm-purpose').value=fn.purpose||'';
+  el('fm-purpose-color').value=fn.purposeColor||fn.color||'#00C896';
+  el('fm-action').value=fn.action||'';
+  updateFmPreview();
+  openModal('modal-fund-meta');
+}
+function updateFmPreview(){
+  const color=(document.getElementById('fm-purpose-color')||{}).value||'#888';
+  const text=(document.getElementById('fm-purpose')||{}).value||'Purpose';
+  const el=document.getElementById('fm-purpose-preview');
+  if(el)el.innerHTML=bdg(text||'Preview',color);
+}
+function saveFundMeta(){
+  const fi=window._fmIdx;
+  const fn=funds[fi];if(!fn)return;
+  fn.purpose=document.getElementById('fm-purpose').value.trim()||'';
+  fn.purposeColor=document.getElementById('fm-purpose-color').value||fn.color;
+  fn.action=document.getElementById('fm-action').value.trim()||'';
+  closeModal('modal-fund-meta');
+  const _oids=getOpenIds();persist();renderAll();updateHeader();restoreOpenIds(_oids);
+}
 function openEditFundamentals(stockId){
   const s=stocks.find(x=>x.id===stockId);if(!s)return;
   _efStockId=stockId;
