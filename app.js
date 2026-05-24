@@ -103,8 +103,20 @@ function applyMigrations(s, f) {
 
 applyMigrations(stocks, funds);
 
-function showLogin()  { document.getElementById('login-screen').style.display = 'flex'; }
-function hideLogin()  { document.getElementById('login-screen').style.display = 'none'; }
+function showLogin() {
+  document.getElementById('login-screen').style.display = 'flex';
+  // Hide app chrome
+  const header = document.querySelector('div[style*="linear-gradient(135deg"]');
+  if (header) header.style.display = 'none';
+  document.querySelectorAll('.pane').forEach(p => p.style.display = 'none');
+}
+function hideLogin() {
+  document.getElementById('login-screen').style.display = 'none';
+  // Restore app chrome
+  const header = document.querySelector('div[style*="linear-gradient(135deg"]');
+  if (header) header.style.display = '';
+  // Tab panes restored by showTab
+}
 
 
 // ── AUTH
@@ -137,9 +149,16 @@ function showLoginMsg(text, type) {
 
 function signOut() {
   try { sb.auth.signOut({ scope: 'local' }); } catch(_) {}
-  // Clear Supabase auth keys from localStorage only (not our data — we don't store data there)
-  try { Object.keys(localStorage).filter(k=>k.startsWith('sb-')).forEach(k=>localStorage.removeItem(k)); } catch(_) {}
-  window.location.reload();
+  try { Object.keys(localStorage).filter(k => k.startsWith('sb-')).forEach(k => localStorage.removeItem(k)); } catch(_) {}
+  // Reset state
+  currentToken = null;
+  _dataReady   = false;
+  stocks = []; funds = []; reserves = []; bonds = []; dividends = [];
+  // Show login, hide app
+  showLogin();
+  // Hide mobile button strip so it doesn't show on login screen
+  const mob = document.getElementById('hdr-mobile-btns');
+  if (mob) mob.style.display = 'none';
 }
 
 
