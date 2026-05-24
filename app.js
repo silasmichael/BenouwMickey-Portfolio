@@ -8,6 +8,8 @@ const SEED_STOCKS = [];
 // first-load only; Supabase overwrites them on sync.
 // Tanzania 5-year treasury bond yield (benchmark) — update periodically
 let TZ_BOND_YIELD = 10.54; // % — Tanzania 5yr treasury bond
+const PURPOSE_PALETTE = ['#F4A623','#A855F7','#E056A0','#06B6D4','#14B8A6','#FF6B6B','#4A90E2','#F7C948'];
+
 const SEED_FUNDS = [];
 
 // ── SUPABASE CLIENT ───────────────────────────────────────────────────────────
@@ -158,6 +160,7 @@ function loadFromCache() {
     applyMigrations(stocks, funds);
     updateMonthlySnapshots();
     renderAll(); updateHeader();
+    setStatus('syncing');
     setPriceButtonState(d.priceDate || null);
     return true;
   } catch(_) { return false; }
@@ -257,7 +260,12 @@ async function syncFromSupabase() {
 }
 
 async function syncToSupabase() {
-  if (!currentToken || !_dataReady) { setStatus('error'); return; } // never write seed data
+  if (!_dataReady) return; // never write before first read
+  if (!currentToken) {
+    // Token may be refreshing — wait briefly then retry once
+    await new Promise(r => setTimeout(r, 1500));
+    if (!currentToken) { setStatus('offline'); return; }
+  }
   setStatus('syncing');
   try {
     const res = await fetch(SB_URL + '/rest/v1/portfolio?id=eq.1', {
@@ -1124,8 +1132,13 @@ function renderFunds() {
               <div style="font-size:14px;font-weight:800">${fn.name}</div>
               <div class="mob-hide" style="font-size:10px;color:#555;margin-top:1px">${fn.manager} · Since ${fn.launchDate}</div>
               <div onclick="event.stopPropagation();openFundMeta(${fi})" style="margin-top:5px;display:flex;gap:6px;flex-wrap:wrap;cursor:pointer" title="Edit purpose & action">
-                ${fn.purpose ? bdg(fn.purpose, fn.purposeColor||fn.color) : bdg('+ Add Purpose','#333')}
-                ${fn.action  ? bdg(fn.action,  fn.color) : bdg('+ Add Action','#333')}
+                ${(()=>{
+                  const pColor = PURPOSE_PALETTE[fi % PURPOSE_PALETTE.length];
+                  const sigColor = {ACCUMULATE:'#00C896','STRONG HOLD':'#F4A623','HOLD & ADD':'#4A90E2',HOLD:'#E056A0',WATCH:'#06B6D4',SELL:'#E05656','STRONG BUY':'#00C896',BUY:'#10B981','HOLD':'#E056A0'}[fn.signal]||fn.color;
+                  return (fn.purpose ? bdg(fn.purpose, pColor) : bdg('+ Add Purpose','#333'))
+                       + ' '
+                       + (fn.action ? bdg(fn.action, sigColor) : bdg('+ Add Action','#333'));
+                })()}
               </div>
             </div>
           </div>
@@ -2579,25 +2592,16 @@ let _efStockId=null;
 function openFundMeta(fi){
   const fn=funds[fi];if(!fn)return;
   window._fmIdx=fi;
-  const el=id=>document.getElementById(id);
-  el('fm-title').textContent=fn.name;
-  el('fm-purpose').value=fn.purpose||'';
-  el('fm-purpose-color').value=fn.purposeColor||fn.color||'#00C896';
-  el('fm-action').value=fn.action||'';
-  updateFmPreview();
+  document.getElementById('fm-title').textContent=fn.name;
+  document.getElementById('fm-purpose').value=fn.purpose||'';
+  document.getElementById('fm-action').value=fn.action||'';
   openModal('modal-fund-meta');
 }
-function updateFmPreview(){
-  const color=(document.getElementById('fm-purpose-color')||{}).value||'#888';
-  const text=(document.getElementById('fm-purpose')||{}).value||'Purpose';
-  const el=document.getElementById('fm-purpose-preview');
-  if(el)el.innerHTML=bdg(text||'Preview',color);
-}
+function updateFmPreview(){}
 function saveFundMeta(){
   const fi=window._fmIdx;
   const fn=funds[fi];if(!fn)return;
   fn.purpose=document.getElementById('fm-purpose').value.trim()||'';
-  fn.purposeColor=document.getElementById('fm-purpose-color').value||fn.color;
   fn.action=document.getElementById('fm-action').value.trim()||'';
   closeModal('modal-fund-meta');
   const _oids=getOpenIds();persist();renderAll();updateHeader();restoreOpenIds(_oids);
