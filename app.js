@@ -1,25 +1,23 @@
+
+// ── SEED DATA (intentionally empty — all data lives in Supabase)
 // ── STOCK METADATA (fundamentals & signals — code, not data) ─────────────────
-// Tranches/holdings live ONLY in Supabase. These are research constants applied
-// on sync so any update here automatically overrides what Supabase stores.
 const SEED_STOCKS = [];
 
-// ── FUND METADATA (static config — code, not data) ────────────────────────────
-// Tranches/holdings live ONLY in Supabase. Amounts below are for new-device
-// first-load only; Supabase overwrites them on sync.
-// Tanzania 5-year treasury bond yield (benchmark) — update periodically
 let TZ_BOND_YIELD = 10.54; // % — Tanzania 5yr treasury bond
 const PURPOSE_PALETTE = ['#F4A623','#A855F7','#E056A0','#06B6D4','#14B8A6','#FF6B6B','#4A90E2','#F7C948'];
 
 const SEED_FUNDS = [];
 
-// ── SUPABASE CLIENT ───────────────────────────────────────────────────────────
+// ── SUPABASE CLIENT
+
 const SB_URL = 'https://brwkhnqnsoormvpjqcmd.supabase.co';
 const SB_KEY = 'sb_publishable_9CcM7fvOwyvNekAKwDv4UQ_f1QxeUr0';
 const { createClient } = supabase;
 const sb = createClient(SB_URL, SB_KEY);
+
+// ── APP STATE
 let currentToken = null; // stored on login, used by every sync
 
-// ── STORAGE — Supabase is the ONLY source of truth ───────────────────────────
 let stocks    = JSON.parse(JSON.stringify(SEED_STOCKS.map(s=>({...s,tranches:[]}))));
 let funds     = JSON.parse(JSON.stringify(SEED_FUNDS));
 let snapshots = {}; // { "Dec 2025": 14506000, "Dec 2026": ... } — year carry-overs
@@ -27,6 +25,8 @@ let dividends = []; // [{stockId, date, amountPerShare, shares, total}] — stor
 let reserves  = []; // [{id,name,color,rate,transactions:[]}] — stored in snapshots._reserves
 let projYear  = new Date().getFullYear();
 
+
+// ── STATUS + TOAST
 function setStatus(state) {
   const border = document.getElementById('hdr-left');
   const el     = document.getElementById('hdr-save');
@@ -67,6 +67,8 @@ function checkEfSave() {
   btn.style.cursor  = anyFilled ? 'pointer' : 'not-allowed';
 }
 
+
+// ── MIGRATIONS — only seeds missing fields, never overwrites Supabase values
 function applyMigrations(s, f) {
   s.forEach(os => {
     const seed = SEED_STOCKS.find(x => x.id === os.id);
@@ -101,10 +103,11 @@ function applyMigrations(s, f) {
 
 applyMigrations(stocks, funds);
 
-// ── AUTH ──────────────────────────────────────────────────────────────────────
 function showLogin()  { document.getElementById('login-screen').style.display = 'flex'; }
 function hideLogin()  { document.getElementById('login-screen').style.display = 'none'; }
 
+
+// ── AUTH
 const ALLOWED_EMAIL = 'silasmichael27@gmail.com';
 
 async function sendMagicLink() {
@@ -139,7 +142,8 @@ function signOut() {
   window.location.reload();
 }
 
-// ── SUPABASE SYNC ─────────────────────────────────────────────────────────────
+
+// ── LOCAL STORAGE CACHE
 const CACHE_KEY = 'portfolio_cache_v1';
 function saveToCache(priceDate) {
   try {
@@ -252,7 +256,7 @@ async function syncFromSupabase() {
 }
 
 async function syncToSupabase() {
-  if (!_dataReady) return; // never write before first read
+  if (!_dataReady) return; // CRITICAL: never write before first Supabase read — prevents wiping live data
   if (!currentToken) {
     // Token may be refreshing — wait briefly then retry once
     await new Promise(r => setTimeout(r, 1500));
@@ -285,7 +289,6 @@ function persist() {
   _syncToTimer = setTimeout(syncToSupabase, 800);
 }
 
-// ── AUTO-FUNDAMENTALS ────────────────────────────────────────────────────────
 const METRIC_THRESHOLDS={
   'P/E':{max:[10,15]},'P/B':{max:[1.5,3]},'NPL':{max:[3,5]},'CIR':{max:[40,55]},
   'EV/EBITDA':{max:[8,15]},'D/E':{max:[0.5,1.5]},'P/NAV':{max:[1.0,1.05]},
@@ -304,6 +307,8 @@ function metricColor(key,valStr){
   if(t.min){if(n>=t.min[0])return 'var(--g)';if(n>=t.min[1])return '#F4A623';return 'var(--r)';}
   return '#555';
 }
+
+// ── METRIC COMPUTATION
 function computeMetrics(s){
   const f=s.fundamentals||{},r=f.raw||{},p=s.currentPrice,typ=s.type||'general';
   const m={...(s.metrics||{})};
@@ -361,7 +366,6 @@ function computeMetrics(s){
   return m;
 }
 
-// ── HELPERS ─────────────────────────────────────────────────────────────────
 const fm = v => { if(v==null||isNaN(v)) return '—'; const a=Math.abs(v); if(a>=1e9) return (v/1e9).toFixed(3)+'B'; if(a>=1e6) return (v/1e6).toFixed(3)+'M'; return Math.round(v).toLocaleString(); };
 const fT = v => 'TSh ' + fm(v);
 const pc = v => (v>=0?'+':'') + v.toFixed(2) + '%';
@@ -461,7 +465,6 @@ function totals() {
   return {ts,tf,rv,gt:ts.v+tf+rv,sG,fG,fI,totG,totUnreal,totReal,sReal,fReal,sUnreal,fUnreal,totI,roi,roiAll,sv,fv,gain};
 }
 
-// ── DATE HELPERS ──────────────────────────────────────────────────────────────
 function inputToDate(v) {
   if (!v) return '';
   const d = new Date(v + 'T00:00:00');
@@ -476,7 +479,8 @@ function dateToInput(str) {
   return `${m[3]}-${months[m[1]]||'01'}-${String(m[2]).padStart(2,'0')}`;
 }
 
-// ── UI STATE ──────────────────────────────────────────────────────────────────
+
+// ── UI STATE
 function getOpenIds() {
   const ids = [];
   document.querySelectorAll('.exp-body.open').forEach(el=>ids.push(el.id));
@@ -486,14 +490,12 @@ function restoreOpenIds(ids) {
   ids.forEach(id=>{const el=document.getElementById(id);if(el)el.classList.add('open');});
 }
 
-// ── CONFIRM DELETE ────────────────────────────────────────────────────────────
 function confirmDelete(msg, sub, action) {
   document.getElementById('modal-confirm-msg').textContent = msg;
   document.getElementById('modal-confirm-sub').textContent = sub || 'This action cannot be undone.';
   document.getElementById('modal-confirm-yes').onclick = ()=>{ closeModal('modal-confirm'); action(); };
   openModal('modal-confirm');
 }
-
 
 function updateHeader() {
   const {gt, totReal, sReal, fReal} = totals();
@@ -503,7 +505,6 @@ function updateHeader() {
   pl.style.color = totReal >= 0 ? '#00C896' : '#E05656';
 }
 
-// ── PIE CHART ─────────────────────────────────────────────────────────────────
 function buildPie(segs, size=140) {
   const tot = segs.reduce((a,s)=>a+s.v,0); if(!tot) return '';
   const cx=size/2, cy=size/2, R=size/2-6, hole=size/4-2;
@@ -519,7 +520,8 @@ function buildPie(segs, size=140) {
   return `<svg viewBox="0 0 ${size} ${size}" style="width:${size}px;height:${size}px;flex-shrink:0">${paths}</svg>`;
 }
 
-// ── PORTFOLIO VALUE CHART ─────────────────────────────────────────────────────
+
+// ── CHARTS
 function buildPortfolioChart() {
   // Collect all stored monthly snapshots in order
   const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -614,7 +616,8 @@ function buildPortfolioChart() {
     + '</div>';
 }
 
-// ── OVERVIEW ─────────────────────────────────────────────────────────────────
+
+// ── OVERVIEW
 function renderOverview() {
   const {ts,tf,rv,gt,sG,fG,fI,totG,totUnreal,totReal,sReal,fReal,sUnreal,fUnreal,totI,roi,roiAll} = totals();
 
@@ -748,8 +751,6 @@ function renderOverview() {
           <div style="font-size:9px;color:#444;margin-top:4px">S: ${sReal>=0?'+':''}${fT(Math.round(sReal))} · F: ${fReal>=0?'+':''}${fT(Math.round(fReal))}</div>
         </div>`:''}
 
-
-
         <div style="background:#0D0D1A;-radius:8px;padding:10px 14px;flex:1;min-width:100px">
           <div style="font-size:9px;color:#555;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Total Profit</div>
           <div style="font-size:15px;font-weight:800;color:${cl(totG)}">${totG>=0?'+':''}${fT(Math.round(totG))}</div>
@@ -826,6 +827,8 @@ function renderOverview() {
   </div>`;
 }
 
+
+// ── STOCKS TAB
 function renderStocks() {
   const cards = stocks.map((s,si)=>{
     const t = cS(s);
@@ -1045,7 +1048,8 @@ function renderStocks() {
     </div>`;
 }
 
-// ── FUNDS TAB ─────────────────────────────────────────────────────────────────
+
+// ── FUNDS TAB
 function renderFunds() {
   const cards = funds.map((fn,fi)=>{
     const u=fUnits(fn), v=u*fn.nav;
@@ -1274,11 +1278,6 @@ function renderFunds() {
     </div>`;
 }
 
-
-// ── PROJECTION ────────────────────────────────────────────────────────────────
-
-// Estimate portfolio value at end of a given month label (e.g. "Mar 2026")
-// using current prices/NAVs on all tranches purchased up to & including that month
 function estimatePortfolioAsOf(monthLabel) {
   const _mmap = {Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11};
   const _tm = monthLabel.match(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b/);
@@ -1340,8 +1339,6 @@ function estimatePortfolioAsOf(monthLabel) {
   return sv + fv + rval;
 }
 
-// Returns projected portfolio value at end of Dec for any year.
-// Past/current: use stored snap or estimate. Future: compound from anchorV.
 function getProjectedEndValue(yr) {
   const mNames  = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const now     = new Date();
@@ -1387,6 +1384,8 @@ function getProjectedEndValue(yr) {
   return Math.round(port);
 }
 
+
+// ── PROJECTION TAB
 function renderProjection() {
   const yr       = projYear;
   const yrStr    = String(yr);
@@ -1615,7 +1614,8 @@ function renderProjection() {
   </div>`;
 }
 
-// ── INTERACTIONS ─────────────────────────────────────────────────────────────
+
+// ── TAB NAVIGATION
 function showTab(name, btn) {
   document.querySelectorAll('.pane').forEach(p=>p.classList.remove('on'));
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
@@ -1782,7 +1782,6 @@ function delFund(fi) {
   );
 }
 
-
 function openDividendModal(preselect) {
   const sel = document.getElementById('div-stock');
   sel.innerHTML = stocks.map(s => `<option value="${s.id}">${s.id} — ${s.name}</option>`).join('');
@@ -1854,7 +1853,6 @@ function editDividend(i) {
   document.getElementById('modal-dividend').dataset.editIdx = i;
   openModal('modal-dividend');
 }
-
 
 let _trEditCtx = null;
 
@@ -1972,7 +1970,8 @@ function saveEditTranche() {
   restoreOpenIds(openIds);
 }
 
-// ── SELL HELPERS ──────────────────────────────────────────────────────────────
+
+// ── SELL HELPERS (commission, calcStockAvgBuy, calcFundAvgNav)
 function calcCommission(gross) {
   if(gross<=10000000) return gross*0.0206;
   if(gross<=50000000) return gross*0.0186;
@@ -2085,7 +2084,8 @@ function addFundSell(fi) {
   if (prev) prev.style.display='none';
 }
 
-// ── PDF BANK STATEMENT ────────────────────────────────────────────────────────
+
+// ── PDF STATEMENT
 function generateStatement() {
   const fromRaw = document.getElementById('stmt-from').value; // yyyy-mm-dd
   const toRaw   = document.getElementById('stmt-to').value;
@@ -2162,7 +2162,6 @@ function generateStatement() {
     doc.line(margin, yy, W-margin, yy); doc.setLineWidth(0.2); doc.setDrawColor(30);
   }
   function checkPage(need) { if(y+need>277){ doc.addPage(); y=margin; } }
-
 
   // ── HEADER ─────────────────────────────────────────────────────────────────
   doc.setFillColor(13,13,22);
@@ -2403,14 +2402,12 @@ function editSnapshot(label) {
   persist(); renderAll();
 }
 
-
 function openModal(id) {
   document.querySelectorAll('.modal-bg.open').forEach(m => m.classList.remove('open'));
   document.getElementById(id).classList.add('open');
 }
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 
-// ── Sector → type ────────────────────────────────────────────────────────────
 const SECTOR_TYPE_MAP={
   'Commercial Bank':'bank','Investment Bank':'bank','Microfinance':'bank',
   'Holding Company':'holding','Insurance':'insurance',
@@ -2587,6 +2584,8 @@ const FUND_SIG_COLORS = {
   'WATCH':'#06B6D4','SELL':'#E05656'
 };
 
+
+// ── SIGNAL PICKERS
 function pickStockSignal(sig) {
   const hidden = document.getElementById('ef-signal');
   const picker = document.getElementById('ef-signal-picker');
@@ -2636,6 +2635,8 @@ function saveFundMeta(){
   closeModal('modal-fund-meta');
   const _oids=getOpenIds();persist();renderAll();updateHeader();restoreOpenIds(_oids);
 }
+
+// ── EDIT FUNDAMENTALS
 function openEditFundamentals(stockId){
   const s=stocks.find(x=>x.id===stockId);if(!s)return;
   _efStockId=stockId;
@@ -2689,7 +2690,8 @@ function saveEditFundamentals(){
   restoreOpenIds(_oids);
 }
 
-// ── ADD NEW STOCK ─────────────────────────────────────────────────────────────
+
+// ── ADD NEW STOCK
 function saveNewStock(){
   const id    =(document.getElementById('ns-ticker')?.value||'').trim().toUpperCase();
   const name  =(document.getElementById('ns-name')?.value||'').trim();
@@ -2724,7 +2726,8 @@ function saveNewStock(){
   persist();renderAll();updateHeader();
 }
 
-// ── ADD NEW FUND ──────────────────────────────────────────────────────────────
+
+// ── ADD NEW FUND
 function saveNewFund() {
   const name    = (document.getElementById('nf-name')?.value||'').trim();
   const manager = (document.getElementById('nf-manager')?.value||'UTT AMIS').trim();
@@ -2760,15 +2763,9 @@ function saveNewFund() {
   persist(); renderAll(); updateHeader();
 }
 
-// ── EXPORT ────────────────────────────────────────────────────────────────────
-
-// ── IMPORT ────────────────────────────────────────────────────────────────────
-
-
 function parseMonthLabel(str) {
   if (!str) return null;
-  // Exclude opening balances and pre-period entries
-  if (/pre-|opening/i.test(str)) return null;
+    if (/pre-|opening/i.test(str)) return null;
   const map = {Jan:'Jan 2026',Feb:'Feb 2026',Mar:'Mar 2026',Apr:'Apr 2026',May:'May 2026',
     Jun:'Jun 2026',Jul:'Jul 2026',Aug:'Aug 2026',Sep:'Sep 2026',Oct:'Oct 2026',Nov:'Nov 2026',Dec:'Dec 2026'};
   const m = str.match(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b/);
@@ -2818,7 +2815,6 @@ function getActualByMonth(yr) {
   });
 }
 
-// ── PROJECTION HELPERS ────────────────────────────────────────────────────────
 function getDefaultPlan() {
   // 2027 onwards: 1M every month
   return { Jan:1000000,Feb:1000000,Mar:1000000,Apr:1000000,May:1000000,Jun:1000000,Jul:1000000,
@@ -2841,7 +2837,6 @@ function computeGoal(yr) {
   return Math.round(port);
 }
 
-// ── PROJECTION CONTROLS ───────────────────────────────────────────────────────
 function setProjYear(y) {
   projYear = y;
   persist();
@@ -3082,10 +3077,7 @@ function downloadProjectionPDF() {
 }
 
 
-// Runs before every save. Calculates portfolio value for all past + current
-// months and stores them in snapshots under year-keyed buckets:
-//   snapshots["2026"]["Jan 2026"] = 15000000
-//   snapshots["2025"]["Dec 2025"] = 14500000   (+ snapshots["Dec 2025"] for compat)
+// ── MONTHLY SNAPSHOTS — runs before every save
 function updateMonthlySnapshots() {
   const now     = new Date();
   const curYear = now.getFullYear();
@@ -3120,7 +3112,8 @@ function updateMonthlySnapshots() {
   snapshots[String(curYear)][curLabel] = Math.round(totals().gt);
 }
 
-// ── DCA PLANNER ───────────────────────────────────────────────────────────────
+
+// ── PLANNER TAB
 function renderPlanner() {
   const mNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const now    = new Date();
@@ -3318,6 +3311,8 @@ function sellSetMode(mode) {
   sellUpdate();
 }
 
+
+// ── SELL CALCULATOR
 function sellUpdate() {
   const resultEl = document.getElementById('sell-result');
   const emptyEl  = document.getElementById('sell-empty');
@@ -3502,6 +3497,8 @@ function renderFundGuide(){
     ]);
 }
 
+
+// ── BUY CALCULATOR
 function dcaUpdate() {
   const stockId = (document.getElementById('dca-stock')||{}).value;
   const amount  = parseFloat((document.getElementById('dca-amount')||{}).value)||0;
@@ -3651,6 +3648,8 @@ function reserveTotalDeposited(r) {
   return r.transactions.filter(t=>t.type==='deposit').reduce((a,t)=>a+t.amount,0);
 }
 
+
+// ── RESERVES TAB
 function renderReserves() {
   const totalRv = reserves.reduce((a,r)=>a+Math.max(0,reserveBalance(r)),0);
   const mColors = ['#F59E0B','#10B981','#6366F1','#EC4899','#14B8A6','#F4A623'];
@@ -3922,11 +3921,8 @@ function saveNewReserve() {
   persist(); renderAll(); updateHeader();
 }
 
-// ── RESERVES (end) ────────────────────────────────────────────────────────────
 
-// ── INIT ─────────────────────────────────────────────────────────────────────
-
-// ── BONDS ─────────────────────────────────────────────────────────────────────
+// ── BONDS TAB
 let bonds = [];
 
 function renderBonds() {
@@ -4039,6 +4035,8 @@ function saveNewBond() {
   persist(); renderBonds();
 }
 
+
+// ── RENDER ALL
 function renderAll() {
   renderOverview();
   renderStocks();
@@ -4054,6 +4052,8 @@ renderAll();
 updateHeader();
 
 // Listen for auth state changes (handles magic link redirect)
+
+// ── AUTH STATE — magic link flow
 sb.auth.onAuthStateChange(async (event, session) => {
   if (session && session.user.email === ALLOWED_EMAIL) {
     currentToken = session.access_token;
