@@ -456,6 +456,35 @@
 <!-- TOAST NOTIFICATION -->
 <div id="app-toast" style="position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(20px);background:#1E2A3A;border:1px solid #2A3A4A;color:#F0EAD6;padding:9px 18px;border-radius:8px;font-size:12px;font-weight:600;z-index:9999;opacity:0;transition:opacity .25s,transform .25s;pointer-events:none;white-space:nowrap"></div>
 
+<!-- FUND META EDIT MODAL -->
+<div class="modal-bg" id="modal-fund-meta">
+  <div class="modal" style="width:360px">
+    <div id="fm-title" style="font-size:16px;font-weight:900;margin-bottom:16px"></div>
+    <div style="margin-bottom:12px">
+      <div class="sec" style="margin-bottom:4px">Purpose</div>
+      <input id="fm-purpose" placeholder="e.g. Emergency Fund" oninput="updateFmPreview()">
+    </div>
+    <div class="g2" style="margin-bottom:12px">
+      <div>
+        <div class="sec" style="margin-bottom:4px">Purpose Color</div>
+        <input id="fm-purpose-color" type="color" oninput="updateFmPreview()" style="width:100%;height:36px;border-radius:6px;border:1px solid #2A2A3A;background:#1A1A28;cursor:pointer;padding:2px">
+      </div>
+      <div>
+        <div class="sec" style="margin-bottom:4px">Preview</div>
+        <div id="fm-purpose-preview" style="margin-top:4px"></div>
+      </div>
+    </div>
+    <div style="margin-bottom:16px">
+      <div class="sec" style="margin-bottom:4px">Action Label <span style="color:#555;font-weight:400">— uses fund color</span></div>
+      <input id="fm-action" placeholder="e.g. ADD heavy · primary bucket">
+    </div>
+    <div style="display:flex;gap:8px">
+      <button onclick="saveFundMeta()" style="background:#00C89622;border:1px solid #00C89644;color:var(--g)">Save</button>
+      <button onclick="closeModal('modal-fund-meta')" style="background:#E0565622;border:1px solid #E0565644;color:var(--r)">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <script src="app.js"></script>
 </body>
 </html>
