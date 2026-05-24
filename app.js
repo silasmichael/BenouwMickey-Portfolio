@@ -192,7 +192,6 @@ function setPriceButtonState(priceDate) {
 let _dataReady = false; // blocks syncToSupabase until at least one successful read
 let _syncRetries = 0;
 async function syncFromSupabase() {
-  clearTimeout(_syncToTimer); // cancel any pending write — never overwrite with seed data
   if (_syncFromRunning) return;
   _syncFromRunning = true;
   setStatus('syncing');
@@ -200,16 +199,13 @@ async function syncFromSupabase() {
     const { data, error } = await sb.from('portfolio').select('stocks,funds,snapshots').eq('id', 1).single();
     if (error) {
       _syncFromRunning = false;
-      // Retry with backoff: 3s, 8s, 20s — covers iPad wake-from-sleep and flaky connections
-      if (_syncRetries < 3) {
-        const delay = [3000, 8000, 20000][_syncRetries];
-        _syncRetries++;
-        setStatus('syncing');
-        setTimeout(syncFromSupabase, delay);
-      } else {
-        _syncRetries = 0;
-        setStatus('error');
-      }
+      console.error('Supabase read error:', error.message, error.code);
+      // Keep retrying: 3s → 8s → 20s → 30s then every 30s
+      const delays = [3000, 8000, 20000, 30000];
+      const delay = delays[Math.min(_syncRetries, delays.length - 1)];
+      _syncRetries++;
+      setStatus('syncing');
+      setTimeout(syncFromSupabase, delay);
       return;
     }
     if (data) {
@@ -220,10 +216,8 @@ async function syncFromSupabase() {
         if (snapshots._dividends) dividends = snapshots._dividends;
         if (snapshots._reserves)  reserves  = snapshots._reserves;
         if (snapshots._bonds)     bonds     = snapshots._bonds;
-        if (snapshots._bonds)     bonds     = snapshots._bonds;
         if (snapshots.projYear)   projYear  = Math.max(2026, snapshots.projYear);
       }
-      // Ensure plans/goals structure exists (non-destructive)
       if (!snapshots.plans)          snapshots.plans = {};
       if (!snapshots.plans['2026'])  snapshots.plans['2026'] = {Jan:2000000,Feb:2000000,Mar:2000000,Apr:2000000,May:2000000,Jun:2000000,Jul:2000000,Aug:1000000,Sep:1000000,Oct:1000000,Nov:1000000,Dec:1000000};
       if (!snapshots.plans['2027'])  snapshots.plans['2027'] = getDefaultPlan();
@@ -232,8 +226,6 @@ async function syncFromSupabase() {
       if (!snapshots.plans['2030'])  snapshots.plans['2030'] = getDefaultPlan();
       if (!snapshots.goals)          snapshots.goals = {};
       if (!snapshots.goals['2026'])  snapshots.goals['2026'] = 38000000;
-      // One-time wipe of corrupted month snapshot buckets — v3 forces fresh recalc
-      // Stocks, funds, plans, goals, dividends are untouched
       if ((snapshots._snapV || 0) < 3) {
         const KEEP = new Set(['plans','goals','_dividends','_reserves','projYear','_snapV']);
         Object.keys(snapshots).forEach(k => { if (!KEEP.has(k)) delete snapshots[k]; });
@@ -248,12 +240,12 @@ async function syncFromSupabase() {
     _syncRetries = 0;
     setStatus('synced');
   } catch(e) {
+    console.error('syncFromSupabase exception:', e);
     _syncFromRunning = false;
-    if (_syncRetries < 3) {
-      const delay = [3000, 8000, 20000][_syncRetries];
-      _syncRetries++;
-      setTimeout(syncFromSupabase, delay);
-    } else { _syncRetries = 0; setStatus('offline'); }
+    const delay = [3000, 8000, 20000, 30000][Math.min(_syncRetries, 3)];
+    _syncRetries++;
+    setStatus('syncing');
+    setTimeout(syncFromSupabase, delay);
     return;
   }
   finally { _syncFromRunning = false; }
@@ -4023,6 +4015,9 @@ sb.auth.onAuthStateChange(async (event, session) => {
   if (session && session.user.email === ALLOWED_EMAIL) {
     currentToken = session.access_token;
     hideLogin();
+    // Reset any stuck sync state from previous session
+    _syncFromRunning = false;
+    _syncRetries = 0;
     loadFromCache();
     syncFromSupabase();
   } else {
@@ -4037,6 +4032,8 @@ sb.auth.onAuthStateChange(async (event, session) => {
   if (session && session.user.email === ALLOWED_EMAIL) {
     currentToken = session.access_token;
     hideLogin();
+    _syncFromRunning = false;
+    _syncRetries = 0;
     loadFromCache();
     syncFromSupabase();
   } else {
