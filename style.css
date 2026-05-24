@@ -51,7 +51,7 @@ tr:nth-child(odd) td{background:#111118}
 @keyframes spin{100%{transform:rotate(360deg)}}
 .loading-spin{display:inline-block;animation:spin 0.7s linear infinite;width:12px;height:12px;border:2px solid #00C89633;border-top:2px solid var(--g);border-radius:50%;vertical-align:middle}
 .btn-success{background:#00C896!important;color:#000!important;border-color:#00C896!important}
-@media(max-width:640px){
+@media(max-width:640px){ 
   body{overflow-x:hidden}
   .g2{grid-template-columns:minmax(0,1fr)}
   .g3{grid-template-columns:minmax(0,1fr)}
