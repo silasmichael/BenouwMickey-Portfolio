@@ -58,7 +58,7 @@ function showToast(msg, isError) {
 }
 
 function checkEfSave() {
-  const fields = ['ef-curprice','ef-fairvalue','ef-zone','ef-avoidabove'];
+  const fields = ['ef-curprice','ef-fairvalue','ef-zone','ef-avoidabove','ef-signal'];
   const anyFilled = fields.some(id => { const el = document.getElementById(id); return el && el.value.trim() !== ''; });
   const btn = document.getElementById('ef-save-btn');
   if (!btn) return;
@@ -2587,6 +2587,18 @@ const FUND_SIG_COLORS = {
   'WATCH':'#06B6D4','SELL':'#E05656'
 };
 
+function pickStockSignal(sig) {
+  const hidden = document.getElementById('ef-signal');
+  const picker = document.getElementById('ef-signal-picker');
+  if (hidden) { hidden.value = sig; checkEfSave(); }
+  if (picker) {
+    picker.querySelectorAll('button').forEach(btn => {
+      btn.style.opacity     = btn.getAttribute('data-sig') === sig ? '1' : '0.35';
+      btn.style.borderWidth = btn.getAttribute('data-sig') === sig ? '2px' : '1px';
+    });
+  }
+}
+
 function pickFundSignal(prefix, sig) {
   const hiddenId = prefix === 'nf' ? 'nf-signal' : 'fm-signal';
   const pickerId = prefix === 'nf' ? 'nf-signal-picker' : 'fm-signal-picker';
@@ -2631,6 +2643,7 @@ function openEditFundamentals(stockId){
   document.getElementById('ef-stockname').textContent=s.name+' ('+s.id+')';
   document.getElementById('ef-curprice').value  =s.currentPrice||'';
   document.getElementById('ef-signal').value    =s.signal||'';
+  pickStockSignal(s.signal||'HOLD');
   document.getElementById('ef-fairvalue').value =s.fairValue||'';
   document.getElementById('ef-zone').value      =s.buyZone||'';
   document.getElementById('ef-avoidabove').value=s.avoidAbove||'';
