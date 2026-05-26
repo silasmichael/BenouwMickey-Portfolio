@@ -4172,11 +4172,20 @@ async function syncLivePrices() {
   const icon    = document.getElementById('sync-icon');
   const iconMob = document.getElementById('sync-icon-mob');
   const allBtns = [btnDesk, btnMob].filter(Boolean);
-  const originalHTML = allBtns[0] ? allBtns[0].innerHTML : '';
 
-  allBtns.forEach(b => { b.disabled = true; b.style.opacity = '0.7'; });
-  if (icon)    icon.classList.add('loading-spin');
-  if (iconMob) iconMob.classList.add('loading-spin');
+  // Always rebuild spinner span — textContent in button states removes it from DOM
+  allBtns.forEach(b => {
+    const iconId = b.id === 'sync-btn' ? 'sync-icon' : 'sync-icon-mob';
+    b.innerHTML     = '<span id="' + iconId + '" class="loading-spin"></span> Updating...';
+    b.disabled      = true;
+    b.style.opacity = '0.7';
+    b.style.background  = 'transparent';
+    b.style.color       = '#555';
+    b.style.borderColor = '#333';
+  });
+  // Re-grab icon refs after innerHTML rebuild
+  const iconFresh    = document.getElementById('sync-icon');
+  const iconMobFresh = document.getElementById('sync-icon-mob');
 
   try {
     const response = await fetch('https://brwkhnqnsoormvpjqcmd.supabase.co/functions/v1/get-prices', {
@@ -4203,8 +4212,8 @@ async function syncLivePrices() {
     setStatus('synced');
 
     // Success — green, stays clickable so user can re-run if needed
-    if (icon)    icon.classList.remove('loading-spin');
-    if (iconMob) iconMob.classList.remove('loading-spin');
+    if (iconFresh)    iconFresh.classList.remove('loading-spin');
+    if (iconMobFresh) iconMobFresh.classList.remove('loading-spin');
     allBtns.forEach(b => {
       b.textContent      = 'Updated';
       b.style.background = 'var(--g)';
@@ -4229,8 +4238,8 @@ async function syncLivePrices() {
     syncToSupabase().catch(e => console.warn('Background sync failed:', e));
 
   } catch (err) {
-    if (icon)    icon.classList.remove('loading-spin');
-    if (iconMob) iconMob.classList.remove('loading-spin');
+    if (iconFresh)    iconFresh.classList.remove('loading-spin');
+    if (iconMobFresh) iconMobFresh.classList.remove('loading-spin');
     const label = 'Failed — Retry';
     allBtns.forEach(b => {
       b.textContent      = label;
