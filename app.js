@@ -70,7 +70,8 @@ function checkEfSave() {
 
 // ── MIGRATIONS — only seeds missing fields, never overwrites Supabase values
 function applyMigrations(s, f) {
-  if (!snapshots._priceDates) snapshots._priceDates = {};
+  if (!snapshots._priceDates)    snapshots._priceDates    = {};
+  if (!snapshots._lastPriceTime) snapshots._lastPriceTime = null;
   s.forEach(os => {
     const seed = SEED_STOCKS.find(x => x.id === os.id);
     if (seed) {
@@ -205,6 +206,21 @@ function setPriceButtonState() {
   const updToday   = expKeys.filter(k => priceDates[k] && new Date(priceDates[k]).toDateString() === tradingDay);
   const isFull     = expKeys.length > 0 && updToday.length === expKeys.length;
   const isPartial  = updToday.length > 0 && !isFull;
+
+  // DSE market closes 4:30pm EAT (UTC+3 = 13:30 UTC)
+  // If all prices fetched today but BEFORE close, and it is now AFTER close — prompt for closing prices
+  const nowUTC         = new Date();
+  const nowEAT         = nowUTC.getUTCHours() * 60 + nowUTC.getUTCMinutes() + 3 * 60; // mins since midnight EAT
+  const marketCloseMins = 16 * 60 + 30; // 4:30pm EAT in mins
+  const marketClosed   = nowEAT >= marketCloseMins;
+  const isToday        = new Date().toDateString() === tradingDay;
+  const fetchedPreClose = isFull && isToday && updToday.some(k => {
+    const d = new Date(priceDates[k]);
+    const fetchEATMins = d.getUTCHours() * 60 + d.getUTCMinutes() + 3 * 60;
+    return fetchEATMins < marketCloseMins;
+  });
+  const needsClosingPrices = fetchedPreClose && marketClosed;
+
   const allBtns = [
     document.getElementById('sync-btn'),
     document.getElementById('sync-btn-mob')
@@ -213,11 +229,16 @@ function setPriceButtonState() {
     b.disabled         = false;
     b.style.opacity    = '1';
     b.style.cursor     = 'pointer';
-    if (isFull) {
+    if (isFull && !needsClosingPrices) {
       b.textContent      = 'Updated';
       b.style.background = 'var(--g)';
       b.style.color      = '#000';
       b.style.borderColor= 'var(--g)';
+    } else if (needsClosingPrices) {
+      b.textContent      = 'Get Closing Prices';
+      b.style.background = 'var(--a)';
+      b.style.color      = '#000';
+      b.style.borderColor= 'var(--a)';
     } else if (isPartial) {
       b.textContent      = 'Partial Update';
       b.style.background = 'var(--a)';
@@ -276,6 +297,7 @@ async function syncFromSupabase() {
       applyMigrations(stocks, funds);
       updateMonthlySnapshots();
       renderAll(); updateHeader();
+      if (snapshots._lastPriceTime) stampPriceUpdate(snapshots._lastPriceTime);
       saveToCache();
       _dataReady = true;
     }
@@ -415,14 +437,22 @@ function inBuyZone(s) {
   if (!nums || nums.length < 2) return false;
   return s.currentPrice >= parseFloat(nums[0]) && s.currentPrice <= parseFloat(nums[1]);
 }
-function stampPriceUpdate(dateStr) {
-  var now = new Date();
+function stampPriceUpdate(isoOrDateStr) {
   var pad = function(n){ return String(n).padStart(2,'0'); };
   var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  var datePart = dateStr ? dateStr : now.getDate() + ' ' + months[now.getMonth()];
-  var txt = 'Prices as of ' + datePart + ', ' + pad(now.getHours()) + ':' + pad(now.getMinutes());
+  var ref, datePart, timePart;
+  // If a full ISO string (contains T), parse it for both date and time
+  if (isoOrDateStr && isoOrDateStr.includes('T')) {
+    ref = new Date(isoOrDateStr);
+    datePart = ref.getDate() + ' ' + months[ref.getMonth()];
+    timePart  = pad(ref.getHours()) + ':' + pad(ref.getMinutes());
+  } else {
+    ref = new Date();
+    datePart = isoOrDateStr ? isoOrDateStr : ref.getDate() + ' ' + months[ref.getMonth()];
+    timePart  = pad(ref.getHours()) + ':' + pad(ref.getMinutes());
+  }
   var el = document.getElementById('hdr-price-time');
-  if (el) { el.textContent = txt; el.style.color = '#00C89688'; }
+  if (el) { el.textContent = 'Prices as of ' + datePart + ', ' + timePart; el.style.color = '#00C89688'; }
 }
 
 function cS(s) {
@@ -1694,7 +1724,10 @@ function editBondYield() {
 
 function _markPriceKeyUpdated(key) {
   if (!snapshots._priceDates) snapshots._priceDates = {};
-  snapshots._priceDates[key] = new Date().toISOString();
+  const _ts = new Date().toISOString();
+  snapshots._priceDates[key] = _ts;
+  snapshots._lastPriceTime   = _ts;
+  stampPriceUpdate(_ts);
   saveToCache();
   setPriceButtonState();
 }
@@ -4166,7 +4199,7 @@ async function syncLivePrices() {
     // Update UI immediately
     if (typeof renderAll    === 'function') renderAll();
     if (typeof updateHeader === 'function') updateHeader();
-    stampPriceUpdate(p['_igrowthDate'] || null);
+    stampPriceUpdate(snapshots._lastPriceTime || p['_igrowthDate'] || null);
     setStatus('synced');
 
     // Success — green, stays clickable so user can re-run if needed
@@ -4185,6 +4218,7 @@ async function syncLivePrices() {
     // Write today's ISO date into snapshots._priceDates for every key we received
     if (!snapshots._priceDates) snapshots._priceDates = {};
     const _now = new Date().toISOString();
+    snapshots._lastPriceTime = _now;
     const _expKeys = [
       ...(typeof stocks !== 'undefined' ? stocks.map(s => s.id) : []),
       ...(typeof funds  !== 'undefined' ? funds.map(f => f.id)  : []),
