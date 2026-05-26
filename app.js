@@ -164,10 +164,10 @@ function signOut() {
 
 // ── LOCAL STORAGE CACHE
 const CACHE_KEY = 'portfolio_cache_v1';
-function saveToCache(priceDate) {
+function saveToCache(priceDate, updatedKeys) {
   try {
     const today = priceDate || null;
-    localStorage.setItem(CACHE_KEY, JSON.stringify({ stocks, funds, snapshots, ts: Date.now(), priceDate: today }));
+    localStorage.setItem(CACHE_KEY, JSON.stringify({ stocks, funds, snapshots, ts: Date.now(), priceDate: today, updatedKeys: updatedKeys || [] }));
   } catch(_) {}
 }
 function loadFromCache() {
@@ -184,13 +184,20 @@ function loadFromCache() {
     updateMonthlySnapshots();
     renderAll(); updateHeader();
     setStatus('syncing');
-    setPriceButtonState(d.priceDate || null);
+    setPriceButtonState(d.priceDate || null, d.updatedKeys || []);
     return true;
   } catch(_) { return false; }
 }
-function setPriceButtonState(priceDate) {
-  const today = new Date().toDateString();
-  const isToday = priceDate && new Date(priceDate).toDateString() === today;
+function setPriceButtonState(priceDate, updatedKeys) {
+  const today      = new Date().toDateString();
+  const isToday    = priceDate && new Date(priceDate).toDateString() === today;
+  const updKeys    = updatedKeys || [];
+  const expKeys    = [
+    ...(typeof stocks !== 'undefined' ? stocks.map(s => s.id) : []),
+    ...(typeof funds  !== 'undefined' ? funds.map(f => f.id)  : []),
+  ];
+  const isFull     = isToday && expKeys.length > 0 && expKeys.every(k => updKeys.includes(k));
+  const isPartial  = isToday && updKeys.length > 0 && !isFull;
   const allBtns = [
     document.getElementById('sync-btn'),
     document.getElementById('sync-btn-mob')
@@ -199,11 +206,16 @@ function setPriceButtonState(priceDate) {
     b.disabled         = false;
     b.style.opacity    = '1';
     b.style.cursor     = 'pointer';
-    if (isToday) {
+    if (isFull) {
       b.textContent      = 'Updated';
       b.style.background = 'var(--g)';
       b.style.color      = '#000';
       b.style.borderColor= 'var(--g)';
+    } else if (isPartial) {
+      b.textContent      = 'Partial Update';
+      b.style.background = 'var(--a)';
+      b.style.color      = '#000';
+      b.style.borderColor= 'var(--a)';
     } else {
       b.innerHTML        = '<span id="' + (b.id === 'sync-btn' ? 'sync-icon' : 'sync-icon-mob') + '"></span> Update Prices';
       b.style.background = 'transparent';
@@ -770,7 +782,7 @@ function renderOverview() {
           <div style="font-size:9px;color:#444;margin-top:4px">S: ${sReal>=0?'+':''}${fT(Math.round(sReal))} · F: ${fReal>=0?'+':''}${fT(Math.round(fReal))}</div>
         </div>`:''}
 
-        <div style="background:#0D0D1A;border-radius:8px;padding:10px 14px;flex:1;min-width:100px">
+        <div style="background:#0D0D1A;-radius:8px;padding:10px 14px;flex:1;min-width:100px">
           <div style="font-size:9px;color:#555;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Total Profit</div>
           <div style="font-size:15px;font-weight:800;color:${cl(totG)}">${totG>=0?'+':''}${fT(Math.round(totG))}</div>
           <div style="font-size:9px;color:#444;margin-top:4px">Unreal: ${pc(roi)} · All-in: ${pc(roiAll)}</div>
@@ -1673,12 +1685,26 @@ function editBondYield() {
   setTimeout(()=>document.getElementById('modal-edit-input').focus(),100);
 }
 
+function _markPriceKeyUpdated(key) {
+  try {
+    const today   = new Date().toDateString();
+    const raw     = localStorage.getItem(CACHE_KEY);
+    const cached  = raw ? JSON.parse(raw) : {};
+    const cDate   = cached.priceDate ? new Date(cached.priceDate).toDateString() : null;
+    const existing = (cDate === today) ? (cached.updatedKeys || []) : [];
+    if (!existing.includes(key)) existing.push(key);
+    const iso = (cDate === today && cached.priceDate) ? cached.priceDate : new Date().toISOString();
+    saveToCache(iso, existing);
+    setPriceButtonState(iso, existing);
+  } catch(_) {}
+}
 function confirmEdit() {
   const val = parseFloat(document.getElementById('modal-edit-input').value);
   if (!val || isNaN(val) || val <= 0) { showToast('Enter a valid positive number', true); return; }
   if (_editCtx.type === 'stock') {
     stocks[_editCtx.index].currentPrice = val;
     stampPriceUpdate();
+    _markPriceKeyUpdated(stocks[_editCtx.index].id);
   } else if (_editCtx.type === 'bond') {
     TZ_BOND_YIELD = val;
   } else if (_editCtx.type === 'rate') {
@@ -1686,6 +1712,7 @@ function confirmEdit() {
   } else {
     funds[_editCtx.index].nav = val;
     stampPriceUpdate();
+    _markPriceKeyUpdated(funds[_editCtx.index].id);
   }
   closeModal('modal-edit');
   const _oids = getOpenIds();
@@ -4142,21 +4169,20 @@ async function syncLivePrices() {
     stampPriceUpdate(p['_igrowthDate'] || null);
     setStatus('synced');
 
-    // Success — green, stays clickable so user can re-run if needed
+    // Determine which expected keys came back
+    const _expKeys  = [
+      ...(typeof stocks !== 'undefined' ? stocks.map(s => s.id) : []),
+      ...(typeof funds  !== 'undefined' ? funds.map(f => f.id)  : []),
+    ];
+    const _updKeys  = _expKeys.filter(k => p[k] != null);
+    const _isFull   = _updKeys.length === _expKeys.length;
+
+    // Success — green if full, amber if partial
     if (icon)    icon.classList.remove('loading-spin');
     if (iconMob) iconMob.classList.remove('loading-spin');
-    allBtns.forEach(b => {
-      b.textContent      = 'Updated';
-      b.style.background = 'var(--g)';
-      b.style.color      = '#000';
-      b.style.borderColor= 'var(--g)';
-      b.style.opacity    = '1';
-      b.style.cursor     = 'pointer';
-      b.disabled         = false;
-    });
-
-    // Save with today's date so button state persists across reloads
-    saveToCache(new Date().toISOString());
+    const _priceISO = new Date().toISOString();
+    saveToCache(_priceISO, _updKeys);
+    setPriceButtonState(_priceISO, _updKeys);
     syncToSupabase().catch(e => console.warn('Background sync failed:', e));
 
   } catch (err) {
