@@ -1742,6 +1742,9 @@ function confirmEdit() {
     TZ_BOND_YIELD = val;
   } else if (_editCtx.type === 'rate') {
     reserves[_editCtx.ri].rate = val;
+  } else if (_editCtx.type === 'goal') {
+    if (!snapshots.goals) snapshots.goals = {};
+    snapshots.goals[_editCtx.yrStr] = Math.round(val);
   } else {
     funds[_editCtx.index].nav = val;
     stampPriceUpdate();
@@ -2937,14 +2940,11 @@ function editMonthPlan(yrStr, mKey) {
 
 function editYearGoal(yrStr) {
   if (!snapshots.goals) snapshots.goals = {};
-  const cur = snapshots.goals[yrStr] || 0;
-  const raw = prompt(`Portfolio goal for ${yrStr} (TSh):`, cur);
-  if (raw === null) return;
-  const val = parseFloat(raw.replace(/,/g,''));
-  if (isNaN(val) || val <= 0) { showToast('Enter a valid positive amount', true); return; }
-  snapshots.goals[yrStr] = Math.round(val);
-  persist();
-  renderProjection();
+  _editCtx = { type: 'goal', yrStr: yrStr };
+  document.getElementById('modal-edit-title').textContent = 'Portfolio Goal ' + yrStr + ' (TSh)';
+  document.getElementById('modal-edit-input').value = snapshots.goals[yrStr] || '';
+  openModal('modal-edit');
+  setTimeout(() => document.getElementById('modal-edit-input').focus(), 100);
 }
 
 function downloadProjectionPDF() {
