@@ -191,36 +191,56 @@ function loadFromCache() {
 }
 function getMostRecentTradingDay() {
   const d = new Date();
-  const day = d.getDay(); // 0=Sun, 6=Sat
-  if (day === 0) d.setDate(d.getDate() - 2); // Sunday → Friday
-  if (day === 6) d.setDate(d.getDate() - 1); // Saturday → Friday
+  const day = d.getDay();
+  if (day === 0) d.setDate(d.getDate() - 2);
+  if (day === 6) d.setDate(d.getDate() - 1);
   return d.toDateString();
 }
+function getNextTradingDay(fromISO) {
+  const d = new Date(fromISO);
+  d.setDate(d.getDate() + 1);
+  while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
+  return d;
+}
 function setPriceButtonState() {
-  const priceDates = (snapshots && snapshots._priceDates) ? snapshots._priceDates : {};
-  const tradingDay = getMostRecentTradingDay();
-  const expKeys    = [
+  const priceDates      = (snapshots && snapshots._priceDates) ? snapshots._priceDates : {};
+  const marketCloseMins = 16 * 60 + 30; // 4:30pm EAT in mins since midnight
+  const nowUTC          = new Date();
+  const nowEATMins      = nowUTC.getUTCHours() * 60 + nowUTC.getUTCMinutes() + 3 * 60;
+  const tradingDay      = getMostRecentTradingDay();
+  const expKeys         = [
     ...(typeof stocks !== 'undefined' ? stocks.map(s => s.id) : []),
     ...(typeof funds  !== 'undefined' ? funds.map(f => f.id)  : []),
   ];
-  const updToday   = expKeys.filter(k => priceDates[k] && new Date(priceDates[k]).toDateString() === tradingDay);
-  const isFull     = expKeys.length > 0 && updToday.length === expKeys.length;
-  const isPartial  = updToday.length > 0 && !isFull;
 
-  // DSE market closes 4:30pm EAT (UTC+3 = 13:30 UTC)
-  // If all prices fetched today but BEFORE close, and it is now AFTER close — prompt for closing prices
-  const nowUTC         = new Date();
-  const nowEAT         = nowUTC.getUTCHours() * 60 + nowUTC.getUTCMinutes() + 3 * 60; // mins since midnight EAT
-  const marketCloseMins = 16 * 60 + 30; // 4:30pm EAT in mins
-  const marketClosed   = nowEAT >= marketCloseMins;
-  const isToday        = new Date().toDateString() === tradingDay;
-  const fetchedPreClose = isFull && isToday && updToday.some(k => {
-    const d = new Date(priceDates[k]);
-    const fetchEATMins = d.getUTCHours() * 60 + d.getUTCMinutes() + 3 * 60;
-    return fetchEATMins < marketCloseMins;
-  });
-  const needsClosingPrices = fetchedPreClose && marketClosed;
+  // Check if closing prices from a previous trading day are still valid.
+  // Closing prices (fetched after 4:30pm EAT) stay valid until 4:30pm of the next trading day.
+  const lastFetchISO  = snapshots._lastPriceTime || null;
+  let closingStillValid = false;
+  if (lastFetchISO) {
+    const fetchDate     = new Date(lastFetchISO);
+    const fetchEATMins  = fetchDate.getUTCHours() * 60 + fetchDate.getUTCMinutes() + 3 * 60;
+    const fetchWasClose = fetchEATMins >= marketCloseMins;
+    if (fetchWasClose) {
+      // Prices expire at 4:30pm on the next trading day after the fetch
+      const nextTD      = getNextTradingDay(lastFetchISO);
+      const expireMins  = marketCloseMins; // 4:30pm EAT on nextTD
+      const nowIsNextTD = nowUTC.toDateString() === nextTD.toDateString();
+      const nowIsBefore = nowUTC < nextTD || (nowIsNextTD && nowEATMins < expireMins);
+      // Also check all expected keys were fetched on that closing day
+      const fetchDay    = fetchDate.toDateString();
+      const allOnFetchDay = expKeys.every(k => priceDates[k] && new Date(priceDates[k]).toDateString() === fetchDay);
+      if (allOnFetchDay && nowIsBefore) closingStillValid = true;
+    }
+  }
 
+  const updToday    = expKeys.filter(k => priceDates[k] && new Date(priceDates[k]).toDateString() === tradingDay);
+  const isFull      = expKeys.length > 0 && (updToday.length === expKeys.length || closingStillValid);
+  const isPartial   = !isFull && updToday.length > 0;
+
+  // Prompt for closing prices only if full update was pre-close and market is now closed today
+  const isToday          = new Date().toDateString() === tradingDay;
+  const marketClosed     = nowEATMins >= marketCloseMins;
   const allBtns = [
     document.getElementById('sync-btn'),
     document.getElementById('sync-btn-mob')
@@ -229,16 +249,11 @@ function setPriceButtonState() {
     b.disabled         = false;
     b.style.opacity    = '1';
     b.style.cursor     = 'pointer';
-    if (isFull && !needsClosingPrices) {
+    if (isFull) {
       b.textContent      = 'Updated';
       b.style.background = 'var(--g)';
       b.style.color      = '#000';
       b.style.borderColor= 'var(--g)';
-    } else if (needsClosingPrices) {
-      b.textContent      = 'Get Closing Prices';
-      b.style.background = 'var(--a)';
-      b.style.color      = '#000';
-      b.style.borderColor= 'var(--a)';
     } else if (isPartial) {
       b.textContent      = 'Partial Update';
       b.style.background = 'var(--a)';
