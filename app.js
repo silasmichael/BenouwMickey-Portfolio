@@ -235,8 +235,16 @@ function setPriceButtonState() {
   }
 
   const updToday    = expKeys.filter(k => priceDates[k] && new Date(priceDates[k]).toDateString() === tradingDay);
-  const isFull      = expKeys.length > 0 && (updToday.length === expKeys.length || closingStillValid);
-  const isPartial   = !isFull && updToday.length > 0;
+  // closingStillValid only counts as full if ALL keys were part of that closing fetch
+  // Compare each key's timestamp against _lastPriceTime within a 60s window (same fetch run)
+  const lastFetchTime = lastFetchISO ? new Date(lastFetchISO).getTime() : 0;
+  const allUpdatedInLastFetch = closingStillValid && expKeys.every(k => {
+    if (!priceDates[k]) return false;
+    const diff = Math.abs(new Date(priceDates[k]).getTime() - lastFetchTime);
+    return diff < 60000; // within 60 seconds of the last fetch
+  });
+  const isFull      = expKeys.length > 0 && (updToday.length === expKeys.length || allUpdatedInLastFetch);
+  const isPartial   = !isFull && (updToday.length > 0 || (closingStillValid && !allUpdatedInLastFetch));
 
   // Prompt for closing prices only if full update was pre-close and market is now closed today
   const isToday          = new Date().toDateString() === tradingDay;
@@ -4203,7 +4211,32 @@ async function syncLivePrices() {
   const iconMobFresh = document.getElementById('sync-icon-mob');
 
   try {
-    const response = await fetch('https://brwkhnqnsoormvpjqcmd.supabase.co/functions/v1/get-prices', {
+    // Determine which keys are missing — only fetch those sources
+    const _allKeys     = [
+      ...(typeof stocks !== 'undefined' ? stocks.map(s => s.id) : []),
+      ...(typeof funds  !== 'undefined' ? funds.map(f => f.id)  : []),
+    ];
+    const _tradingDay  = getMostRecentTradingDay();
+    const _priceDates  = (snapshots && snapshots._priceDates) ? snapshots._priceDates : {};
+    const _missingKeys = _allKeys.filter(k => {
+      if (!_priceDates[k]) return true;
+      const fetchDay   = new Date(_priceDates[k]).toDateString();
+      const lastFetch  = snapshots._lastPriceTime ? new Date(snapshots._lastPriceTime).getTime() : 0;
+      const keyTime    = new Date(_priceDates[k]).getTime();
+      const inLastFetch = Math.abs(keyTime - lastFetch) < 60000;
+      // Missing if not updated on the most recent trading day, or not part of the last closing fetch
+      const closingOk  = (() => {
+        if (!snapshots._lastPriceTime) return false;
+        const fetchDate    = new Date(snapshots._lastPriceTime);
+        const fetchEATMins = fetchDate.getUTCHours() * 60 + fetchDate.getUTCMinutes() + 3 * 60;
+        return fetchEATMins >= (16 * 60 + 30) && inLastFetch;
+      })();
+      return fetchDay !== _tradingDay && !closingOk;
+    });
+    const _fetchParam  = _missingKeys.length > 0 && _missingKeys.length < _allKeys.length
+      ? '?keys=' + _missingKeys.join(',')
+      : '';
+    const response = await fetch('https://brwkhnqnsoormvpjqcmd.supabase.co/functions/v1/get-prices' + _fetchParam, {
       method: 'GET',
       headers: { 'Authorization': 'Bearer ' + SB_KEY }
     });
