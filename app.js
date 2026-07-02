@@ -631,7 +631,7 @@ function buildPortfolioChart() {
     return '<div class="card" style="border-color:#00C89622;text-align:center;padding:28px;color:#333;font-size:11px">Not enough data yet — portfolio chart will appear after 2+ months of snapshots.</div>';
   }
 
-  const W = 600, H = 160, PL = 52, PR = 12, PT = 14, PB = 28;
+  const W = 600, H = 160, PL = 52, PR = 12, PT = 24, PB = 28;
   const cW = W - PL - PR, cH = H - PT - PB;
 
   const vals = pts.map(function(p){return p.val;});
@@ -674,9 +674,11 @@ function buildPortfolioChart() {
     return '<circle cx="' + cx(i).toFixed(1) + '" cy="' + cy(p.val).toFixed(1) + '" r="' + (isLast ? 4 : 2.5) + '" fill="' + (isLast ? '#00C896' : '#00C89688') + '"/>';
   }).join('');
 
-  // Last value label
+  // Last value label — flip below the dot when there isn't enough headroom above
   const last = pts[pts.length-1];
   const lastCX = cx(pts.length-1), lastCY = cy(last.val);
+  const lastLblAbove = (lastCY - 9) >= 10;
+  const lastLblY = lastLblAbove ? (lastCY - 9) : (lastCY + 16);
   const lastLbl = last.val >= 1e9 ? (last.val/1e9).toFixed(2)+'B' : last.val >= 1e6 ? (last.val/1e6).toFixed(2)+'M' : Math.round(last.val).toLocaleString();
   const gain = pts.length >= 2 ? last.val - pts[0].val : 0;
   const gainPct = pts[0].val > 0 ? ((gain/pts[0].val)*100).toFixed(1) : '0.0';
@@ -692,7 +694,7 @@ function buildPortfolioChart() {
     + '<path d="' + linePath + '" fill="none" stroke="#00C896" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>'
     + dots
     + xLabels
-    + '<text x="' + (lastCX - 4).toFixed(1) + '" y="' + (lastCY - 9).toFixed(1) + '" text-anchor="end" font-size="9" font-weight="bold" fill="#00C896">TSh ' + lastLbl + '</text>'
+    + '<text x="' + (lastCX - 4).toFixed(1) + '" y="' + lastLblY.toFixed(1) + '" text-anchor="end" font-size="9" font-weight="bold" fill="#00C896">TSh ' + lastLbl + '</text>'
     + '</svg>';
 
   return '<div class="card" style="border-color:#00C89622">'
@@ -864,6 +866,34 @@ function renderOverview() {
         })():'')+`
 
       </div>
+    </div>
+
+    <!-- Allocation across asset classes -->
+    <div class="card">
+      <div class="sec">Portfolio Allocation</div>
+      ${(()=>{
+        const bondsTotal = (bonds&&bonds.length) ? bonds.reduce((s,b)=>s+(b.faceValue||0)*(b.unitsHeld||0),0) : 0;
+        const segs = [
+          {label:'Stocks',   v: ts.v, c:'var(--g)'},
+          {label:'Funds',    v: tf,   c:'var(--t)'},
+          {label:'Reserves', v: rv,   c:'#F59E0B'},
+        ];
+        if (bondsTotal>0) segs.push({label:'Bonds', v: bondsTotal, c:'var(--b)'});
+        const grand = segs.reduce((a,s)=>a+s.v,0) || 1;
+        const live  = segs.filter(s=>s.v>0);
+        const bar = live.map(s=>`<div style="width:${(s.v/grand*100).toFixed(2)}%;background:${s.c}" title="${s.label}"></div>`).join('');
+        const legend = live.map(s=>{
+          const p = (s.v/grand*100).toFixed(1);
+          return `<div style="display:flex;align-items:center;gap:8px;font-size:11px">
+            <div style="width:9px;height:9px;border-radius:50%;background:${s.c};flex-shrink:0"></div>
+            <span style="color:#aaa;min-width:64px">${s.label}</span>
+            <span style="font-weight:800;color:${s.c}">${p}%</span>
+            <span style="color:#555;margin-left:auto">${fT(Math.round(s.v))}</span>
+          </div>`;
+        }).join('');
+        return `<div style="display:flex;height:14px;border-radius:7px;overflow:hidden;background:#1A1A24;margin-bottom:12px">${bar}</div>
+        <div style="display:grid;gap:8px">${legend}</div>`;
+      })()}
     </div>
 
     <!-- Pies -->
@@ -1505,6 +1535,7 @@ function renderProjection() {
   let projPort   = effectiveAnchor;
   let pastAnchor = isFutureYear;
   let cumActual  = 0, cumPlanned = 0;
+  let cumStocks  = 0, cumFunds = 0, cumReserves = 0;
 
   const rows = actualData.map((row, i) => {
     const hasPlan  = row.planned > 0;
@@ -1538,7 +1569,10 @@ function renderProjection() {
     }
 
     // Real monthly return = (portVal - prevPort - deployed) / prevPort
-    cumActual  += row.total;
+    cumActual   += row.total;
+    cumStocks   += row.stocks;
+    cumFunds    += row.funds;
+    cumReserves += row.reserves;
     if (row.planned) cumPlanned += row.planned;
 
     // Plan edit inline
@@ -1693,7 +1727,9 @@ function renderProjection() {
             <tr style="background:#0A1A12;border-top:1px solid #00C89630">
               <td style="font-weight:800;color:var(--g)">TOTAL</td>
               <td style="text-align:right;font-weight:700;color:#666">${fT(Math.round(cumPlanned))}</td>
-              <td colspan="3" style="text-align:right;font-weight:700;color:#888">${fT(Math.round(cumActual))}</td>
+              <td style="text-align:right;font-weight:700;color:var(--g)">${cumStocks>0?fT(Math.round(cumStocks)):'—'}</td>
+              <td style="text-align:right;font-weight:700;color:var(--t)">${cumFunds>0?fT(Math.round(cumFunds)):'—'}</td>
+              <td style="text-align:right;font-weight:700;color:#F59E0B">${cumReserves>0?fT(Math.round(cumReserves)):'—'}</td>
               <td style="text-align:right;font-weight:800;color:var(--g)">${fT(Math.round(cumActual))}</td>
               <td style="text-align:right;font-weight:800;color:${cumDiffC}">${cumDiff>=0?'+':''}${fT(Math.round(cumDiff))}</td>
               <td style="text-align:right;font-weight:800;color:var(--gold)">${fT(Math.round(projPort))}<span style="font-size:8px;color:var(--gold);opacity:.7;display:block">DEC PROJ</span></td>
