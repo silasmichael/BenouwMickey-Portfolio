@@ -622,6 +622,18 @@ function computeXIRR() {
   return { rate: rate*100, flows: cfs.length, spanDays: Math.round(cfs[cfs.length-1].t*365) };
 }
 
+// Per-tranche annualized return. A single buy vs today's value doesn't need Newton's
+// method — it's closed-form: (value/cost)^(365/daysHeld) - 1. This is what makes a
+// tranche bought 3 weeks ago and one bought 8 months ago comparable on the same axis,
+// which raw ROI can't do.
+function trancheXIRR(cost, value, dateStr) {
+  const d = new Date(dateStr);
+  if (isNaN(d) || cost <= 0 || value <= 0) return null;
+  const days = (Date.now() - d.getTime()) / 86400000;
+  if (days < 1) return null; // too fresh to annualize without wild swings
+  return { rate: (Math.pow(value/cost, 365/days) - 1) * 100, days: Math.round(days) };
+}
+
 function inputToDate(v) {
   if (!v) return '';
   const d = new Date(v + 'T00:00:00');
@@ -1046,15 +1058,15 @@ function renderStocks() {
         </tr>`;
       }
       const tg=(s.currentPrice-tr.price)*tr.shares;
-      const troi=((s.currentPrice-tr.price)/tr.price)*100;
       const cv=tr.shares*s.currentPrice;
+      const txr=trancheXIRR(tr.shares*tr.price, cv, tr.date);
       return `<tr>
         <td>${tr.date}</td>
         <td style="text-align:center">${tr.shares}</td>
         <td style="text-align:center;color:#FFAA00">${fT(tr.price)}</td>
         <td style="text-align:center;color:${s.color};font-weight:700">${fT(cv)}</td>
         <td style="text-align:center;color:${cl(tg)};font-weight:700">${tg>=0?'+':''}${fT(Math.round(tg))}</td>
-        <td style="text-align:center;color:${cl(troi)};font-weight:700">${pc(troi)}</td>
+        <td style="text-align:center;color:${txr?cl(txr.rate):'#555'};font-weight:700" ${txr?`title="Annualized over ${txr.days} days held"`:'title="Held under 1 day — too fresh to annualize"'}>${txr?pc(txr.rate):'—'}</td>
         <td style="text-align:center;white-space:nowrap">
           <button onclick="editTranche(${si},${ti})" style="background:#4A90E215;border:1px solid #4A90E230;color:#4A90E2;border-radius:5px;padding:2px 6px;font-size:10px;margin-right:3px">✏</button>
           <button onclick="delTranche(${si},${ti})" style="background:#E0565615;border:1px solid #E0565630;color:var(--r);border-radius:5px;padding:2px 6px;font-size:10px">✕</button>
@@ -1177,7 +1189,7 @@ function renderStocks() {
               <table>
                 <thead><tr>
                   <th style="text-align:left">Date</th><th>Shares</th><th>Buy Price</th>
-                  <th>Curr Value</th><th>Tranche P&L</th><th>ROI</th><th></th>
+                  <th>Curr Value</th><th>Tranche P&L</th><th>XIRR</th><th></th>
                 </tr></thead>
                 <tbody>${trRows}</tbody>
               </table>
@@ -1276,8 +1288,9 @@ function renderFunds() {
       }
       const isO = tr.type==='opening';
       const cv  = tr.units * fn.nav;
-      const troi = (!isO && tr.nav && tr.nav>0) ? ((fn.nav - tr.nav)/tr.nav)*100 : null;
       const tgl  = (!isO && tr.nav) ? (fn.nav - tr.nav)*tr.units : null;
+      const cost = (tr.amount!=null) ? tr.amount : tr.units*(tr.nav||fn.nav);
+      const txr = (!isO) ? trancheXIRR(cost, cv, tr.date) : null;
       return `<tr${isO?' style="opacity:0.6"':''}>
         <td style="color:${isO?'#555':'#ccc'};font-size:11px">${tr.date}</td>
         <td style="text-align:center">${isO
@@ -1288,7 +1301,7 @@ function renderFunds() {
         <td style="text-align:center;color:#FFAA00">${isO?'—':(tr.nav?tr.nav.toFixed(4):'—')}</td>
         <td style="text-align:center;color:${fn.color};font-weight:700">${fT(Math.round(cv))}</td>
         <td style="text-align:center;color:${tgl===null?'#555':cl(tgl)};font-weight:700">${tgl===null?'—':(tgl>=0?'+':'')+fT(Math.round(tgl))}</td>
-        <td style="text-align:center;color:${troi===null?'#555':cl(troi)};font-weight:700">${troi===null?'—':pc(troi)}</td>
+        <td style="text-align:center;color:${txr?cl(txr.rate):'#555'};font-weight:700" ${txr?`title="Annualized over ${txr.days} days held"`:'title="No dated cost basis to annualize (opening balance or too fresh)"'}>${txr?pc(txr.rate):'—'}</td>
         <td style="text-align:center;white-space:nowrap">${!isO?`
           <button onclick="editFundTranche(${fi},${ti})" style="background:#4A90E215;border:1px solid #4A90E230;color:#4A90E2;border-radius:5px;padding:2px 6px;font-size:10px;margin-right:3px">✏</button>
           <button onclick="delFundTranche(${fi},${ti})" style="background:#E0565615;border:1px solid #E0565630;color:var(--r);border-radius:5px;padding:2px 6px;font-size:10px">✕</button>`:''}</td>
@@ -1394,7 +1407,7 @@ function renderFunds() {
               <table>
                 <thead><tr>
                   <th style="text-align:left">Date</th><th>Type</th><th>Amount</th><th>Units</th>
-                  <th>NAV</th><th>Curr Value</th><th>Tranche P&L</th><th>ROI</th><th></th>
+                  <th>NAV</th><th>Curr Value</th><th>Tranche P&L</th><th>XIRR</th><th></th>
                 </tr></thead>
                 <tbody>${txRows}</tbody>
               </table>
@@ -2070,11 +2083,9 @@ function editDividend(i) {
 let _trEditCtx = null;
 
 function parseTrDate(str) {
-  const mm = {Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11};
   if (!str) return 0;
-  const p = str.match(/(\d+)\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{4})/i);
-  if (!p) return 0;
-  return new Date(parseInt(p[3]), mm[p[2]], parseInt(p[1])).getTime();
+  const t = new Date(str).getTime();
+  return isNaN(t) ? 0 : t;
 }
 
 function editTranche(si, ti) {
@@ -3947,13 +3958,12 @@ function renderReserves() {
       <!-- METRICS BAR -->
       <div style="display:flex;flex-wrap:wrap;border-top:1px solid #1A1A24;border-bottom:1px solid #1A1A24;background:#0A0A14">
         ${[
-          ['Rate',`${annRate}%`,color],
-          ['Effective Yield',effY?effY.annualized.toFixed(1)+'%':'—',effYCol],
+          ['Rate',`${annRate}%<div style="font-size:9px;font-weight:700;color:${effYCol};margin-top:2px">${effY?'≈'+effY.annualized.toFixed(1)+'% actual':'no data'}</div>`,color,`Actual annualized return on average balance held, over ${effY?effY.days:0} days — not the stated rate`],
           ['vs 5yr T-Bond',(vsBond>=0?'+':'')+vsBond+'%',bondCol],
           ['Balance',fT(Math.round(bal)),color],
           ['Deposited',fT(Math.round(deposited)),'#888'],
           ['Interest Earned',fT(Math.round(earned)),'#00C896'],
-        ].map(([k,v,c],i,arr)=>`<div onclick="${k==='vs 5yr T-Bond'?'editBondYield()':''}" style="padding:8px 12px;text-align:center;border-right:${i<arr.length-1?'1px solid #1A1A24':'none'};${k==='vs 5yr T-Bond'?'cursor:pointer':''};flex:1;min-width:80px" ${k==='Effective Yield'?`title="Actual annualized return on average balance held, over ${effY?effY.days:0} days — not the stated rate"`:''}><div style="font-size:12px;font-weight:800;color:${c}">${v}</div><div style="font-size:9px;color:#555;text-transform:uppercase;margin-top:1px">${k}</div></div>`).join('')}
+        ].map(([k,v,c,tip],i,arr)=>`<div onclick="${k==='vs 5yr T-Bond'?'editBondYield()':''}" style="padding:8px 12px;text-align:center;border-right:${i<arr.length-1?'1px solid #1A1A24':'none'};${k==='vs 5yr T-Bond'?'cursor:pointer':''};flex:1;min-width:80px" ${tip?`title="${tip}"`:''}><div style="font-size:12px;font-weight:800;color:${c}">${v}</div><div style="font-size:9px;color:#555;text-transform:uppercase;margin-top:1px">${k}</div></div>`).join('')}
       </div>
 
       <!-- EXPANDED BODY -->
