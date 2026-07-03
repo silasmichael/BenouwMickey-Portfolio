@@ -556,6 +556,72 @@ function totals() {
   return {ts,tf,rv,gt:ts.v+tf+rv,sG,fG,fI,totG,totUnreal,totReal,sReal,fReal,sUnreal,fUnreal,totI,roi,roiAll,sv,fv,gain};
 }
 
+// Money-weighted return (XIRR). Unlike roi/roiAll above (which ignore *when* money
+// went in), this finds the single annualized rate that reconciles every dated buy,
+// sell, and dividend against today's holding value. Reserves are deliberately
+// excluded — parked cash isn't a market investment cash flow.
+function computeXIRR() {
+  const flows = [];
+  stocks.forEach(s => {
+    s.tranches.forEach(tr => {
+      const d = new Date(tr.date);
+      if (isNaN(d)) return;
+      if (tr.type === 'sell') flows.push({ d, amt: tr.shares*tr.price - (tr.commission||0) });
+      else flows.push({ d, amt: -(tr.shares*tr.price) });
+    });
+  });
+  funds.forEach(fn => {
+    fn.tranches.forEach(tr => {
+      const d = new Date(tr.date);
+      if (isNaN(d)) return;
+      if (tr.type === 'sell') flows.push({ d, amt: tr.amount||0 });
+      else {
+        const amt = (tr.amount!=null) ? tr.amount : tr.units*(fn.baselineNav||tr.nav||fn.nav);
+        flows.push({ d, amt: -amt });
+      }
+    });
+  });
+  dividends.forEach(dv => {
+    const d = new Date(dv.date);
+    if (isNaN(d)) return;
+    flows.push({ d, amt: Math.round((dv.total||0) * 0.95) }); // net of 5% WHT
+  });
+  if (flows.length < 1) return null;
+  const { ts, tf } = totals();
+  const terminal = ts.v + tf;
+  if (terminal <= 0) return null;
+  flows.push({ d: new Date(), amt: terminal });
+  flows.sort((a,b) => a.d - b.d);
+  const t0 = flows[0].d.getTime();
+  const cfs = flows.map(f => ({ amt: f.amt, t: (f.d.getTime()-t0)/(365*86400000) }));
+  if (!cfs.some(c=>c.amt<0) || !cfs.some(c=>c.amt>0)) return null; // needs both signs to solve
+
+  const npv  = r => cfs.reduce((s,c)=>s + c.amt/Math.pow(1+r, c.t), 0);
+  const dnpv = r => cfs.reduce((s,c)=>s - c.t*c.amt/Math.pow(1+r, c.t+1), 0);
+
+  let rate = 0.15, ok = false;
+  for (let i=0; i<60; i++) {
+    const f = npv(rate), df = dnpv(rate);
+    if (Math.abs(df) < 1e-9) break;
+    const next = rate - f/df;
+    if (!isFinite(next) || next <= -1) break;
+    if (Math.abs(next-rate) < 1e-7) { rate = next; ok = true; break; }
+    rate = next;
+  }
+  if (!ok || !isFinite(rate)) {
+    let lo=-0.9, hi=5, flo=npv(lo), fhi=npv(hi);
+    if (flo*fhi > 0) return null;
+    for (let i=0; i<200; i++) {
+      const mid=(lo+hi)/2, fm=npv(mid);
+      if (Math.abs(fm) < 1) { rate=mid; ok=true; break; }
+      if ((fm>0) === (flo>0)) { lo=mid; flo=fm; } else hi=mid;
+      rate = mid;
+    }
+  }
+  if (!ok) return null;
+  return { rate: rate*100, flows: cfs.length, spanDays: Math.round(cfs[cfs.length-1].t*365) };
+}
+
 function inputToDate(v) {
   if (!v) return '';
   const d = new Date(v + 'T00:00:00');
@@ -849,6 +915,12 @@ function renderOverview() {
           <div style="font-size:15px;font-weight:800;color:${cl(totG)}">${totG>=0?'+':''}${fT(Math.round(totG))}</div>
           <div style="font-size:9px;color:#444;margin-top:4px">Unreal: ${pc(roi)} · All-in: ${pc(roiAll)}</div>
         </div>
+
+        ${(()=>{const x=computeXIRR();return x?`<div style="background:#140A1A;border:1px solid #2A1A2A;border-radius:8px;padding:10px 14px;flex:1;min-width:100px" title="Annualized, time-weighted return across every dated buy/sell/dividend vs today's value">
+          <div style="font-size:9px;color:#555;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Money-Weighted Return</div>
+          <div style="font-size:15px;font-weight:800;color:${cl(x.rate)}">${x.rate>=0?'+':''}${x.rate.toFixed(1)}%</div>
+          <div style="font-size:9px;color:#444;margin-top:4px">XIRR · ${x.flows} cash flows</div>
+        </div>`:'';})()}
 
         ${reserves.length>0?`<div style="background:#1A130A;border:1px solid #2A1E0A;border-radius:8px;padding:10px 14px;flex:1;min-width:100px">
           <div style="font-size:9px;color:#555;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Reserves</div>
@@ -3785,6 +3857,33 @@ function reserveInterestEarned(r) {
 function reserveTotalDeposited(r) {
   return r.transactions.filter(t=>t.type==='deposit').reduce((a,t)=>a+t.amount,0);
 }
+// Trailing effective yield — actual annualized return on the money's time-weighted
+// average balance, as opposed to the stated nominal rate. Money that moves in and
+// out fast earns far less than the quoted rate; this shows what it really earned.
+function reserveEffectiveYield(r) {
+  const txs = [...r.transactions]
+    .map(t => ({...t, d: new Date(t.date)}))
+    .filter(t => !isNaN(t.d))
+    .sort((a,b) => a.d - b.d);
+  if (txs.length === 0) return null;
+  let bal = 0, weighted = 0, totalDays = 0, prev = txs[0].d;
+  txs.forEach(t => {
+    const days = (t.d - prev) / 86400000;
+    weighted += bal * days; totalDays += days;
+    if (t.type === 'deposit' || t.type === 'interest') bal += t.amount;
+    else if (t.type === 'withdraw' || t.type === 'buy_shares') bal -= t.amount;
+    prev = t.d;
+  });
+  const today = new Date();
+  const finalDays = (today - prev) / 86400000;
+  weighted += bal * finalDays; totalDays += finalDays;
+  if (totalDays <= 0) return null;
+  const avgBal = weighted / totalDays;
+  if (avgBal <= 0) return null;
+  const earned = reserveInterestEarned(r);
+  const annualized = (earned / avgBal) * (365 / totalDays) * 100;
+  return { avgBal, annualized, days: Math.round(totalDays) };
+}
 
 
 // ── RESERVES TAB
@@ -3800,6 +3899,8 @@ function renderReserves() {
     const vsBond  = (annRate - TZ_BOND_YIELD).toFixed(2);
     const bondCol = vsBond >= 0 ? '#00C896' : '#E05656';
     const color   = r.color || mColors[ri % mColors.length];
+    const effY    = reserveEffectiveYield(r);
+    const effYCol = effY ? (effY.annualized >= annRate ? '#00C896' : effY.annualized >= annRate*0.6 ? '#F59E0B' : '#E05656') : '#555';
 
     // Transaction rows
     const txRows = [...r.transactions].reverse().map((t,ti)=>{
@@ -3847,11 +3948,12 @@ function renderReserves() {
       <div style="display:flex;flex-wrap:wrap;border-top:1px solid #1A1A24;border-bottom:1px solid #1A1A24;background:#0A0A14">
         ${[
           ['Rate',`${annRate}%`,color],
+          ['Effective Yield',effY?effY.annualized.toFixed(1)+'%':'—',effYCol],
           ['vs 5yr T-Bond',(vsBond>=0?'+':'')+vsBond+'%',bondCol],
           ['Balance',fT(Math.round(bal)),color],
           ['Deposited',fT(Math.round(deposited)),'#888'],
           ['Interest Earned',fT(Math.round(earned)),'#00C896'],
-        ].map(([k,v,c],i,arr)=>`<div onclick="${k==='vs 5yr T-Bond'?'editBondYield()':''}" style="padding:8px 12px;text-align:center;border-right:${i<arr.length-1?'1px solid #1A1A24':'none'};${k==='vs 5yr T-Bond'?'cursor:pointer':''};flex:1;min-width:80px"><div style="font-size:12px;font-weight:800;color:${c}">${v}</div><div style="font-size:9px;color:#555;text-transform:uppercase;margin-top:1px">${k}</div></div>`).join('')}
+        ].map(([k,v,c],i,arr)=>`<div onclick="${k==='vs 5yr T-Bond'?'editBondYield()':''}" style="padding:8px 12px;text-align:center;border-right:${i<arr.length-1?'1px solid #1A1A24':'none'};${k==='vs 5yr T-Bond'?'cursor:pointer':''};flex:1;min-width:80px" ${k==='Effective Yield'?`title="Actual annualized return on average balance held, over ${effY?effY.days:0} days — not the stated rate"`:''}><div style="font-size:12px;font-weight:800;color:${c}">${v}</div><div style="font-size:9px;color:#555;text-transform:uppercase;margin-top:1px">${k}</div></div>`).join('')}
       </div>
 
       <!-- EXPANDED BODY -->
