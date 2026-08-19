@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="style.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
 
@@ -67,6 +68,7 @@
     <button class="tab" onclick="showTab('reserves',this)">Reserves</button>
     <button class="tab" onclick="showTab('projection',this)">Projection</button>
     <button class="tab" onclick="showTab('planner',this)">📐 Planner</button>
+    <button class="tab" onclick="showTab('radar',this)">📡 Radar</button>
   </div>
 </div>
 
@@ -78,6 +80,7 @@
 <div id="pane-projection" class="pane"></div>
 <div id="pane-bonds" class="pane"></div>
 <div id="pane-planner" class="pane"></div>
+<div id="pane-radar" class="pane"></div>
 
 <!-- MODAL: ADD NEW STOCK -->
 <div class="modal-bg" id="modal-stock">
@@ -500,3 +503,4 @@
 <script src="app.js"></script>
 </body>
 </html>
+
