@@ -4648,3 +4648,5 @@ function generateMockDepthData(ticker, days) {
 // Ensure the tab system recognizes the new 'radar' pane.
 // Note: Your existing showTab() function in app.js should already handle hiding/showing panes based on the ID.
 
+// Initialize the Radar Tab UI
+renderRadar();
