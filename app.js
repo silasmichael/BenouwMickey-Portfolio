@@ -4464,7 +4464,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.body.style.visibility = 'visible';
 });
 // ============================================================================
-// 📡 MARKET RADAR & SCORING ENGINE
+// 📡 MARKET RADAR & SCORING ENGINE (FUNDAMENTALS + DEPTH)
 // ============================================================================
 
 let radarPriceChartInstance = null;
@@ -4475,9 +4475,8 @@ async function renderRadar() {
   const pane = document.getElementById('pane-radar');
   if (!pane) return;
 
-  pane.innerHTML = `<div style="text-align:center; padding: 20px; color: #888;">Fetching available market counters...</div>`;
+  pane.innerHTML = `<div style="text-align:center; padding: 20px; color: #888;">Fetching market counters & fundamental database...</div>`;
 
-  // Fetch unique symbols from market_depth_logs table
   let tickers = [];
   try {
     const { data: logs, error } = await sb.from('market_depth_logs').select('symbol');
@@ -4488,15 +4487,13 @@ async function renderRadar() {
     console.error("Error fetching tickers:", err);
   }
 
-  // Default fallback tickers if database table is currently empty
   if (tickers.length === 0) {
     tickers = ["CRDB", "NMB", "NICOL", "SWIS", "TBL", "TCCL", "VODA", "DSE", "MCB", "DCB", "TICL"];
   }
 
-  // Build Radar UI with Controls, Table, and Chart Containers
   pane.innerHTML = `
     <div style="padding: 16px; max-width: 1200px; margin: 0 auto;">
-      <div style="font-size:18px;font-weight:900;color:var(--g);margin-bottom:16px;">📡 Market Radar & Quantitative Depth</div>
+      <div style="font-size:18px;font-weight:900;color:var(--g);margin-bottom:16px;">📡 Market Radar & Quantitative Scoring Engine</div>
       
       <!-- Top Control Bar -->
       <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:12px; margin-bottom: 20px; background: #0D1117; padding: 15px; border-radius: 8px; border: 1px solid #1E2A3A;">
@@ -4520,14 +4517,14 @@ async function renderRadar() {
       <!-- Main Results Display -->
       <div id="radar-results">
         <div style="text-align:center; padding: 40px; color: #555; font-size: 12px; border: 1px dashed #333; border-radius: 8px;">
-          Select a company above to run historical analysis and view market depth charts.
+          Select a company above to run 100-point fundamental & depth scoring analysis.
         </div>
       </div>
     </div>
   `;
 }
 
-// 2. Fetch Historical Logs and Render Analysis + Charts
+// 2. Fetch Historical Logs & Fundamental Data to Render Workspace
 async function loadRadarData() {
   const ticker = document.getElementById('radar-stock-select')?.value;
   const days = parseInt(document.getElementById('radar-timeframe')?.value || 90);
@@ -4535,14 +4532,14 @@ async function loadRadarData() {
 
   if (!ticker || !resultsDiv) {
     if (resultsDiv) {
-      resultsDiv.innerHTML = `<div style="text-align:center; padding: 40px; color: #555; font-size: 12px; border: 1px dashed #333; border-radius: 8px;">Select a company above to run historical analysis.</div>`;
+      resultsDiv.innerHTML = `<div style="text-align:center; padding: 40px; color: #555; font-size: 12px; border: 1px dashed #333; border-radius: 8px;">Select a company above to run quantitative analysis.</div>`;
     }
     return;
   }
 
-  resultsDiv.innerHTML = `<div style="text-align:center; padding:30px; color:#F4A623;">Crunching logs for ${ticker}...</div>`;
+  resultsDiv.innerHTML = `<div style="text-align:center; padding:30px; color:#F4A623;">Evaluating fundamentals & market depth for ${ticker}...</div>`;
 
-  // Query market_depth_logs from Supabase
+  // Fetch Market Depth Logs
   let depthData = [];
   try {
     const { data, error } = await sb
@@ -4552,37 +4549,46 @@ async function loadRadarData() {
       .order('snapshot_date', { ascending: false })
       .limit(days);
 
-    if (!error && data) {
-      depthData = data;
-    }
+    if (!error && data) depthData = data;
   } catch (err) {
     console.error("Database query error:", err);
   }
 
-  // Handle case where no historical data is logged yet
+  // Fetch Stock Fundamentals & Sector details from Supabase 'stocks' table
+  let stockDetails = null;
+  try {
+    const { data } = await sb.from('stocks').select('*').or(`ticker.eq.${ticker},symbol.eq.${ticker}`).single();
+    if (data) stockDetails = data;
+  } catch (e) {
+    console.warn("Fundamental record fetch soft-fail:", e);
+  }
+
   if (depthData.length === 0) {
     resultsDiv.innerHTML = `
       <div style="text-align:center; padding: 30px; color: #888; background: #0D1117; border: 1px solid #1E2A3A; border-radius: 8px;">
         ⚠️ No snapshot logs found for <strong>${ticker}</strong> in <code>market_depth_logs</code> yet.<br>
-        <span style="font-size:11px; color:#555; display:block; margin-top:6px;">Click "Update Prices" to capture today's first daily snapshot.</span>
+        <span style="font-size:11px; color:#555; display:block; margin-top:6px;">Run your daily update script to start capturing snapshots.</span>
       </div>
     `;
     return;
   }
 
-  // Check if stock is held in portfolio for profit targeting
+  // Find holding details for 50% profit check
   let userHolding = null;
   if (typeof stocks !== 'undefined' && Array.isArray(stocks)) {
     userHolding = stocks.find(s => s.ticker === ticker || s.symbol === ticker);
   }
 
+  // Calculate fundamental score once for this company
+  const fundScore = calculateFundamentalScore(stockDetails, ticker);
+
   let tableRows = '';
   const latestRow = depthData[0];
-  const latestAnalysis = calculateQuantSignal(latestRow, userHolding, ticker);
+  const latestAnalysis = calculateQuantSignal(latestRow, fundScore, userHolding, ticker);
 
-  // Build table rows
+  // Build Table Rows
   depthData.forEach((row) => {
-    const analysis = calculateQuantSignal(row, userHolding, ticker);
+    const analysis = calculateQuantSignal(row, fundScore, userHolding, ticker);
     const dateStr = row.snapshot_date || (row.created_at ? row.created_at.split('T')[0] : 'N/A');
     const closePx = row.close_price || 0;
     const bids = row.outstanding_bid || 0;
@@ -4596,6 +4602,15 @@ async function loadRadarData() {
         <td style="padding: 10px; font-size: 11px; color:#00C896;">${(bids / 1000).toLocaleString(undefined, {maximumFractionDigits:1})}k</td>
         <td style="padding: 10px; font-size: 11px; color:#E05656;">${(offers / 1000).toLocaleString(undefined, {maximumFractionDigits:1})}k</td>
         <td style="padding: 10px; font-size: 11px; color:#AAA;">${turnover > 0 ? turnover.toLocaleString() : '—'}</td>
+        
+        <!-- NEW COMPOSITE SCORE COLUMN -->
+        <td style="padding: 10px; font-size: 11px; font-weight: bold; color: ${analysis.color};">
+          <div style="display:flex; align-items:center; gap:6px;">
+            <span>${analysis.compositeScore}/100</span>
+            <span style="font-size:9px; color:#666;">(F:${fundScore.score} + D:${analysis.depthScore})</span>
+          </div>
+        </td>
+
         <td style="padding: 10px; font-size: 11px;">
           <span style="background:${analysis.color}22; color:${analysis.color}; border:1px solid ${analysis.color}44; padding: 3px 7px; border-radius: 4px; font-weight:bold; white-space:nowrap;">
             ${analysis.signal}
@@ -4606,7 +4621,7 @@ async function loadRadarData() {
     `;
   });
 
-  // Render workspace layout (Metrics + Charts + Table)
+  // Workspace Layout Render
   resultsDiv.innerHTML = `
     <!-- Top Summary Banner -->
     <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap:10px; margin-bottom:15px;">
@@ -4615,16 +4630,16 @@ async function loadRadarData() {
         <div style="font-size:18px; font-weight:800; color:#F0EAD6; font-family:Georgia,serif;">TZS ${(latestRow.close_price || 0).toLocaleString()}</div>
       </div>
       <div style="background:#0D1117; border:1px solid #1E2A3A; padding:12px; border-radius:8px;">
-        <div style="font-size:9px; color:#666; text-transform:uppercase;">Buy Queue (Bids)</div>
-        <div style="font-size:18px; font-weight:800; color:#00C896;">${((latestRow.outstanding_bid || 0)/1000).toFixed(1)}k</div>
+        <div style="font-size:9px; color:#666; text-transform:uppercase;">Fundamental Score</div>
+        <div style="font-size:18px; font-weight:800; color:#00C896;">${fundScore.score} <span style="font-size:11px; color:#666;">/ 60</span></div>
       </div>
       <div style="background:#0D1117; border:1px solid #1E2A3A; padding:12px; border-radius:8px;">
-        <div style="font-size:9px; color:#666; text-transform:uppercase;">Sell Queue (Offers)</div>
-        <div style="font-size:18px; font-weight:800; color:#E05656;">${((latestRow.outstanding_offer || 0)/1000).toFixed(1)}k</div>
+        <div style="font-size:9px; color:#666; text-transform:uppercase;">Latest Composite Score</div>
+        <div style="font-size:18px; font-weight:800; color:${latestAnalysis.color};">${latestAnalysis.compositeScore} <span style="font-size:11px; color:#666;">/ 100</span></div>
       </div>
       <div style="background:#0D1117; border:1px solid #1E2A3A; padding:12px; border-radius:8px;">
-        <div style="font-size:9px; color:#666; text-transform:uppercase;">Current Signal</div>
-        <div style="font-size:14px; font-weight:800; color:${latestAnalysis.color}; margin-top:2px;">${latestAnalysis.signal}</div>
+        <div style="font-size:9px; color:#666; text-transform:uppercase;">Action Signal</div>
+        <div style="font-size:13px; font-weight:800; color:${latestAnalysis.color}; margin-top:3px;">${latestAnalysis.signal}</div>
       </div>
     </div>
 
@@ -4637,16 +4652,16 @@ async function loadRadarData() {
         </div>
       </div>
       <div style="background:#0D1117; border:1px solid #1E2A3A; padding:15px; border-radius:8px;">
-        <div style="font-size:12px; font-weight:700; color:var(--g); margin-bottom:10px;">Demand vs Supply Pressure</div>
+        <div style="font-size:12px; font-weight:700; color:var(--g); margin-bottom:10px;">Demand vs Supply Queue Depth</div>
         <div style="height:220px; position:relative;">
           <canvas id="radar-depth-chart"></canvas>
         </div>
       </div>
     </div>
 
-    <!-- Historical Data Table -->
+    <!-- Table Displaying Score Column -->
     <div style="background: #0D1117; border: 1px solid #1E2A3A; border-radius: 8px; overflow-x: auto;">
-      <table style="width: 100%; border-collapse: collapse; text-align: left; min-width: 650px;">
+      <table style="width: 100%; border-collapse: collapse; text-align: left; min-width: 750px;">
         <thead style="background: #161B27; border-bottom: 2px solid #1E2A3A;">
           <tr>
             <th style="padding: 10px; font-size: 10px; color: #666; text-transform: uppercase;">Date</th>
@@ -4654,6 +4669,7 @@ async function loadRadarData() {
             <th style="padding: 10px; font-size: 10px; color: #666; text-transform: uppercase;">Bids</th>
             <th style="padding: 10px; font-size: 10px; color: #666; text-transform: uppercase;">Offers</th>
             <th style="padding: 10px; font-size: 10px; color: #666; text-transform: uppercase;">Turnover</th>
+            <th style="padding: 10px; font-size: 10px; color: #00C896; text-transform: uppercase;">Composite Score</th>
             <th style="padding: 10px; font-size: 10px; color: #666; text-transform: uppercase;">Action</th>
             <th style="padding: 10px; font-size: 10px; color: #666; text-transform: uppercase;">Quant Commentary</th>
           </tr>
@@ -4665,62 +4681,136 @@ async function loadRadarData() {
     </div>
   `;
 
-  // Draw Charts
   initRadarCharts(depthData);
 }
 
-// 3. Quantitative Signal Calculation Engine
-function calculateQuantSignal(row, holding, symbol) {
+// 3. Sector Fundamental Evaluator (Reference Guide Card Logic)
+function calculateFundamentalScore(stock, symbol) {
+  if (!stock) return { score: 40, sector: 'General' }; // Default fair score if no stock metrics populated yet
+
+  let score = 0;
+  const sector = (stock.sector || '').toLowerCase();
+  const isBank = sector.includes('bank') || ["CRDB", "NMB", "DCB", "MCB"].includes(symbol.toUpperCase());
+  const isHolding = sector.includes('holding') || ["NICOL", "NICO"].includes(symbol.toUpperCase());
+
+  if (isBank) {
+    // Bank Metrics (60 pts total)
+    if (stock.pe_ratio > 0 && stock.pe_ratio < 10) score += 10; else if (stock.pe_ratio <= 15) score += 5;
+    if (stock.pb_ratio > 0 && stock.pb_ratio < 1.5) score += 10; else if (stock.pb_ratio <= 3.0) score += 5;
+    if (stock.roe >= 20) score += 10; else if (stock.roe >= 15) score += 5;
+    if (stock.npl > 0 && stock.npl < 3) score += 10; else if (stock.npl <= 5) score += 5;
+    if (stock.cir > 0 && stock.cir < 40) score += 10; else if (stock.cir <= 55) score += 5;
+    if (stock.div_yield >= 5) score += 10; else if (stock.div_yield >= 3) score += 5;
+  } else if (isHolding) {
+    // Holding Company Metrics (60 pts total)
+    if (stock.p_nav > 0 && stock.p_nav < 0.8) score += 10; else if (stock.p_nav <= 1.0) score += 5;
+    if (stock.nav_discount >= 25) score += 10; else if (stock.nav_discount >= 10) score += 5;
+    if (stock.roe >= 15) score += 10; else if (stock.roe >= 10) score += 5;
+    if (stock.de_ratio < 0.5) score += 10; else if (stock.de_ratio <= 1.5) score += 5;
+    if (stock.div_yield >= 4) score += 10; else if (stock.div_yield >= 2) score += 5;
+    if (stock.buy_zone_status === 'Buy Zone' || stock.fair_value_discount >= 20) score += 10; else score += 5;
+  } else {
+    // Industrial & Commercial Sector Metrics (60 pts total)
+    if (stock.pe_ratio > 0 && stock.pe_ratio < 12) score += 10; else if (stock.pe_ratio <= 18) score += 5;
+    if (stock.ev_ebitda > 0 && stock.ev_ebitda < 8) score += 10; else if (stock.ev_ebitda <= 15) score += 5;
+    if (stock.de_ratio < 0.5) score += 10; else if (stock.de_ratio <= 1.5) score += 5;
+    if (stock.altman_z >= 3.0) score += 10; else if (stock.altman_z >= 1.8) score += 5;
+    if (stock.div_yield >= 5) score += 10; else if (stock.div_yield >= 3) score += 5;
+    if (stock.fair_value_discount >= 20) score += 10; else score += 5;
+  }
+
+  return { score: Math.min(score, 60), sector: isBank ? 'Banking' : isHolding ? 'Holding' : 'Industrial' };
+}
+
+// 4. Combined Quant Signal & Composite Score (0-100) Logic
+function calculateQuantSignal(row, fundScoreObj, holding, symbol) {
   const closePx = row.close_price || 0;
   const bids = row.outstanding_bid || 0;
   const offers = row.outstanding_offer || 0;
   const totalDepth = bids + offers;
-  const demandRatio = totalDepth > 0 ? (bids / totalDepth) : 0.5;
+  
+  // Calculate Market Depth Score (40 pts max)
+  let depthScore = 20; // Default baseline if book is empty
+  if (totalDepth > 0) {
+    depthScore = Math.round((bids / totalDepth) * 40);
+  } else if (bids > 0 && offers === 0) {
+    depthScore = 40;
+  }
 
-  // Rule 1: 50% Profit Target Override (if stock is held in portfolio)
+  // Calculate Combined 100-Point Score
+  let compositeScore = fundScoreObj.score + depthScore;
+
+  // Rule 1: 50% Profit Override Signal
   if (holding && holding.buy_price && holding.buy_price > 0) {
     const profitPct = ((closePx - holding.buy_price) / holding.buy_price) * 100;
     if (profitPct >= 50) {
       return { 
+        compositeScore,
+        depthScore,
         signal: 'SELL (50%+ Target)', 
         color: '#E05656', 
-        comment: `🔴 Target reached! +${profitPct.toFixed(1)}% profit vs buy price (${holding.buy_price.toLocaleString()} TZS).` 
+        comment: `🔴 Target reached! +${profitPct.toFixed(1)}% profit vs average buy price (${holding.buy_price.toLocaleString()} TZS).` 
       };
     }
   }
 
-  // Rule 2: Special Sector Rules (Holding Companies like NICOL)
-  const isHoldingCo = ["NICOL", "NICO"].includes(symbol.toUpperCase());
-
-  // Rule 3: Depth Imbalance Scoring
-  if (bids > 0 && offers === 0) {
-    return { signal: 'BUY NOW', color: '#00C896', comment: '🟢 Pure demand queue. Zero selling supply available.' };
-  } else if (offers > (bids * 3) && offers > 50000) {
-    return { signal: 'WAIT / SELL', color: '#E05656', comment: '🔴 Heavy supply overhang. Sellers outnumber buyers > 3:1.' };
-  } else if (demandRatio >= 0.65) {
-    return { 
-      signal: 'BUY NOW', 
-      color: '#00C896', 
-      comment: isHoldingCo ? '🟢 High buying pressure & strong NAV discount.' : '🟢 High demand pressure in queue.' 
+  // Rule 2: Heavy Supply Overhang Cap
+  if (offers > (bids * 3) && offers > 50000) {
+    return {
+      compositeScore,
+      depthScore,
+      signal: 'WAIT / SELL',
+      color: '#E05656',
+      comment: `🔴 Heavy supply overhang (Offers ${offers.toLocaleString()} vs Bids ${bids.toLocaleString()}).`
     };
-  } else if (demandRatio >= 0.40) {
-    return { signal: 'HOLD / ADD', color: '#4A90E2', comment: '🔵 Balanced order book. Good holding zone.' };
+  }
+
+  // Rule 3: Composite Score Signal Decision Matrix
+  if (compositeScore >= 80) {
+    return {
+      compositeScore,
+      depthScore,
+      signal: 'BUY NOW',
+      color: '#00C896',
+      comment: `🟢 Strong composite score (${compositeScore}/100). High fundamental value + active buying demand.`
+    };
+  } else if (compositeScore >= 60) {
+    return {
+      compositeScore,
+      depthScore,
+      signal: 'HOLD / ACCUMULATE',
+      color: '#4A90E2',
+      comment: `🔵 Solid total score (${compositeScore}/100). Good accumulation zone.`
+    };
+  } else if (compositeScore >= 40) {
+    return {
+      compositeScore,
+      depthScore,
+      signal: 'WAIT',
+      color: '#F4A623',
+      comment: `🟡 Moderate score (${compositeScore}/100). Fairly valued or supply building in queue.`
+    };
   } else {
-    return { signal: 'WAIT', color: '#F4A623', comment: '🟡 Supply exceeds demand. Wait for buy volume to build.' };
+    return {
+      compositeScore,
+      depthScore,
+      signal: 'AVOID',
+      color: '#E05656',
+      comment: `🔴 Weak score (${compositeScore}/100). Poor fundamentals or zero buy demand.`
+    };
   }
 }
 
-// 4. Initialize Chart.js Price & Depth Visualizations
+// 5. Initialize Interactive Charts
 function initRadarCharts(depthData) {
   if (typeof Chart === 'undefined') return;
 
-  const reversedData = [...depthData].reverse(); // Chronological order
+  const reversedData = [...depthData].reverse();
   const labels = reversedData.map(d => d.snapshot_date || d.created_at?.split('T')[0]);
   const prices = reversedData.map(d => d.close_price || 0);
   const bids = reversedData.map(d => d.outstanding_bid || 0);
   const offers = reversedData.map(d => d.outstanding_offer || 0);
 
-  // Price Trend Chart
   const priceCtx = document.getElementById('radar-price-chart')?.getContext('2d');
   if (priceCtx) {
     if (radarPriceChartInstance) radarPriceChartInstance.destroy();
@@ -4750,7 +4840,6 @@ function initRadarCharts(depthData) {
     });
   }
 
-  // Depth Imbalance Chart
   const depthCtx = document.getElementById('radar-depth-chart')?.getContext('2d');
   if (depthCtx) {
     if (radarDepthChartInstance) radarDepthChartInstance.destroy();
@@ -4776,5 +4865,5 @@ function initRadarCharts(depthData) {
   }
 }
 
-// Automatically trigger radar render on script load
+// Automatically Trigger Render on Script Load
 renderRadar();
