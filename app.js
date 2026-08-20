@@ -4474,7 +4474,7 @@ async function renderRadar() {
 
   try {
     // Fetch your unique stocks to populate the dropdown
-    const { data: stocks, error } = await supabase.from('stocks').select('*');
+    const { data: stocks, error } = await sb.from('stocks').select('*');
     
     if (error) throw error;
     
@@ -4533,7 +4533,7 @@ async function loadRadarData() {
   resultsDiv.innerHTML = `<div style="text-align:center; color:#F4A623; padding: 20px;">Crunching numbers & fetching depth...</div>`;
 
   // Fetch the specific stock's fundamentals
-  const { data: stockData } = await supabase.from('stocks').select('*').eq('ticker', ticker).single();
+  const { data: stockData } = await sb.from('stocks').select('*').eq('ticker', ticker).single();
   
   // NOTE: This assumes you will create a 'market_depth' table in Supabase later. 
   // For now, we simulate the daily market depth data to prove the logic works without breaking your app.
