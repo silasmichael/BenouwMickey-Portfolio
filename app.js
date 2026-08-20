@@ -4472,47 +4472,51 @@ async function renderRadar() {
   const pane = document.getElementById('pane-radar');
   pane.innerHTML = `<div style="text-align:center; padding: 20px; color: #888;">Loading Radar Data...</div>`;
 
-  // Fetch your unique stocks to populate the dropdown
-  const { data: stocks, error } = await supabase.from('stocks').select('*');
-  
-  if (error) {
-    pane.innerHTML = `<div style="color:var(--r); padding:20px;">Error loading stocks: ${error.message}</div>`;
-    return;
+  try {
+    // Fetch your unique stocks to populate the dropdown
+    const { data: stocks, error } = await supabase.from('stocks').select('*');
+    
+    if (error) throw error;
+    
+    // Ensure stocks is an array even if empty
+    const safeStocks = stocks || [];
+
+    // Build the Radar UI
+    let html = `
+      <div style="padding: 16px;">
+        <div style="font-size:18px;font-weight:900;color:var(--g);margin-bottom:16px;">📡 Market Radar & Depth</div>
+        
+        <!-- Controls -->
+        <div class="g2" style="margin-bottom: 20px; background: #0D1117; padding: 15px; border-radius: 8px; border: 1px solid #1E2A3A;">
+          <div>
+            <div class="sec" style="margin-bottom:5px;">Select Company</div>
+            <select id="radar-stock-select" onchange="loadRadarData()" style="width:100%;background:#1A1A28;border:1px solid #2A2A3A;border-radius:6px;padding:8px;color:#F0EAD6;font-size:12px;">
+              <option value="">-- Choose a Company --</option>
+              ${safeStocks.map(s => `<option value="${s.ticker}">${s.name} (${s.ticker})</option>`).join('')}
+            </select>
+          </div>
+          <div>
+            <div class="sec" style="margin-bottom:5px;">Timeframe</div>
+            <select id="radar-timeframe" onchange="loadRadarData()" style="width:100%;background:#1A1A28;border:1px solid #2A2A3A;border-radius:6px;padding:8px;color:#F0EAD6;font-size:12px;">
+              <option value="30">Last 30 Days</option>
+              <option value="90" selected>Last 90 Days</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Results Area -->
+        <div id="radar-results">
+          <div style="text-align:center; padding: 40px; color: #555; font-size: 12px; border: 1px dashed #333; border-radius: 8px;">
+            Select a company above to run the quantitative analysis.
+          </div>
+        </div>
+      </div>
+    `;
+
+    pane.innerHTML = html;
+  } catch (err) {
+    pane.innerHTML = `<div style="color: #E05656; padding: 20px;">Error loading radar: ${err.message}</div>`;
   }
-
-  // Build the Radar UI
-  let html = `
-    <div style="padding: 16px;">
-      <div style="font-size:18px;font-weight:900;color:var(--g);margin-bottom:16px;">📡 Market Radar & Depth</div>
-      
-      <!-- Controls -->
-      <div class="g2" style="margin-bottom: 20px; background: #0D1117; padding: 15px; border-radius: 8px; border: 1px solid #1E2A3A;">
-        <div>
-          <div class="sec" style="margin-bottom:5px;">Select Company</div>
-          <select id="radar-stock-select" onchange="loadRadarData()" style="width:100%;background:#1A1A28;border:1px solid #2A2A3A;border-radius:6px;padding:8px;color:#F0EAD6;font-size:12px;">
-            <option value="">-- Choose a Company --</option>
-            ${stocks.map(s => `<option value="${s.ticker}">${s.name} (${s.ticker})</option>`).join('')}
-          </select>
-        </div>
-        <div>
-          <div class="sec" style="margin-bottom:5px;">Timeframe</div>
-          <select id="radar-timeframe" onchange="loadRadarData()" style="width:100%;background:#1A1A28;border:1px solid #2A2A3A;border-radius:6px;padding:8px;color:#F0EAD6;font-size:12px;">
-            <option value="30">Last 30 Days</option>
-            <option value="90" selected>Last 90 Days</option>
-          </select>
-        </div>
-      </div>
-
-      <!-- Results Area -->
-      <div id="radar-results">
-        <div style="text-align:center; padding: 40px; color: #555; font-size: 12px; border: 1px dashed #333; border-radius: 8px;">
-          Select a company above to run the quantitative analysis.
-        </div>
-      </div>
-    </div>
-  `;
-
-  pane.innerHTML = html;
 }
 
 // 2. Load Data and Calculate Scores
@@ -4526,7 +4530,7 @@ async function loadRadarData() {
     return;
   }
 
-  resultsDiv.innerHTML = `<div style="text-align:center; color:#F4A623;">Crunching numbers & fetching depth...</div>`;
+  resultsDiv.innerHTML = `<div style="text-align:center; color:#F4A623; padding: 20px;">Crunching numbers & fetching depth...</div>`;
 
   // Fetch the specific stock's fundamentals
   const { data: stockData } = await supabase.from('stocks').select('*').eq('ticker', ticker).single();
@@ -4539,7 +4543,7 @@ async function loadRadarData() {
 
   depthData.forEach((day, index) => {
     // Determine Quantitative Signal
-    const analysis = calculateQuantSignal(stockData, day);
+    const analysis = calculateQuantSignal(stockData || { type: 'general' }, day);
     
     tableRows += `
       <tr style="border-bottom: 1px solid #1A2A3A;">
@@ -4586,21 +4590,16 @@ function calculateQuantSignal(stock, depthDay) {
   let avgBuyPrice = stock.buy_price || null;
 
   // --- A. FUNDAMENTAL SCORING (Max 60) ---
-  // If undervalued, score goes up. If overvalued, score drops.
   let valuationDiscount = ((fairValue - currentPrice) / currentPrice) * 100;
   
   if (stock.type === 'holding') {
-    // Holding companies (NICOL) are judged by NAV discount
     fundScore += (valuationDiscount > 20) ? 30 : (valuationDiscount > 0 ? 15 : -10);
   } else if (stock.type === 'bank') {
-    // Banks judged differently (placeholder for ROE/NPL logic if added to DB)
     fundScore += (valuationDiscount > 10) ? 25 : (valuationDiscount > 0 ? 10 : -10);
   } else {
-    // General industrial/services
     fundScore += (valuationDiscount > 15) ? 25 : (valuationDiscount > 0 ? 10 : -15);
   }
   
-  // Cap fundamental score at 60
   fundScore = Math.min(60, Math.max(0, fundScore));
 
   // --- B. MARKET DEPTH SCORING (Max 40) ---
@@ -4617,7 +4616,7 @@ function calculateQuantSignal(stock, depthDay) {
 
   // --- D. DECISION OUTPUT ---
   if (totalScore >= 80) {
-    return { signal: 'BUY NOW', color: '#00C896', comment: `🟢 Strong ${stock.type} fundamentals + High market demand.` };
+    return { signal: 'BUY NOW', color: '#00C896', comment: `🟢 Strong ${stock.type || 'general'} fundamentals + High market demand.` };
   } else if (totalScore >= 60) {
     return { signal: 'HOLD & ADD', color: '#4A90E2', comment: '🔵 Good valuation. Wait for supply overhang to clear before adding.' };
   } else if (totalScore >= 40) {
@@ -4630,9 +4629,9 @@ function calculateQuantSignal(stock, depthDay) {
 // 4. Temporary Mock Data Generator (Until your Supabase table is ready)
 function generateMockDepthData(ticker, days) {
   let data = [];
-  let basePrice = 1000; // Mock starting price
+  let basePrice = 1000; 
   
-  for(let i=0; i<5; i++) { // Generate last 5 days for preview
+  for(let i=0; i<5; i++) { 
     let d = new Date();
     d.setDate(d.getDate() - i);
     data.push({
@@ -4645,8 +4644,10 @@ function generateMockDepthData(ticker, days) {
   return data;
 }
 
-// Ensure the tab system recognizes the new 'radar' pane.
-// Note: Your existing showTab() function in app.js should already handle hiding/showing panes based on the ID.
-
-// Initialize the Radar Tab UI
-renderRadar();
+// 5. Connect the function to your Radar Tab Button
+document.addEventListener("DOMContentLoaded", () => {
+  const radarBtn = document.querySelector('button[onclick="showTab(\'radar\',this)"]');
+  if (radarBtn) {
+    radarBtn.addEventListener('click', renderRadar);
+  }
+});
