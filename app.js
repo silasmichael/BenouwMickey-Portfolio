@@ -4467,92 +4467,137 @@ document.addEventListener('DOMContentLoaded', () => {
 // 📡 MARKET RADAR & SCORING ENGINE
 // ============================================================================
 
+let radarPriceChartInstance = null;
+let radarDepthChartInstance = null;
+
 // 1. Main Render Function for Radar Tab
 async function renderRadar() {
   const pane = document.getElementById('pane-radar');
-  pane.innerHTML = `<div style="text-align:center; padding: 20px; color: #888;">Loading Radar Data...</div>`;
+  if (!pane) return;
 
+  pane.innerHTML = `<div style="text-align:center; padding: 20px; color: #888;">Fetching available market counters...</div>`;
+
+  // Fetch unique symbols from market_depth_logs table
+  let tickers = [];
   try {
-    // Fetch your unique stocks to populate the dropdown
-    const { data: stocks, error } = await sb.from('stocks').select('*');
-    
-    if (error) throw error;
-    
-    // Ensure stocks is an array even if empty
-    const safeStocks = stocks || [];
+    const { data: logs, error } = await sb.from('market_depth_logs').select('symbol');
+    if (!error && logs && logs.length > 0) {
+      tickers = [...new Set(logs.map(l => l.symbol))].sort();
+    }
+  } catch (err) {
+    console.error("Error fetching tickers:", err);
+  }
 
-    // Build the Radar UI
-    let html = `
-      <div style="padding: 16px;">
-        <div style="font-size:18px;font-weight:900;color:var(--g);margin-bottom:16px;">📡 Market Radar & Depth</div>
-        
-        <!-- Controls -->
-        <div class="g2" style="margin-bottom: 20px; background: #0D1117; padding: 15px; border-radius: 8px; border: 1px solid #1E2A3A;">
-          <div>
-            <div class="sec" style="margin-bottom:5px;">Select Company</div>
-            <select id="radar-stock-select" onchange="loadRadarData()" style="width:100%;background:#1A1A28;border:1px solid #2A2A3A;border-radius:6px;padding:8px;color:#F0EAD6;font-size:12px;">
-              <option value="">-- Choose a Company --</option>
-              ${safeStocks.map(s => `<option value="${s.ticker}">${s.name} (${s.ticker})</option>`).join('')}
-            </select>
-          </div>
-          <div>
-            <div class="sec" style="margin-bottom:5px;">Timeframe</div>
-            <select id="radar-timeframe" onchange="loadRadarData()" style="width:100%;background:#1A1A28;border:1px solid #2A2A3A;border-radius:6px;padding:8px;color:#F0EAD6;font-size:12px;">
-              <option value="30">Last 30 Days</option>
-              <option value="90" selected>Last 90 Days</option>
-            </select>
-          </div>
+  // Default fallback tickers if database table is currently empty
+  if (tickers.length === 0) {
+    tickers = ["CRDB", "NMB", "NICOL", "SWIS", "TBL", "TCCL", "VODA", "DSE", "MCB", "DCB", "TICL"];
+  }
+
+  // Build Radar UI with Controls, Table, and Chart Containers
+  pane.innerHTML = `
+    <div style="padding: 16px; max-width: 1200px; margin: 0 auto;">
+      <div style="font-size:18px;font-weight:900;color:var(--g);margin-bottom:16px;">📡 Market Radar & Quantitative Depth</div>
+      
+      <!-- Top Control Bar -->
+      <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:12px; margin-bottom: 20px; background: #0D1117; padding: 15px; border-radius: 8px; border: 1px solid #1E2A3A;">
+        <div>
+          <div class="sec" style="margin-bottom:5px; color:#888; font-size:11px; text-transform:uppercase;">Select Company</div>
+          <select id="radar-stock-select" onchange="loadRadarData()" style="width:100%;background:#1A1A28;border:1px solid #2A2A3A;border-radius:6px;padding:8px;color:#F0EAD6;font-size:12px;outline:none;">
+            <option value="">-- Choose a Company --</option>
+            ${tickers.map(t => `<option value="${t}">${t}</option>`).join('')}
+          </select>
         </div>
-
-        <!-- Results Area -->
-        <div id="radar-results">
-          <div style="text-align:center; padding: 40px; color: #555; font-size: 12px; border: 1px dashed #333; border-radius: 8px;">
-            Select a company above to run the quantitative analysis.
-          </div>
+        <div>
+          <div class="sec" style="margin-bottom:5px; color:#888; font-size:11px; text-transform:uppercase;">Timeframe Range</div>
+          <select id="radar-timeframe" onchange="loadRadarData()" style="width:100%;background:#1A1A28;border:1px solid #2A2A3A;border-radius:6px;padding:8px;color:#F0EAD6;font-size:12px;outline:none;">
+            <option value="30">Last 30 Days</option>
+            <option value="90" selected>Last 90 Days</option>
+            <option value="180">Last 180 Days</option>
+          </select>
         </div>
       </div>
-    `;
 
-    pane.innerHTML = html;
-  } catch (err) {
-    pane.innerHTML = `<div style="color: #E05656; padding: 20px;">Error loading radar: ${err.message}</div>`;
-  }
+      <!-- Main Results Display -->
+      <div id="radar-results">
+        <div style="text-align:center; padding: 40px; color: #555; font-size: 12px; border: 1px dashed #333; border-radius: 8px;">
+          Select a company above to run historical analysis and view market depth charts.
+        </div>
+      </div>
+    </div>
+  `;
 }
 
-// 2. Load Data and Calculate Scores
+// 2. Fetch Historical Logs and Render Analysis + Charts
 async function loadRadarData() {
-  const ticker = document.getElementById('radar-stock-select').value;
-  const days = document.getElementById('radar-timeframe').value;
+  const ticker = document.getElementById('radar-stock-select')?.value;
+  const days = parseInt(document.getElementById('radar-timeframe')?.value || 90);
   const resultsDiv = document.getElementById('radar-results');
 
-  if (!ticker) {
-    resultsDiv.innerHTML = `<div style="text-align:center; padding: 40px; color: #555; font-size: 12px; border: 1px dashed #333; border-radius: 8px;">Select a company above to run the quantitative analysis.</div>`;
+  if (!ticker || !resultsDiv) {
+    if (resultsDiv) {
+      resultsDiv.innerHTML = `<div style="text-align:center; padding: 40px; color: #555; font-size: 12px; border: 1px dashed #333; border-radius: 8px;">Select a company above to run historical analysis.</div>`;
+    }
     return;
   }
 
-  resultsDiv.innerHTML = `<div style="text-align:center; color:#F4A623; padding: 20px;">Crunching numbers & fetching depth...</div>`;
+  resultsDiv.innerHTML = `<div style="text-align:center; padding:30px; color:#F4A623;">Crunching logs for ${ticker}...</div>`;
 
-  // Fetch the specific stock's fundamentals
-  const { data: stockData } = await sb.from('stocks').select('*').eq('ticker', ticker).single();
-  
-  // NOTE: This assumes you will create a 'market_depth' table in Supabase later. 
-  // For now, we simulate the daily market depth data to prove the logic works without breaking your app.
-  const depthData = generateMockDepthData(ticker, days); 
+  // Query market_depth_logs from Supabase
+  let depthData = [];
+  try {
+    const { data, error } = await sb
+      .from('market_depth_logs')
+      .select('*')
+      .eq('symbol', ticker)
+      .order('snapshot_date', { ascending: false })
+      .limit(days);
+
+    if (!error && data) {
+      depthData = data;
+    }
+  } catch (err) {
+    console.error("Database query error:", err);
+  }
+
+  // Handle case where no historical data is logged yet
+  if (depthData.length === 0) {
+    resultsDiv.innerHTML = `
+      <div style="text-align:center; padding: 30px; color: #888; background: #0D1117; border: 1px solid #1E2A3A; border-radius: 8px;">
+        ⚠️ No snapshot logs found for <strong>${ticker}</strong> in <code>market_depth_logs</code> yet.<br>
+        <span style="font-size:11px; color:#555; display:block; margin-top:6px;">Click "Update Prices" to capture today's first daily snapshot.</span>
+      </div>
+    `;
+    return;
+  }
+
+  // Check if stock is held in portfolio for profit targeting
+  let userHolding = null;
+  if (typeof stocks !== 'undefined' && Array.isArray(stocks)) {
+    userHolding = stocks.find(s => s.ticker === ticker || s.symbol === ticker);
+  }
 
   let tableRows = '';
+  const latestRow = depthData[0];
+  const latestAnalysis = calculateQuantSignal(latestRow, userHolding, ticker);
 
-  depthData.forEach((day, index) => {
-    // Determine Quantitative Signal
-    const analysis = calculateQuantSignal(stockData || { type: 'general' }, day);
-    
+  // Build table rows
+  depthData.forEach((row) => {
+    const analysis = calculateQuantSignal(row, userHolding, ticker);
+    const dateStr = row.snapshot_date || (row.created_at ? row.created_at.split('T')[0] : 'N/A');
+    const closePx = row.close_price || 0;
+    const bids = row.outstanding_bid || 0;
+    const offers = row.outstanding_offer || 0;
+    const turnover = row.turnover || 0;
+
     tableRows += `
       <tr style="border-bottom: 1px solid #1A2A3A;">
-        <td style="padding: 10px; font-size: 11px; color:#888;">${day.date}</td>
-        <td style="padding: 10px; font-size: 11px; font-weight:bold;">${day.close_price.toLocaleString()}</td>
-        <td style="padding: 10px; font-size: 11px; color:#00C896;">${(day.bids / 1000).toFixed(1)}k</td>
-        <td style="padding: 10px; font-size: 11px; color:#E05656;">${(day.offers / 1000).toFixed(1)}k</td>
+        <td style="padding: 10px; font-size: 11px; color:#888;">${dateStr}</td>
+        <td style="padding: 10px; font-size: 11px; font-weight:bold; color:#F0EAD6;">${closePx.toLocaleString()}</td>
+        <td style="padding: 10px; font-size: 11px; color:#00C896;">${(bids / 1000).toLocaleString(undefined, {maximumFractionDigits:1})}k</td>
+        <td style="padding: 10px; font-size: 11px; color:#E05656;">${(offers / 1000).toLocaleString(undefined, {maximumFractionDigits:1})}k</td>
+        <td style="padding: 10px; font-size: 11px; color:#AAA;">${turnover > 0 ? turnover.toLocaleString() : '—'}</td>
         <td style="padding: 10px; font-size: 11px;">
-          <span style="background:${analysis.color}22; color:${analysis.color}; padding: 3px 6px; border-radius: 4px; font-weight:bold;">
+          <span style="background:${analysis.color}22; color:${analysis.color}; border:1px solid ${analysis.color}44; padding: 3px 7px; border-radius: 4px; font-weight:bold; white-space:nowrap;">
             ${analysis.signal}
           </span>
         </td>
@@ -4561,17 +4606,56 @@ async function loadRadarData() {
     `;
   });
 
+  // Render workspace layout (Metrics + Charts + Table)
   resultsDiv.innerHTML = `
-    <div style="background: #0A1420; border: 1px solid #1A2A3A; border-radius: 8px; overflow: hidden; margin-top: 15px;">
-      <table style="width: 100%; border-collapse: collapse; text-align: left;">
-        <thead style="background: #111827; border-bottom: 2px solid #1E2A3A;">
+    <!-- Top Summary Banner -->
+    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap:10px; margin-bottom:15px;">
+      <div style="background:#0D1117; border:1px solid #1E2A3A; padding:12px; border-radius:8px;">
+        <div style="font-size:9px; color:#666; text-transform:uppercase;">Latest Close</div>
+        <div style="font-size:18px; font-weight:800; color:#F0EAD6; font-family:Georgia,serif;">TZS ${(latestRow.close_price || 0).toLocaleString()}</div>
+      </div>
+      <div style="background:#0D1117; border:1px solid #1E2A3A; padding:12px; border-radius:8px;">
+        <div style="font-size:9px; color:#666; text-transform:uppercase;">Buy Queue (Bids)</div>
+        <div style="font-size:18px; font-weight:800; color:#00C896;">${((latestRow.outstanding_bid || 0)/1000).toFixed(1)}k</div>
+      </div>
+      <div style="background:#0D1117; border:1px solid #1E2A3A; padding:12px; border-radius:8px;">
+        <div style="font-size:9px; color:#666; text-transform:uppercase;">Sell Queue (Offers)</div>
+        <div style="font-size:18px; font-weight:800; color:#E05656;">${((latestRow.outstanding_offer || 0)/1000).toFixed(1)}k</div>
+      </div>
+      <div style="background:#0D1117; border:1px solid #1E2A3A; padding:12px; border-radius:8px;">
+        <div style="font-size:9px; color:#666; text-transform:uppercase;">Current Signal</div>
+        <div style="font-size:14px; font-weight:800; color:${latestAnalysis.color}; margin-top:2px;">${latestAnalysis.signal}</div>
+      </div>
+    </div>
+
+    <!-- Charts Workspace -->
+    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap:15px; margin-bottom:20px;">
+      <div style="background:#0D1117; border:1px solid #1E2A3A; padding:15px; border-radius:8px;">
+        <div style="font-size:12px; font-weight:700; color:var(--g); margin-bottom:10px;">Price Trend (TZS)</div>
+        <div style="height:220px; position:relative;">
+          <canvas id="radar-price-chart"></canvas>
+        </div>
+      </div>
+      <div style="background:#0D1117; border:1px solid #1E2A3A; padding:15px; border-radius:8px;">
+        <div style="font-size:12px; font-weight:700; color:var(--g); margin-bottom:10px;">Demand vs Supply Pressure</div>
+        <div style="height:220px; position:relative;">
+          <canvas id="radar-depth-chart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Historical Data Table -->
+    <div style="background: #0D1117; border: 1px solid #1E2A3A; border-radius: 8px; overflow-x: auto;">
+      <table style="width: 100%; border-collapse: collapse; text-align: left; min-width: 650px;">
+        <thead style="background: #161B27; border-bottom: 2px solid #1E2A3A;">
           <tr>
-            <th style="padding: 10px; font-size: 10px; color: #555; text-transform: uppercase;">Date</th>
-            <th style="padding: 10px; font-size: 10px; color: #555; text-transform: uppercase;">Close (TSh)</th>
-            <th style="padding: 10px; font-size: 10px; color: #555; text-transform: uppercase;">Bids (Demand)</th>
-            <th style="padding: 10px; font-size: 10px; color: #555; text-transform: uppercase;">Offers (Supply)</th>
-            <th style="padding: 10px; font-size: 10px; color: #555; text-transform: uppercase;">Action</th>
-            <th style="padding: 10px; font-size: 10px; color: #555; text-transform: uppercase;">Quant Commentary</th>
+            <th style="padding: 10px; font-size: 10px; color: #666; text-transform: uppercase;">Date</th>
+            <th style="padding: 10px; font-size: 10px; color: #666; text-transform: uppercase;">Close</th>
+            <th style="padding: 10px; font-size: 10px; color: #666; text-transform: uppercase;">Bids</th>
+            <th style="padding: 10px; font-size: 10px; color: #666; text-transform: uppercase;">Offers</th>
+            <th style="padding: 10px; font-size: 10px; color: #666; text-transform: uppercase;">Turnover</th>
+            <th style="padding: 10px; font-size: 10px; color: #666; text-transform: uppercase;">Action</th>
+            <th style="padding: 10px; font-size: 10px; color: #666; text-transform: uppercase;">Quant Commentary</th>
           </tr>
         </thead>
         <tbody>
@@ -4580,74 +4664,117 @@ async function loadRadarData() {
       </table>
     </div>
   `;
+
+  // Draw Charts
+  initRadarCharts(depthData);
 }
 
-// 3. The Quantitative Scoring Engine
-function calculateQuantSignal(stock, depthDay) {
-  let fundScore = 30; // Base score
-  let currentPrice = depthDay.close_price;
-  let fairValue = stock.fair_value || currentPrice; 
-  let avgBuyPrice = stock.buy_price || null;
+// 3. Quantitative Signal Calculation Engine
+function calculateQuantSignal(row, holding, symbol) {
+  const closePx = row.close_price || 0;
+  const bids = row.outstanding_bid || 0;
+  const offers = row.outstanding_offer || 0;
+  const totalDepth = bids + offers;
+  const demandRatio = totalDepth > 0 ? (bids / totalDepth) : 0.5;
 
-  // --- A. FUNDAMENTAL SCORING (Max 60) ---
-  let valuationDiscount = ((fairValue - currentPrice) / currentPrice) * 100;
-  
-  if (stock.type === 'holding') {
-    fundScore += (valuationDiscount > 20) ? 30 : (valuationDiscount > 0 ? 15 : -10);
-  } else if (stock.type === 'bank') {
-    fundScore += (valuationDiscount > 10) ? 25 : (valuationDiscount > 0 ? 10 : -10);
-  } else {
-    fundScore += (valuationDiscount > 15) ? 25 : (valuationDiscount > 0 ? 10 : -15);
-  }
-  
-  fundScore = Math.min(60, Math.max(0, fundScore));
-
-  // --- B. MARKET DEPTH SCORING (Max 40) ---
-  let totalVolume = depthDay.bids + depthDay.offers;
-  let demandRatio = totalVolume === 0 ? 0.5 : depthDay.bids / totalVolume;
-  let depthScore = demandRatio * 40; 
-
-  let totalScore = fundScore + depthScore;
-
-  // --- C. OVERRIDE: 50% PROFIT TARGET ---
-  if (avgBuyPrice && currentPrice >= (avgBuyPrice * 1.5)) {
-    return { signal: 'SELL NOW', color: '#E05656', comment: '🔴 50% Profit Target Reached. Take gains regardless of depth.' };
+  // Rule 1: 50% Profit Target Override (if stock is held in portfolio)
+  if (holding && holding.buy_price && holding.buy_price > 0) {
+    const profitPct = ((closePx - holding.buy_price) / holding.buy_price) * 100;
+    if (profitPct >= 50) {
+      return { 
+        signal: 'SELL (50%+ Target)', 
+        color: '#E05656', 
+        comment: `🔴 Target reached! +${profitPct.toFixed(1)}% profit vs buy price (${holding.buy_price.toLocaleString()} TZS).` 
+      };
+    }
   }
 
-  // --- D. DECISION OUTPUT ---
-  if (totalScore >= 80) {
-    return { signal: 'BUY NOW', color: '#00C896', comment: `🟢 Strong ${stock.type || 'general'} fundamentals + High market demand.` };
-  } else if (totalScore >= 60) {
-    return { signal: 'HOLD & ADD', color: '#4A90E2', comment: '🔵 Good valuation. Wait for supply overhang to clear before adding.' };
-  } else if (totalScore >= 40) {
-    return { signal: 'WAIT', color: '#F4A623', comment: '🟡 Fairly valued, but lacking buying momentum.' };
+  // Rule 2: Special Sector Rules (Holding Companies like NICOL)
+  const isHoldingCo = ["NICOL", "NICO"].includes(symbol.toUpperCase());
+
+  // Rule 3: Depth Imbalance Scoring
+  if (bids > 0 && offers === 0) {
+    return { signal: 'BUY NOW', color: '#00C896', comment: '🟢 Pure demand queue. Zero selling supply available.' };
+  } else if (offers > (bids * 3) && offers > 50000) {
+    return { signal: 'WAIT / SELL', color: '#E05656', comment: '🔴 Heavy supply overhang. Sellers outnumber buyers > 3:1.' };
+  } else if (demandRatio >= 0.65) {
+    return { 
+      signal: 'BUY NOW', 
+      color: '#00C896', 
+      comment: isHoldingCo ? '🟢 High buying pressure & strong NAV discount.' : '🟢 High demand pressure in queue.' 
+    };
+  } else if (demandRatio >= 0.40) {
+    return { signal: 'HOLD / ADD', color: '#4A90E2', comment: '🔵 Balanced order book. Good holding zone.' };
   } else {
-    return { signal: 'SELL', color: '#E05656', comment: '🔴 Overvalued with heavy supply overhang in the queue.' };
+    return { signal: 'WAIT', color: '#F4A623', comment: '🟡 Supply exceeds demand. Wait for buy volume to build.' };
   }
 }
 
-// 4. Temporary Mock Data Generator (Until your Supabase table is ready)
-function generateMockDepthData(ticker, days) {
-  let data = [];
-  let basePrice = 1000; 
-  
-  for(let i=0; i<5; i++) { 
-    let d = new Date();
-    d.setDate(d.getDate() - i);
-    data.push({
-      date: d.toISOString().split('T')[0],
-      close_price: basePrice + Math.floor(Math.random() * 100 - 50),
-      bids: Math.floor(Math.random() * 500000),
-      offers: Math.floor(Math.random() * 500000)
+// 4. Initialize Chart.js Price & Depth Visualizations
+function initRadarCharts(depthData) {
+  if (typeof Chart === 'undefined') return;
+
+  const reversedData = [...depthData].reverse(); // Chronological order
+  const labels = reversedData.map(d => d.snapshot_date || d.created_at?.split('T')[0]);
+  const prices = reversedData.map(d => d.close_price || 0);
+  const bids = reversedData.map(d => d.outstanding_bid || 0);
+  const offers = reversedData.map(d => d.outstanding_offer || 0);
+
+  // Price Trend Chart
+  const priceCtx = document.getElementById('radar-price-chart')?.getContext('2d');
+  if (priceCtx) {
+    if (radarPriceChartInstance) radarPriceChartInstance.destroy();
+    radarPriceChartInstance = new Chart(priceCtx, {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [{
+          label: 'Close Price (TZS)',
+          data: prices,
+          borderColor: '#00C896',
+          backgroundColor: '#00C89615',
+          fill: true,
+          tension: 0.2,
+          pointRadius: 3
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: '#666', font: { size: 9 } }, grid: { color: '#1A2A3A' } },
+          y: { ticks: { color: '#666', font: { size: 9 } }, grid: { color: '#1A2A3A' } }
+        }
+      }
     });
   }
-  return data;
+
+  // Depth Imbalance Chart
+  const depthCtx = document.getElementById('radar-depth-chart')?.getContext('2d');
+  if (depthCtx) {
+    if (radarDepthChartInstance) radarDepthChartInstance.destroy();
+    radarDepthChartInstance = new Chart(depthCtx, {
+      type: 'bar',
+      data: {
+        labels: labels,
+        datasets: [
+          { label: 'Bids (Demand)', data: bids, backgroundColor: '#00C896' },
+          { label: 'Offers (Supply)', data: offers, backgroundColor: '#E05656' }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: '#AAA', font: { size: 10 } } } },
+        scales: {
+          x: { ticks: { color: '#666', font: { size: 9 } }, grid: { color: '#1A2A3A' } },
+          y: { ticks: { color: '#666', font: { size: 9 } }, grid: { color: '#1A2A3A' } }
+        }
+      }
+    });
+  }
 }
 
-// 5. Connect the function to your Radar Tab Button
-document.addEventListener("DOMContentLoaded", () => {
-  const radarBtn = document.querySelector('button[onclick="showTab(\'radar\',this)"]');
-  if (radarBtn) {
-    radarBtn.addEventListener('click', renderRadar);
-  }
-});
+// Automatically trigger radar render on script load
+renderRadar();
