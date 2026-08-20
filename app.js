@@ -4514,11 +4514,14 @@ function renderRadar() {
           </select>
         </div>
 
-        <div style="min-width: 140px;">
-          <button id="radar-download-btn" onclick="downloadRadarCSV()" style="width:100%; background:#00C896; color:#0D1117; border:none; border-radius:6px; padding:9px 14px; font-size:12px; font-weight:bold; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;">
-            📥 Download CSV
-          </button>
+        <div style="display:flex; gap:8px;">
+        <button onclick="downloadRadarPDF()" style="background:#00C896; color:#0D1117; border:none; border-radius:6px; padding:9px 12px; font-size:12px; font-weight:bold; cursor:pointer;">📄 PDF Statement
+        </button>
+        <button onclick="downloadRadarCSV()" style="background:#1A2A3A; color:#F0EAD6; border:1px solid #2A3A4A; border-radius:6px; padding:9px 12px; font-size:12px; font-weight:bold; cursor:pointer;">
+        📊 CSV Data
+        </button>
         </div>
+
       </div>
 
       <!-- Results Display Container -->
@@ -4922,4 +4925,110 @@ function initRadarCharts(depthData) {
 
 // Execute initial UI render immediately
 renderRadar();
+// ============================================================================
+// 📄 STANDARDIZED MARKET RADAR PDF EXPORTER
+// ============================================================================
+
+function downloadRadarPDF() {
+  const ticker = currentRadarTicker || document.getElementById('radar-stock-select')?.value;
+
+  if (!currentRadarData || currentRadarData.length === 0) {
+    alert("Please select a company with market data before generating a report.");
+    return;
+  }
+
+  // Ensure jsPDF library is loaded
+  const { jsPDF } = window.jspdf || {};
+  if (!jsPDF) {
+    alert("PDF generator library is loading. Please check if jsPDF and autoTable scripts are included in index.html.");
+    return;
+  }
+
+  const doc = new jsPDF('p', 'mm', 'a4');
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+
+  // 1. App Header & Branding (Matches App Theme)
+  doc.setFillColor(13, 17, 23); // #0D1117 Dark Header
+  doc.rect(0, 0, 210, 28, 'F');
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16);
+  doc.setTextColor(0, 200, 150); // Accent Green
+  doc.text("MARKET RADAR & QUANT REPORT", 14, 15);
+
+  doc.setFontSize(9);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(170, 170, 170);
+  doc.text(`Generated: ${dateStr}`, 196, 15, { align: "right" });
+
+  // 2. Target Stock Metadata Card
+  doc.setFillColor(245, 247, 250);
+  doc.roundedRect(14, 34, 182, 20, 2, 2, 'F');
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.setTextColor(20, 30, 45);
+  doc.text(`Company Ticker: ${ticker}`, 18, 43);
+
+  const latest = currentRadarData[0] || {};
+  const closePx = (latest.close_price || 0).toLocaleString();
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "normal");
+  doc.text(`Latest Close Price: TZS ${closePx}`, 18, 49);
+  doc.text(`Total Snapshots: ${currentRadarData.length} Days`, 190, 49, { align: "right" });
+
+  // 3. Format Data Rows for AutoTable
+  const tableHead = [["Snapshot Date", "Close (TZS)", "Bids (Demand)", "Offers (Supply)", "Turnover (TZS)"]];
+  const tableRows = currentRadarData.map(row => {
+    const dStr = row.snapshot_date || (row.created_at ? row.created_at.split('T')[0] : 'N/A');
+    const close = (row.close_price || 0).toLocaleString();
+    const bids = (row.outstanding_bid || 0).toLocaleString();
+    const offers = (row.outstanding_offer || 0).toLocaleString();
+    const turnover = row.turnover ? row.turnover.toLocaleString() : "—";
+    return [dStr, close, bids, offers, turnover];
+  });
+
+  // 4. Render Table with App-Matching Styling
+  doc.autoTable({
+    startY: 60,
+    head: tableHead,
+    body: tableRows,
+    theme: 'grid',
+    headStyles: {
+      fillColor: [22, 27, 39], // #161B27 Header
+      textColor: [240, 234, 214],
+      fontSize: 9,
+      fontStyle: 'bold',
+      halign: 'center'
+    },
+    bodyStyles: {
+      fontSize: 8.5,
+      textColor: [40, 40, 40]
+    },
+    columnStyles: {
+      0: { halign: 'center' },
+      1: { halign: 'right', fontStyle: 'bold' },
+      2: { halign: 'right', textColor: [0, 150, 100] }, // Green Bids
+      3: { halign: 'right', textColor: [200, 50, 50] },  // Red Offers
+      4: { halign: 'right' }
+    },
+    alternateRowStyles: {
+      fillColor: [250, 252, 255]
+    },
+    margin: { left: 14, right: 14 }
+  });
+
+  // 5. Standard Footer
+  const pageCount = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    doc.setFontSize(8);
+    doc.setTextColor(150, 150, 150);
+    doc.text(`Page ${i} of ${pageCount}`, 105, 290, { align: 'center' });
+  }
+
+  // Save PDF
+  doc.save(`${ticker}_Market_Radar_Statement.pdf`);
+}
 
