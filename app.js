@@ -4464,105 +4464,101 @@ document.addEventListener('DOMContentLoaded', () => {
   document.body.style.visibility = 'visible';
 });
 // ============================================================================
-// 📡 MARKET RADAR & SCORING ENGINE (WITH CSV DOWNLOAD & SAFE FETCH)
+// 📡 MARKET RADAR & SCORING ENGINE (OPTIMIZED FOR LARGE DATASETS + ALWAYS-VISIBLE DOWNLOAD)
 // ============================================================================
 
 let radarPriceChartInstance = null;
 let radarDepthChartInstance = null;
+let currentRadarData = [];
+let currentRadarTicker = '';
 
-// 1. Main Render Function for Radar Tab
+// 1. Render Main Control Bar & Layout
 async function renderRadar() {
   const pane = document.getElementById('pane-radar');
   if (!pane) return;
 
-  pane.innerHTML = `<div style="text-align:center; padding: 20px; color: #888;">Loading Market Radar workspace...</div>`;
-
   let tickers = ["CRDB", "NMB", "NICOL", "SWIS", "TBL", "TCCL", "VODA", "DSE", "MCB", "DCB", "TICL"];
   
-  // Safely fetch available tickers from Supabase
   try {
     if (typeof sb !== 'undefined' && sb.from) {
       const { data: logs, error } = await sb.from('market_depth_logs').select('symbol');
       if (!error && logs && logs.length > 0) {
-        const fetchedTickers = [...new Set(logs.map(l => l.symbol))].filter(Boolean).sort();
-        if (fetchedTickers.length > 0) tickers = fetchedTickers;
+        const fetched = [...new Set(logs.map(l => l.symbol))].filter(Boolean).sort();
+        if (fetched.length > 0) tickers = fetched;
       }
     }
   } catch (err) {
-    console.warn("Could not load dynamic tickers, using defaults:", err);
+    console.warn("Using default ticker list:", err);
   }
 
-  // Build Radar UI
   pane.innerHTML = `
     <div style="padding: 16px; max-width: 1200px; margin: 0 auto;">
       <div style="font-size:18px;font-weight:900;color:var(--g);margin-bottom:16px;">📡 Market Radar & Quantitative Scoring Engine</div>
       
-      <!-- Top Control Bar -->
-      <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:12px; margin-bottom: 20px; background: #0D1117; padding: 15px; border-radius: 8px; border: 1px solid #1E2A3A; align-items:end;">
-        <div>
-          <div class="sec" style="margin-bottom:5px; color:#888; font-size:11px; text-transform:uppercase;">Select Company</div>
+      <!-- Top Control Bar with Guaranteed Download Button -->
+      <div style="display:flex; flex-wrap:wrap; gap:12px; margin-bottom: 20px; background: #0D1117; padding: 15px; border-radius: 8px; border: 1px solid #1E2A3A; align-items:flex-end;">
+        <div style="flex: 1; min-width: 160px;">
+          <div style="margin-bottom:5px; color:#888; font-size:11px; text-transform:uppercase; font-weight:bold;">Select Company</div>
           <select id="radar-stock-select" onchange="loadRadarData()" style="width:100%;background:#1A1A28;border:1px solid #2A2A3A;border-radius:6px;padding:8px;color:#F0EAD6;font-size:12px;outline:none;">
-            <option value="">-- Choose a Company --</option>
+            <option value="">-- Choose Company --</option>
             ${tickers.map(t => `<option value="${t}">${t}</option>`).join('')}
           </select>
         </div>
-        <div>
-          <div class="sec" style="margin-bottom:5px; color:#888; font-size:11px; text-transform:uppercase;">Timeframe Range</div>
+
+        <div style="flex: 1; min-width: 140px;">
+          <div style="margin-bottom:5px; color:#888; font-size:11px; text-transform:uppercase; font-weight:bold;">Timeframe</div>
           <select id="radar-timeframe" onchange="loadRadarData()" style="width:100%;background:#1A1A28;border:1px solid #2A2A3A;border-radius:6px;padding:8px;color:#F0EAD6;font-size:12px;outline:none;">
-            <option value="30">Last 30 Days</option>
-            <option value="90" selected>Last 90 Days</option>
-            <option value="180">Last 180 Days</option>
+            <option value="30">30 Days</option>
+            <option value="90" selected>90 Days (3 Months)</option>
+            <option value="180">180 Days (6 Months)</option>
+
           </select>
         </div>
-        <div>
-          <button id="radar-download-btn" onclick="downloadRadarCSV()" disabled style="width:100%; background:#1E2A3A; color:#888; border:1px solid #2A3B50; border-radius:6px; padding:8px; font-size:12px; font-weight:bold; cursor:not-allowed; transition:all 0.2s;">
+
+        <div style="flex: 1; min-width: 120px;">
+          <div style="margin-bottom:5px; color:#888; font-size:11px; text-transform:uppercase; font-weight:bold;">Rows Displayed</div>
+          <select id="radar-row-limit" onchange="renderRadarTableOnly()" style="width:100%;background:#1A1A28;border:1px solid #2A2A3A;border-radius:6px;padding:8px;color:#F0EAD6;font-size:12px;outline:none;">
+            <option value="15" selected>Latest 15</option>
+            <option value="30">Latest 30</option>
+            <option value="90">Latest 90</option>
+            <option value="ALL">Show All</option>
+          </select>
+        </div>
+
+        <div style="min-width: 140px;">
+          <button id="radar-download-btn" onclick="downloadRadarCSV()" style="width:100%; background:#00C896; color:#0D1117; border:none; border-radius:6px; padding:9px 14px; font-size:12px; font-weight:bold; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px;">
             📥 Download CSV
           </button>
         </div>
       </div>
 
-      <!-- Main Results Display -->
+      <!-- Main Results Workspace -->
       <div id="radar-results">
         <div style="text-align:center; padding: 40px; color: #555; font-size: 12px; border: 1px dashed #333; border-radius: 8px;">
-          Select a company above to run 100-point quantitative analysis.
+          Select a company above to run quantitative depth & fundamental analysis.
         </div>
       </div>
     </div>
   `;
 }
 
-// Global variable to hold active historical data for CSV export
-let currentRadarData = [];
-let currentRadarTicker = '';
-
-// 2. Load Historical Data & Render Analysis
+// 2. Fetch & Process Historical Data Efficiently
 async function loadRadarData() {
   const ticker = document.getElementById('radar-stock-select')?.value;
   const days = parseInt(document.getElementById('radar-timeframe')?.value || 90);
   const resultsDiv = document.getElementById('radar-results');
-  const downloadBtn = document.getElementById('radar-download-btn');
 
-  if (!ticker || !resultsDiv) {
-    if (resultsDiv) {
-      resultsDiv.innerHTML = `<div style="text-align:center; padding: 40px; color: #555; font-size: 12px; border: 1px dashed #333; border-radius: 8px;">Select a company above to run quantitative analysis.</div>`;
-    }
-    if (downloadBtn) {
-      downloadBtn.disabled = true;
-      downloadBtn.style.background = '#1E2A3A';
-      downloadBtn.style.color = '#888';
-      downloadBtn.style.cursor = 'not-allowed';
-    }
-    return;
-  }
+  if (!ticker || !resultsDiv) return;
 
-  resultsDiv.innerHTML = `<div style="text-align:center; padding:30px; color:#F4A623;">Evaluating fundamentals & market depth for ${ticker}...</div>`;
+  resultsDiv.innerHTML = `<div style="text-align:center; padding:30px; color:#F4A623;">⚡ Fetching market records for ${ticker}...</div>`;
 
   let depthData = [];
   try {
     if (typeof sb !== 'undefined' && sb.from) {
+      // Indexed payload query selecting only vital columns to reduce bandwidth & loading latency
       const { data, error } = await sb
         .from('market_depth_logs')
-        .select('*')
+        .select('snapshot_date, created_at, close_price, outstanding_bid, outstanding_offer, turnover, symbol')
         .eq('symbol', ticker)
         .order('snapshot_date', { ascending: false })
         .limit(days);
@@ -4570,38 +4566,22 @@ async function loadRadarData() {
       if (!error && data) depthData = data;
     }
   } catch (err) {
-    console.error("Database query error:", err);
+    console.error("Database fetch error:", err);
   }
 
   currentRadarData = depthData;
   currentRadarTicker = ticker;
 
-  // Enable/Disable Download Button
-  if (downloadBtn) {
-    if (depthData.length > 0) {
-      downloadBtn.disabled = false;
-      downloadBtn.style.background = '#00C896';
-      downloadBtn.style.color = '#0D1117';
-      downloadBtn.style.cursor = 'pointer';
-    } else {
-      downloadBtn.disabled = true;
-      downloadBtn.style.background = '#1E2A3A';
-      downloadBtn.style.color = '#888';
-      downloadBtn.style.cursor = 'not-allowed';
-    }
-  }
-
   if (depthData.length === 0) {
     resultsDiv.innerHTML = `
       <div style="text-align:center; padding: 30px; color: #888; background: #0D1117; border: 1px solid #1E2A3A; border-radius: 8px;">
-        ⚠️ No snapshot logs found for <strong>${ticker}</strong> in <code>market_depth_logs</code> yet.<br>
-        <span style="font-size:11px; color:#555; display:block; margin-top:6px;">Run your scraper or update script to capture snapshots.</span>
+        ⚠️ No snapshot logs found for <strong>${ticker}</strong> in <code>market_depth_logs</code>.
       </div>
     `;
     return;
   }
 
-  // Fetch Fundamentals
+  // Fetch company fundamentals
   let stockDetails = null;
   try {
     if (typeof sb !== 'undefined' && sb.from) {
@@ -4609,7 +4589,7 @@ async function loadRadarData() {
       if (data) stockDetails = data;
     }
   } catch (e) {
-    console.warn("Fundamental fetch soft-fail:", e);
+    console.warn("Stock details soft-fail:", e);
   }
 
   let userHolding = null;
@@ -4618,44 +4598,12 @@ async function loadRadarData() {
   }
 
   const fundScore = calculateFundamentalScore(stockDetails, ticker);
-
-  let tableRows = '';
   const latestRow = depthData[0];
   const latestAnalysis = calculateQuantSignal(latestRow, fundScore, userHolding, ticker);
 
-  depthData.forEach((row) => {
-    const analysis = calculateQuantSignal(row, fundScore, userHolding, ticker);
-    const dateStr = row.snapshot_date || (row.created_at ? row.created_at.split('T')[0] : 'N/A');
-    const closePx = row.close_price || 0;
-    const bids = row.outstanding_bid || 0;
-    const offers = row.outstanding_offer || 0;
-    const turnover = row.turnover || 0;
-
-    tableRows += `
-      <tr style="border-bottom: 1px solid #1A2A3A;">
-        <td style="padding: 10px; font-size: 11px; color:#888;">${dateStr}</td>
-        <td style="padding: 10px; font-size: 11px; font-weight:bold; color:#F0EAD6;">${closePx.toLocaleString()}</td>
-        <td style="padding: 10px; font-size: 11px; color:#00C896;">${(bids / 1000).toLocaleString(undefined, {maximumFractionDigits:1})}k</td>
-        <td style="padding: 10px; font-size: 11px; color:#E05656;">${(offers / 1000).toLocaleString(undefined, {maximumFractionDigits:1})}k</td>
-        <td style="padding: 10px; font-size: 11px; color:#AAA;">${turnover > 0 ? turnover.toLocaleString() : '—'}</td>
-        <td style="padding: 10px; font-size: 11px; font-weight: bold; color: ${analysis.color};">
-          <div style="display:flex; align-items:center; gap:6px;">
-            <span>${analysis.compositeScore}/100</span>
-            <span style="font-size:9px; color:#666;">(F:${fundScore.score} + D:${analysis.depthScore})</span>
-          </div>
-        </td>
-        <td style="padding: 10px; font-size: 11px;">
-          <span style="background:${analysis.color}22; color:${analysis.color}; border:1px solid ${analysis.color}44; padding: 3px 7px; border-radius: 4px; font-weight:bold; white-space:nowrap;">
-            ${analysis.signal}
-          </span>
-        </td>
-        <td style="padding: 10px; font-size: 10px; color:#AAA;">${analysis.comment}</td>
-      </tr>
-    `;
-  });
-
+  // Render Core UI Structure First
   resultsDiv.innerHTML = `
-    <!-- Top Summary Banner -->
+    <!-- Summary Cards -->
     <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap:10px; margin-bottom:15px;">
       <div style="background:#0D1117; border:1px solid #1E2A3A; padding:12px; border-radius:8px;">
         <div style="font-size:9px; color:#666; text-transform:uppercase;">Latest Close</div>
@@ -4679,19 +4627,66 @@ async function loadRadarData() {
     <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap:15px; margin-bottom:20px;">
       <div style="background:#0D1117; border:1px solid #1E2A3A; padding:15px; border-radius:8px;">
         <div style="font-size:12px; font-weight:700; color:var(--g); margin-bottom:10px;">Price Trend (TZS)</div>
-        <div style="height:220px; position:relative;">
-          <canvas id="radar-price-chart"></canvas>
-        </div>
+        <div style="height:200px; position:relative;"><canvas id="radar-price-chart"></canvas></div>
       </div>
       <div style="background:#0D1117; border:1px solid #1E2A3A; padding:15px; border-radius:8px;">
         <div style="font-size:12px; font-weight:700; color:var(--g); margin-bottom:10px;">Demand vs Supply Queue Depth</div>
-        <div style="height:220px; position:relative;">
-          <canvas id="radar-depth-chart"></canvas>
-        </div>
+        <div style="height:200px; position:relative;"><canvas id="radar-depth-chart"></canvas></div>
       </div>
     </div>
 
-    <!-- Table -->
+    <!-- Fast Table Container -->
+    <div id="radar-table-container"></div>
+  `;
+
+  initRadarCharts(depthData);
+  renderRadarTableOnly(fundScore, userHolding);
+}
+
+// 3. Fast Dynamic Table Rendering (Prevents UI Lag)
+function renderRadarTableOnly(fundScoreObj = null, userHolding = null) {
+  const container = document.getElementById('radar-table-container');
+  if (!container || currentRadarData.length === 0) return;
+
+  const limitVal = document.getElementById('radar-row-limit')?.value || "15";
+  const displayRows = limitVal === "ALL" ? currentRadarData : currentRadarData.slice(0, parseInt(limitVal));
+
+  if (!fundScoreObj) {
+    fundScoreObj = { score: 40, sector: 'General' };
+  }
+
+  let rowsHTML = displayRows.map(row => {
+    const analysis = calculateQuantSignal(row, fundScoreObj, userHolding, currentRadarTicker);
+    const dateStr = row.snapshot_date || (row.created_at ? row.created_at.split('T')[0] : 'N/A');
+    const closePx = row.close_price || 0;
+    const bids = row.outstanding_bid || 0;
+    const offers = row.outstanding_offer || 0;
+    const turnover = row.turnover || 0;
+
+    return `
+      <tr style="border-bottom: 1px solid #1A2A3A;">
+        <td style="padding: 10px; font-size: 11px; color:#888;">${dateStr}</td>
+        <td style="padding: 10px; font-size: 11px; font-weight:bold; color:#F0EAD6;">${closePx.toLocaleString()}</td>
+        <td style="padding: 10px; font-size: 11px; color:#00C896;">${(bids / 1000).toLocaleString(undefined, {maximumFractionDigits:1})}k</td>
+        <td style="padding: 10px; font-size: 11px; color:#E05656;">${(offers / 1000).toLocaleString(undefined, {maximumFractionDigits:1})}k</td>
+        <td style="padding: 10px; font-size: 11px; color:#AAA;">${turnover > 0 ? turnover.toLocaleString() : '—'}</td>
+        <td style="padding: 10px; font-size: 11px; font-weight: bold; color: ${analysis.color};">
+          <div style="display:flex; align-items:center; gap:6px;">
+            <span>${analysis.compositeScore}/100</span>
+            <span style="font-size:9px; color:#666;">(F:${fundScoreObj.score} + D:${analysis.depthScore})</span>
+          </div>
+        </td>
+        <td style="padding: 10px; font-size: 11px;">
+          <span style="background:${analysis.color}22; color:${analysis.color}; border:1px solid ${analysis.color}44; padding: 3px 7px; border-radius: 4px; font-weight:bold; white-space:nowrap;">
+            ${analysis.signal}
+          </span>
+        </td>
+        <td style="padding: 10px; font-size: 10px; color:#AAA;">${analysis.comment}</td>
+      </tr>
+    `;
+  }).join('');
+
+  container.innerHTML = `
     <div style="background: #0D1117; border: 1px solid #1E2A3A; border-radius: 8px; overflow-x: auto;">
       <table style="width: 100%; border-collapse: collapse; text-align: left; min-width: 750px;">
         <thead style="background: #161B27; border-bottom: 2px solid #1E2A3A;">
@@ -4707,18 +4702,19 @@ async function loadRadarData() {
           </tr>
         </thead>
         <tbody>
-          ${tableRows}
+          ${rowsHTML}
         </tbody>
       </table>
     </div>
   `;
-
-  initRadarCharts(depthData);
 }
 
-// 3. Download CSV Functionality
+// 4. Standalone CSV Exporter (Exports Full Loaded Dataset)
 function downloadRadarCSV() {
-  if (!currentRadarData || currentRadarData.length === 0) return;
+  if (!currentRadarData || currentRadarData.length === 0) {
+    alert("Please select a company with available market logs first.");
+    return;
+  }
 
   const headers = ["Symbol", "Date", "Close Price", "Bids", "Offers", "Turnover"];
   const rows = currentRadarData.map(d => [
@@ -4736,13 +4732,13 @@ function downloadRadarCSV() {
   const encodedUri = encodeURI(csvContent);
   const link = document.createElement("a");
   link.setAttribute("href", encodedUri);
-  link.setAttribute("download", `${currentRadarTicker}_market_depth_logs.csv`);
+  link.setAttribute("download", `${currentRadarTicker}_market_data_export.csv`);
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
 }
 
-// 4. Fundamental Score Calculator
+// 5. Fundamental Scoring Engine
 function calculateFundamentalScore(stock, symbol) {
   if (!stock) return { score: 40, sector: 'General' };
 
@@ -4777,7 +4773,7 @@ function calculateFundamentalScore(stock, symbol) {
   return { score: Math.min(score, 60), sector: isBank ? 'Banking' : isHolding ? 'Holding' : 'Industrial' };
 }
 
-// 5. Quant Signal Calculation
+// 6. Signal & Score Combiner
 function calculateQuantSignal(row, fundScoreObj, holding, symbol) {
   const closePx = row.close_price || 0;
   const bids = row.outstanding_bid || 0;
@@ -4817,7 +4813,7 @@ function calculateQuantSignal(row, fundScoreObj, holding, symbol) {
   }
 
   if (compositeScore >= 80) {
-    return { compositeScore, depthScore, signal: 'BUY NOW', color: '#00C896', comment: `🟢 Strong score (${compositeScore}/100). High value + active demand.` };
+    return { compositeScore, depthScore, signal: 'BUY NOW', color: '#00C896', comment: `🟢 Strong score (${compositeScore}/100). High fundamental value + demand.` };
   } else if (compositeScore >= 60) {
     return { compositeScore, depthScore, signal: 'HOLD / ACCUMULATE', color: '#4A90E2', comment: `🔵 Solid score (${compositeScore}/100). Good accumulation zone.` };
   } else if (compositeScore >= 40) {
@@ -4827,7 +4823,7 @@ function calculateQuantSignal(row, fundScoreObj, holding, symbol) {
   }
 }
 
-// 6. Chart Renderer
+// 7. Interactive Chart Engine
 function initRadarCharts(depthData) {
   if (typeof Chart === 'undefined') return;
 
@@ -4851,7 +4847,7 @@ function initRadarCharts(depthData) {
           backgroundColor: '#00C89615',
           fill: true,
           tension: 0.2,
-          pointRadius: 3
+          pointRadius: 2
         }]
       },
       options: {
@@ -4891,6 +4887,5 @@ function initRadarCharts(depthData) {
   }
 }
 
-// Run render logic
+// Initial trigger
 renderRadar();
-
