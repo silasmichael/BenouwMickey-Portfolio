@@ -4464,7 +4464,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.body.style.visibility = 'visible';
 });
 // ============================================================================
-// 📡 MARKET RADAR & QUANTITATIVE ENGINE (FIXED & STANDARDIZED)
+// 📡 MARKET RADAR & QUANTITATIVE ENGINE (FIXED PDF & PORTFOLIO METRICS)
 // ============================================================================
 
 let radarPriceChartInstance = null;
@@ -4473,7 +4473,7 @@ let currentRadarData = [];
 let currentRadarTicker = '';
 
 // Default exchange tickers
-const DEFAULT_TICKERS = ["CRDB", "NMB", "NICOL", "SWIS", "TBL", "TCCL", "VODA", "DSE", "MCB", "DCB", "TICL"];
+const DEFAULT_TICKERS = ["CRDB", "NMB", "NICOL", "SWIS", "TBL", "TCCL", "VODA", "DSE", "MCB", "DCB", "TICL", "IEACLC"];
 
 // 1. Initial UI Render
 function renderRadar() {
@@ -4513,7 +4513,7 @@ function renderRadar() {
           </select>
         </div>
 
-        <!-- Matching Green Action Buttons -->
+        <!-- Matching Action Buttons -->
         <div style="display:flex; gap:8px; min-width: 240px;">
           <button onclick="downloadRadarPDF()" style="flex:1; background:#00C896; color:#0D1117; border:none; border-radius:6px; padding:9px 12px; font-size:12px; font-weight:bold; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:4px;">
             📄 Export PDF
@@ -4556,7 +4556,7 @@ async function fetchDynamicTickers() {
   }
 }
 
-// 2. Load Radar Data & Fundamental Calculation
+// 2. Load Radar Data & Calculate Scores
 async function loadRadarData() {
   const ticker = document.getElementById('radar-stock-select')?.value;
   const days = parseInt(document.getElementById('radar-timeframe')?.value || 90);
@@ -4594,7 +4594,7 @@ async function loadRadarData() {
     return;
   }
 
-  // Fetch Fundamentals from Supabase if stored
+  // 1. Check Supabase DB for Stock Record
   let stockDetails = null;
   try {
     if (typeof sb !== 'undefined' && sb.from) {
@@ -4602,20 +4602,27 @@ async function loadRadarData() {
       if (data && data.length > 0) stockDetails = data[0];
     }
   } catch (e) {
-    console.warn("Soft-fail fetching fundamentals:", e);
+    console.warn("Soft-fail fetching stock DB record:", e);
   }
 
-  // Check owned holdings in local portfolio memory
+  // 2. Check local portfolio memory (Stocks tab array)
   let userHolding = null;
   if (typeof stocks !== 'undefined' && Array.isArray(stocks)) {
-    userHolding = stocks.find(s => s.ticker === ticker || s.symbol === ticker);
+    userHolding = stocks.find(s => 
+      (s.ticker && s.ticker.toUpperCase() === ticker.toUpperCase()) || 
+      (s.symbol && s.symbol.toUpperCase() === ticker.toUpperCase()) ||
+      (s.name && s.name.toUpperCase().includes(ticker.toUpperCase()))
+    );
   }
 
-  const fundScore = calculateFundamentalScore(stockDetails, ticker);
+  // Combine database fundamental record with portfolio stock object metrics
+  const combinedStockMetrics = Object.assign({}, userHolding || {}, stockDetails || {});
+
+  const fundScore = calculateFundamentalScore(combinedStockMetrics, ticker);
   const latestRow = depthData[0];
   const latestAnalysis = calculateQuantSignal(latestRow, fundScore, userHolding, ticker);
 
-  const fundDisplayStr = fundScore.hasData ? `${fundScore.score} <span style="font-size:11px; color:#666;">/ 60</span>` : `<span style="font-size:12px; color:#888;">N/A (No Data)</span>`;
+  const fundDisplayStr = fundScore.hasData ? `${fundScore.score} <span style="font-size:11px; color:#666;">/ 60</span>` : `<span style="font-size:11px; color:#888;">N/A (No Fundamental Card)</span>`;
 
   resultsDiv.innerHTML = `
     <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap:10px; margin-bottom:15px;">
@@ -4723,41 +4730,57 @@ function renderRadarTableOnly(fundScoreObj = null, userHolding = null) {
   `;
 }
 
-// 4. Fundamental Score Matrix (Fixed Dynamic Checking)
+// 4. Fundamental Score Matrix (Reads Stock Tab Portfolio Properties)
 function calculateFundamentalScore(stock, symbol) {
   if (!stock || Object.keys(stock).length === 0) {
     return { score: 0, hasData: false, sector: 'General' };
   }
 
   let score = 0;
-  const sector = (stock.sector || '').toLowerCase();
-  const isBank = sector.includes('bank') || ["CRDB", "NMB", "DCB", "MCB"].includes(symbol.toUpperCase());
-  const isHolding = sector.includes('holding') || ["NICOL", "NICO"].includes(symbol.toUpperCase());
+  let matchesFound = 0;
+
+  const symUpper = symbol.toUpperCase();
+  const sector = (stock.sector || stock.category || '').toLowerCase();
+  const isBank = sector.includes('bank') || ["CRDB", "NMB", "DCB", "MCB"].includes(symUpper);
+  const isHolding = sector.includes('holding') || ["NICOL", "NICO"].includes(symUpper);
+
+  // Parse numerical fields from Stock object (handles strings or numbers)
+  const pe = parseFloat(stock.pe_ratio || stock.pe || 0);
+  const pb = parseFloat(stock.pb_ratio || stock.pb || 0);
+  const roe = parseFloat(stock.roe || 0);
+  const divYield = parseFloat(stock.div_yield || stock.dividend_yield || 0);
+  const navDisc = parseFloat(stock.nav_discount || 0);
+  const pNav = parseFloat(stock.p_nav || 0);
 
   if (isBank) {
-    if (stock.pe_ratio > 0 && stock.pe_ratio < 10) score += 10; else if (stock.pe_ratio <= 15) score += 5;
-    if (stock.pb_ratio > 0 && stock.pb_ratio < 1.5) score += 10; else if (stock.pb_ratio <= 3.0) score += 5;
-    if (stock.roe >= 20) score += 10; else if (stock.roe >= 15) score += 5;
-    if (stock.npl > 0 && stock.npl < 3) score += 10; else if (stock.npl <= 5) score += 5;
-    if (stock.cir > 0 && stock.cir < 40) score += 10; else if (stock.cir <= 55) score += 5;
-    if (stock.div_yield >= 5) score += 10; else if (stock.div_yield >= 3) score += 5;
+    if (pe > 0 && pe < 10) { score += 10; matchesFound++; } else if (pe <= 15 && pe > 0) { score += 5; matchesFound++; }
+    if (pb > 0 && pb < 1.5) { score += 10; matchesFound++; } else if (pb <= 3.0 && pb > 0) { score += 5; matchesFound++; }
+    if (roe >= 20) { score += 10; matchesFound++; } else if (roe >= 15) { score += 5; matchesFound++; }
+    if (divYield >= 5) { score += 10; matchesFound++; } else if (divYield >= 3) { score += 5; matchesFound++; }
+    if (stock.npl && stock.npl < 3) score += 10; else if (stock.npl && stock.npl <= 5) score += 5;
+    if (stock.cir && stock.cir < 40) score += 10; else if (stock.cir && stock.cir <= 55) score += 5;
   } else if (isHolding) {
-    if (stock.p_nav > 0 && stock.p_nav < 0.8) score += 10; else if (stock.p_nav <= 1.0) score += 5;
-    if (stock.nav_discount >= 25) score += 10; else if (stock.nav_discount >= 10) score += 5;
-    if (stock.roe >= 15) score += 10; else if (stock.roe >= 10) score += 5;
-    if (stock.de_ratio < 0.5) score += 10; else if (stock.de_ratio <= 1.5) score += 5;
-    if (stock.div_yield >= 4) score += 10; else if (stock.div_yield >= 2) score += 5;
-    if (stock.buy_zone_status === 'Buy Zone' || stock.fair_value_discount >= 20) score += 10; else score += 5;
+    if (pNav > 0 && pNav < 0.8) { score += 10; matchesFound++; } else if (pNav <= 1.0 && pNav > 0) { score += 5; matchesFound++; }
+    if (navDisc >= 25) { score += 10; matchesFound++; } else if (navDisc >= 10) { score += 5; matchesFound++; }
+    if (roe >= 15) { score += 10; matchesFound++; } else if (roe >= 10) { score += 5; matchesFound++; }
+    if (divYield >= 4) { score += 10; matchesFound++; } else if (divYield >= 2) { score += 5; matchesFound++; }
+    if (stock.buy_zone_status === 'Buy Zone' || (stock.fair_value_discount && stock.fair_value_discount >= 20)) score += 10;
   } else {
-    if (stock.pe_ratio > 0 && stock.pe_ratio < 12) score += 10; else if (stock.pe_ratio <= 18) score += 5;
-    if (stock.ev_ebitda > 0 && stock.ev_ebitda < 8) score += 10; else if (stock.ev_ebitda <= 15) score += 5;
-    if (stock.de_ratio < 0.5) score += 10; else if (stock.de_ratio <= 1.5) score += 5;
-    if (stock.altman_z >= 3.0) score += 10; else if (stock.altman_z >= 1.8) score += 5;
-    if (stock.div_yield >= 5) score += 10; else if (stock.div_yield >= 3) score += 5;
-    if (stock.fair_value_discount >= 20) score += 10; else score += 5;
+    if (pe > 0 && pe < 12) { score += 10; matchesFound++; } else if (pe <= 18 && pe > 0) { score += 5; matchesFound++; }
+    if (divYield >= 5) { score += 10; matchesFound++; } else if (divYield >= 3) { score += 5; matchesFound++; }
+    if (roe >= 12) { score += 10; matchesFound++; } else if (roe >= 8) { score += 5; matchesFound++; }
+    if (stock.ev_ebitda > 0 && stock.ev_ebitda < 8) score += 10;
   }
 
-  return { score: Math.min(score, 60), hasData: true, sector: isBank ? 'Banking' : isHolding ? 'Holding' : 'Industrial' };
+  // Fallback for custom ETF / Funds like IEACLC
+  if (symUpper === 'IEACLC' || sector.includes('etf') || sector.includes('fund')) {
+    score = 45; // Default solid rating for structured market index funds
+    matchesFound = 1;
+  }
+
+  const hasData = matchesFound > 0 || Boolean(stock.pe_ratio || stock.div_yield || stock.roe || stock.buy_price);
+
+  return { score: Math.min(score, 60), hasData, sector: isBank ? 'Banking' : isHolding ? 'Holding' : 'Industrial' };
 }
 
 // 5. Signal Decision Engine
@@ -4774,7 +4797,6 @@ function calculateQuantSignal(row, fundScoreObj, holding, symbol) {
     depthScore = 40;
   }
 
-  // If no fundamental metrics exist for the target company, rescale market depth to a 100-point scale
   let compositeScore = fundScoreObj.hasData ? (fundScoreObj.score + depthScore) : Math.round((depthScore / 40) * 100);
 
   if (holding && holding.buy_price && holding.buy_price > 0) {
@@ -4801,17 +4823,17 @@ function calculateQuantSignal(row, fundScoreObj, holding, symbol) {
   }
 
   if (compositeScore >= 75) {
-    return { compositeScore, depthScore, signal: 'BUY NOW', color: '#00C896', comment: `🟢 Strong score (${compositeScore}/100). High demand interest.` };
+    return { compositeScore, depthScore, signal: 'BUY NOW', color: '#00C896', comment: `🟢 Strong score (${compositeScore}/100). High buy interest.` };
   } else if (compositeScore >= 55) {
-    return { compositeScore, depthScore, signal: 'HOLD / ACCUMULATE', color: '#4A90E2', comment: `🔵 Solid score (${compositeScore}/100). Balanced order flow.` };
+    return { compositeScore, depthScore, signal: 'HOLD / ACCUMULATE', color: '#4A90E2', comment: `🔵 Solid score (${compositeScore}/100). Fair valuation.` };
   } else if (compositeScore >= 35) {
-    return { compositeScore, depthScore, signal: 'WAIT', color: '#F4A623', comment: `🟡 Fair score (${compositeScore}/100). Moderate activity.` };
+    return { compositeScore, depthScore, signal: 'WAIT', color: '#F4A623', comment: `🟡 Fair score (${compositeScore}/100). Moderate liquidity.` };
   } else {
-    return { compositeScore, depthScore, signal: 'AVOID', color: '#E05656', comment: `🔴 Low score (${compositeScore}/100). Minimal buy demand.` };
+    return { compositeScore, depthScore, signal: 'AVOID', color: '#E05656', comment: `🔴 Low score (${compositeScore}/100). Weak demand queue.` };
   }
 }
 
-// 6. PDF Exporter
+// 6. Universal PDF Generator Fix
 function downloadRadarPDF() {
   const ticker = currentRadarTicker || document.getElementById('radar-stock-select')?.value;
 
@@ -4820,17 +4842,29 @@ function downloadRadarPDF() {
     return;
   }
 
-  const jsPDFLib = window.jspdf ? window.jspdf.jsPDF : window.jsPDF;
-  if (!jsPDFLib) {
-    alert("PDF library is loading or missing. Ensure jsPDF script tag is in index.html.");
+  // Universal jsPDF constructor fallback
+  let doc = null;
+  try {
+    if (window.jspdf && window.jspdf.jsPDF) {
+      doc = new window.jspdf.jsPDF('p', 'mm', 'a4');
+    } else if (typeof window.jsPDF === 'function') {
+      doc = new window.jsPDF('p', 'mm', 'a4');
+    } else if (window.jsPDF && window.jsPDF.default) {
+      doc = new window.jsPDF.default('p', 'mm', 'a4');
+    }
+  } catch (e) {
+    console.error("jsPDF initialization failed:", e);
+  }
+
+  if (!doc) {
+    alert("PDF generator library is not loaded properly in index.html. Check jsPDF scripts.");
     return;
   }
 
-  const doc = new jsPDFLib('p', 'mm', 'a4');
   const now = new Date();
   const dateStr = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 
-  // Dark Branding Header
+  // 1. Dark Branding Header
   doc.setFillColor(13, 17, 23);
   doc.rect(0, 0, 210, 28, 'F');
 
@@ -4844,7 +4878,7 @@ function downloadRadarPDF() {
   doc.setTextColor(170, 170, 170);
   doc.text(`Generated: ${dateStr}`, 196, 16, { align: "right" });
 
-  // Metadata Box
+  // 2. Stock Info Banner
   doc.setFillColor(245, 247, 250);
   doc.roundedRect(14, 34, 182, 20, 2, 2, 'F');
 
@@ -4870,35 +4904,46 @@ function downloadRadarPDF() {
     return [dStr, close, bids, offers, turnover];
   });
 
-  doc.autoTable({
-    startY: 58,
-    head: tableHead,
-    body: tableRows,
-    theme: 'grid',
-    headStyles: {
-      fillColor: [22, 27, 39],
-      textColor: [240, 234, 214],
-      fontSize: 8.5,
-      fontStyle: 'bold',
-      halign: 'center'
-    },
-    bodyStyles: {
-      fontSize: 8,
-      textColor: [40, 40, 40]
-    },
-    columnStyles: {
-      0: { halign: 'center' },
-      1: { halign: 'right', fontStyle: 'bold' },
-      2: { halign: 'right', textColor: [0, 150, 100] },
-      3: { halign: 'right', textColor: [200, 50, 50] },
-      4: { halign: 'right' }
-    },
-    alternateRowStyles: {
-      fillColor: [250, 252, 255]
-    },
-    margin: { left: 14, right: 14 }
-  });
+  // Render Table using autoTable plugin safely
+  if (typeof doc.autoTable === 'function') {
+    doc.autoTable({
+      startY: 58,
+      head: tableHead,
+      body: tableRows,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [22, 27, 39],
+        textColor: [240, 234, 214],
+        fontSize: 8.5,
+        fontStyle: 'bold',
+        halign: 'center'
+      },
+      bodyStyles: {
+        fontSize: 8,
+        textColor: [40, 40, 40]
+      },
+      columnStyles: {
+        0: { halign: 'center' },
+        1: { halign: 'right', fontStyle: 'bold' },
+        2: { halign: 'right', textColor: [0, 150, 100] },
+        3: { halign: 'right', textColor: [200, 50, 50] },
+        4: { halign: 'right' }
+      },
+      alternateRowStyles: {
+        fillColor: [250, 252, 255]
+      },
+      margin: { left: 14, right: 14 }
+    });
+  } else if (typeof window.jspdfAutoTable === 'function') {
+    window.jspdfAutoTable(doc, {
+      startY: 58,
+      head: tableHead,
+      body: tableRows,
+      theme: 'grid'
+    });
+  }
 
+  // Footer
   const pageCount = doc.internal.getNumberOfPages();
   for (let i = 1; i <= pageCount; i++) {
     doc.setPage(i);
