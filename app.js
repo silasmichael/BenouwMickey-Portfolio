@@ -4463,3 +4463,188 @@ async function syncLivePrices() {
 document.addEventListener('DOMContentLoaded', () => {
   document.body.style.visibility = 'visible';
 });
+// ============================================================================
+// 📡 MARKET RADAR & SCORING ENGINE
+// ============================================================================
+
+// 1. Main Render Function for Radar Tab
+async function renderRadar() {
+  const pane = document.getElementById('pane-radar');
+  pane.innerHTML = `<div style="text-align:center; padding: 20px; color: #888;">Loading Radar Data...</div>`;
+
+  // Fetch your unique stocks to populate the dropdown
+  const { data: stocks, error } = await supabase.from('stocks').select('*');
+  
+  if (error) {
+    pane.innerHTML = `<div style="color:var(--r); padding:20px;">Error loading stocks: ${error.message}</div>`;
+    return;
+  }
+
+  // Build the Radar UI
+  let html = `
+    <div style="padding: 16px;">
+      <div style="font-size:18px;font-weight:900;color:var(--g);margin-bottom:16px;">📡 Market Radar & Depth</div>
+      
+      <!-- Controls -->
+      <div class="g2" style="margin-bottom: 20px; background: #0D1117; padding: 15px; border-radius: 8px; border: 1px solid #1E2A3A;">
+        <div>
+          <div class="sec" style="margin-bottom:5px;">Select Company</div>
+          <select id="radar-stock-select" onchange="loadRadarData()" style="width:100%;background:#1A1A28;border:1px solid #2A2A3A;border-radius:6px;padding:8px;color:#F0EAD6;font-size:12px;">
+            <option value="">-- Choose a Company --</option>
+            ${stocks.map(s => `<option value="${s.ticker}">${s.name} (${s.ticker})</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <div class="sec" style="margin-bottom:5px;">Timeframe</div>
+          <select id="radar-timeframe" onchange="loadRadarData()" style="width:100%;background:#1A1A28;border:1px solid #2A2A3A;border-radius:6px;padding:8px;color:#F0EAD6;font-size:12px;">
+            <option value="30">Last 30 Days</option>
+            <option value="90" selected>Last 90 Days</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Results Area -->
+      <div id="radar-results">
+        <div style="text-align:center; padding: 40px; color: #555; font-size: 12px; border: 1px dashed #333; border-radius: 8px;">
+          Select a company above to run the quantitative analysis.
+        </div>
+      </div>
+    </div>
+  `;
+
+  pane.innerHTML = html;
+}
+
+// 2. Load Data and Calculate Scores
+async function loadRadarData() {
+  const ticker = document.getElementById('radar-stock-select').value;
+  const days = document.getElementById('radar-timeframe').value;
+  const resultsDiv = document.getElementById('radar-results');
+
+  if (!ticker) {
+    resultsDiv.innerHTML = `<div style="text-align:center; padding: 40px; color: #555; font-size: 12px; border: 1px dashed #333; border-radius: 8px;">Select a company above to run the quantitative analysis.</div>`;
+    return;
+  }
+
+  resultsDiv.innerHTML = `<div style="text-align:center; color:#F4A623;">Crunching numbers & fetching depth...</div>`;
+
+  // Fetch the specific stock's fundamentals
+  const { data: stockData } = await supabase.from('stocks').select('*').eq('ticker', ticker).single();
+  
+  // NOTE: This assumes you will create a 'market_depth' table in Supabase later. 
+  // For now, we simulate the daily market depth data to prove the logic works without breaking your app.
+  const depthData = generateMockDepthData(ticker, days); 
+
+  let tableRows = '';
+
+  depthData.forEach((day, index) => {
+    // Determine Quantitative Signal
+    const analysis = calculateQuantSignal(stockData, day);
+    
+    tableRows += `
+      <tr style="border-bottom: 1px solid #1A2A3A;">
+        <td style="padding: 10px; font-size: 11px; color:#888;">${day.date}</td>
+        <td style="padding: 10px; font-size: 11px; font-weight:bold;">${day.close_price.toLocaleString()}</td>
+        <td style="padding: 10px; font-size: 11px; color:#00C896;">${(day.bids / 1000).toFixed(1)}k</td>
+        <td style="padding: 10px; font-size: 11px; color:#E05656;">${(day.offers / 1000).toFixed(1)}k</td>
+        <td style="padding: 10px; font-size: 11px;">
+          <span style="background:${analysis.color}22; color:${analysis.color}; padding: 3px 6px; border-radius: 4px; font-weight:bold;">
+            ${analysis.signal}
+          </span>
+        </td>
+        <td style="padding: 10px; font-size: 10px; color:#AAA;">${analysis.comment}</td>
+      </tr>
+    `;
+  });
+
+  resultsDiv.innerHTML = `
+    <div style="background: #0A1420; border: 1px solid #1A2A3A; border-radius: 8px; overflow: hidden; margin-top: 15px;">
+      <table style="width: 100%; border-collapse: collapse; text-align: left;">
+        <thead style="background: #111827; border-bottom: 2px solid #1E2A3A;">
+          <tr>
+            <th style="padding: 10px; font-size: 10px; color: #555; text-transform: uppercase;">Date</th>
+            <th style="padding: 10px; font-size: 10px; color: #555; text-transform: uppercase;">Close (TSh)</th>
+            <th style="padding: 10px; font-size: 10px; color: #555; text-transform: uppercase;">Bids (Demand)</th>
+            <th style="padding: 10px; font-size: 10px; color: #555; text-transform: uppercase;">Offers (Supply)</th>
+            <th style="padding: 10px; font-size: 10px; color: #555; text-transform: uppercase;">Action</th>
+            <th style="padding: 10px; font-size: 10px; color: #555; text-transform: uppercase;">Quant Commentary</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tableRows}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+// 3. The Quantitative Scoring Engine
+function calculateQuantSignal(stock, depthDay) {
+  let fundScore = 30; // Base score
+  let currentPrice = depthDay.close_price;
+  let fairValue = stock.fair_value || currentPrice; 
+  let avgBuyPrice = stock.buy_price || null;
+
+  // --- A. FUNDAMENTAL SCORING (Max 60) ---
+  // If undervalued, score goes up. If overvalued, score drops.
+  let valuationDiscount = ((fairValue - currentPrice) / currentPrice) * 100;
+  
+  if (stock.type === 'holding') {
+    // Holding companies (NICOL) are judged by NAV discount
+    fundScore += (valuationDiscount > 20) ? 30 : (valuationDiscount > 0 ? 15 : -10);
+  } else if (stock.type === 'bank') {
+    // Banks judged differently (placeholder for ROE/NPL logic if added to DB)
+    fundScore += (valuationDiscount > 10) ? 25 : (valuationDiscount > 0 ? 10 : -10);
+  } else {
+    // General industrial/services
+    fundScore += (valuationDiscount > 15) ? 25 : (valuationDiscount > 0 ? 10 : -15);
+  }
+  
+  // Cap fundamental score at 60
+  fundScore = Math.min(60, Math.max(0, fundScore));
+
+  // --- B. MARKET DEPTH SCORING (Max 40) ---
+  let totalVolume = depthDay.bids + depthDay.offers;
+  let demandRatio = totalVolume === 0 ? 0.5 : depthDay.bids / totalVolume;
+  let depthScore = demandRatio * 40; 
+
+  let totalScore = fundScore + depthScore;
+
+  // --- C. OVERRIDE: 50% PROFIT TARGET ---
+  if (avgBuyPrice && currentPrice >= (avgBuyPrice * 1.5)) {
+    return { signal: 'SELL NOW', color: '#E05656', comment: '🔴 50% Profit Target Reached. Take gains regardless of depth.' };
+  }
+
+  // --- D. DECISION OUTPUT ---
+  if (totalScore >= 80) {
+    return { signal: 'BUY NOW', color: '#00C896', comment: `🟢 Strong ${stock.type} fundamentals + High market demand.` };
+  } else if (totalScore >= 60) {
+    return { signal: 'HOLD & ADD', color: '#4A90E2', comment: '🔵 Good valuation. Wait for supply overhang to clear before adding.' };
+  } else if (totalScore >= 40) {
+    return { signal: 'WAIT', color: '#F4A623', comment: '🟡 Fairly valued, but lacking buying momentum.' };
+  } else {
+    return { signal: 'SELL', color: '#E05656', comment: '🔴 Overvalued with heavy supply overhang in the queue.' };
+  }
+}
+
+// 4. Temporary Mock Data Generator (Until your Supabase table is ready)
+function generateMockDepthData(ticker, days) {
+  let data = [];
+  let basePrice = 1000; // Mock starting price
+  
+  for(let i=0; i<5; i++) { // Generate last 5 days for preview
+    let d = new Date();
+    d.setDate(d.getDate() - i);
+    data.push({
+      date: d.toISOString().split('T')[0],
+      close_price: basePrice + Math.floor(Math.random() * 100 - 50),
+      bids: Math.floor(Math.random() * 500000),
+      offers: Math.floor(Math.random() * 500000)
+    });
+  }
+  return data;
+}
+
+// Ensure the tab system recognizes the new 'radar' pane.
+// Note: Your existing showTab() function in app.js should already handle hiding/showing panes based on the ID.
+
