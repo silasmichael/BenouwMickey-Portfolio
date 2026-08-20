@@ -68,3 +68,35 @@ tr:nth-child(odd) td{background:#111118}
   #hdr-btns{display:none!important}
   #hdr-mobile-btns{display:flex!important}
 }
+/* 📡 Radar Tab Optional Polish */
+
+/* Table Row Hover State */
+#pane-radar table tbody tr:hover {
+  background-color: #161B22 !important;
+  transition: background-color 0.15s ease-in-out;
+}
+
+/* Custom Dropdown Focus Glow */
+#pane-radar select:focus {
+  border-color: #00C896 !important;
+  box-shadow: 0 0 0 2px rgba(0, 200, 150, 0.2);
+}
+
+/* Horizontal Scrollbar for Mobile Tables */
+#pane-radar ::-webkit-scrollbar {
+  height: 6px;
+  width: 6px;
+}
+
+#pane-radar ::-webkit-scrollbar-track {
+  background: #0D1117;
+}
+
+#pane-radar ::-webkit-scrollbar-thumb {
+  background: #1E2A3A;
+  border-radius: 4px;
+}
+
+#pane-radar ::-webkit-scrollbar-thumb:hover {
+  background: #2A3B50;
+}
