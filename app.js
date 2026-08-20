@@ -4471,6 +4471,8 @@ let radarPriceChartInstance = null;
 let radarDepthChartInstance = null;
 let currentRadarData = [];
 let currentRadarTicker = '';
+let currentRadarFundScore = null;
+let currentRadarHolding = null;
 
 // Default exchange tickers
 const DEFAULT_TICKERS = ["CRDB", "NMB", "NICOL", "SWIS", "TBL", "TCCL", "VODA", "DSE", "MCB", "DCB", "TICL", "IEACLC"];
@@ -4619,6 +4621,8 @@ async function loadRadarData() {
   const combinedStockMetrics = Object.assign({}, userHolding || {}, stockDetails || {});
 
   const fundScore = calculateFundamentalScore(combinedStockMetrics, ticker);
+  currentRadarFundScore = fundScore;
+  currentRadarHolding = userHolding;
   const latestRow = depthData[0];
   const latestAnalysis = calculateQuantSignal(latestRow, fundScore, userHolding, ticker);
 
@@ -4833,7 +4837,38 @@ function calculateQuantSignal(row, fundScoreObj, holding, symbol) {
   }
 }
 
-// 6. Universal PDF Generator Fix
+// 6. Chart Image Embed Helper
+function addChartToPdf(doc, canvasId, x, y, maxWidth, maxHeight) {
+  try {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas || !canvas.width || !canvas.height) {
+      doc.setFontSize(8);
+      doc.setTextColor(150, 150, 150);
+      doc.text("Chart unavailable", x + maxWidth / 2, y + maxHeight / 2, { align: 'center' });
+      return;
+    }
+    const dataUrl = canvas.toDataURL('image/png', 1.0);
+    const aspect = canvas.width / canvas.height;
+    let w = maxWidth, h = maxWidth / aspect;
+    if (h > maxHeight) { h = maxHeight; w = maxHeight * aspect; }
+    doc.addImage(dataUrl, 'PNG', x + (maxWidth - w) / 2, y + (maxHeight - h) / 2, w, h);
+  } catch (e) {
+    console.error("Chart embed failed:", canvasId, e);
+    doc.setFontSize(8);
+    doc.setTextColor(150, 150, 150);
+    doc.text("Chart unavailable", x + maxWidth / 2, y + maxHeight / 2, { align: 'center' });
+  }
+}
+
+function hexToRgb(hex) {
+  if (!hex) return [40, 40, 40];
+  hex = hex.replace('#', '');
+  if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+  const num = parseInt(hex, 16);
+  return [(num >> 16) & 255, (num >> 8) & 255, num & 255];
+}
+
+// 7. Universal PDF Generator (Full Table + Charts)
 function downloadRadarPDF() {
   const ticker = currentRadarTicker || document.getElementById('radar-stock-select')?.value;
 
@@ -4842,15 +4877,15 @@ function downloadRadarPDF() {
     return;
   }
 
-  // Universal jsPDF constructor fallback
+  // Universal jsPDF constructor fallback (landscape — 8 columns need the width)
   let doc = null;
   try {
     if (window.jspdf && window.jspdf.jsPDF) {
-      doc = new window.jspdf.jsPDF('p', 'mm', 'a4');
+      doc = new window.jspdf.jsPDF('l', 'mm', 'a4');
     } else if (typeof window.jsPDF === 'function') {
-      doc = new window.jsPDF('p', 'mm', 'a4');
+      doc = new window.jsPDF('l', 'mm', 'a4');
     } else if (window.jsPDF && window.jsPDF.default) {
-      doc = new window.jsPDF.default('p', 'mm', 'a4');
+      doc = new window.jsPDF.default('l', 'mm', 'a4');
     }
   } catch (e) {
     console.error("jsPDF initialization failed:", e);
@@ -4861,95 +4896,128 @@ function downloadRadarPDF() {
     return;
   }
 
+  if (typeof doc.autoTable !== 'function') {
+    alert("PDF table plugin (jspdf-autotable) is not loaded. Check index.html script tags.");
+    return;
+  }
+
   const now = new Date();
   const dateStr = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const marginX = 14;
 
   // 1. Dark Branding Header
   doc.setFillColor(13, 17, 23);
-  doc.rect(0, 0, 210, 28, 'F');
+  doc.rect(0, 0, pageWidth, 24, 'F');
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(15);
   doc.setTextColor(0, 200, 150);
-  doc.text("MARKET RADAR & QUANT REPORT", 14, 16);
+  doc.text("MARKET RADAR & QUANT REPORT", marginX, 15);
 
   doc.setFontSize(9);
   doc.setFont("helvetica", "normal");
   doc.setTextColor(170, 170, 170);
-  doc.text(`Generated: ${dateStr}`, 196, 16, { align: "right" });
+  doc.text(`Generated: ${dateStr}`, pageWidth - marginX, 15, { align: "right" });
 
   // 2. Stock Info Banner
   doc.setFillColor(245, 247, 250);
-  doc.roundedRect(14, 34, 182, 20, 2, 2, 'F');
+  doc.roundedRect(marginX, 29, pageWidth - marginX * 2, 16, 2, 2, 'F');
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(11);
   doc.setTextColor(20, 30, 45);
-  doc.text(`Company Ticker: ${ticker}`, 18, 43);
+  doc.text(`Company Ticker: ${ticker}`, marginX + 4, 37);
 
   const latest = currentRadarData[0] || {};
   const closePx = (latest.close_price || 0).toLocaleString();
   doc.setFontSize(9.5);
   doc.setFont("helvetica", "normal");
-  doc.text(`Latest Close Price: TZS ${closePx}`, 18, 49);
-  doc.text(`Total Snapshots: ${currentRadarData.length} Days`, 190, 49, { align: "right" });
+  doc.text(`Latest Close Price: TZS ${closePx}`, marginX + 4, 42.5);
+  doc.text(`Total Snapshots: ${currentRadarData.length} Days`, pageWidth - marginX - 4, 42.5, { align: "right" });
 
-  const tableHead = [["Snapshot Date", "Close (TZS)", "Bids (Demand)", "Offers (Supply)", "Turnover (TZS)"]];
-  const tableRows = currentRadarData.map(row => {
+  // 3. Charts — Price Trend + Demand/Supply Depth, pulled straight from the live canvases
+  const chartsTop = 50;
+  const chartsHeight = 52;
+  const chartGap = 6;
+  const chartWidth = (pageWidth - marginX * 2 - chartGap) / 2;
+
+  doc.setFontSize(9);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(20, 30, 45);
+  doc.text("Price Trend (TZS)", marginX, chartsTop - 2);
+  doc.text("Demand vs Supply Queue Depth", marginX + chartWidth + chartGap, chartsTop - 2);
+
+  doc.setDrawColor(220, 220, 225);
+  doc.roundedRect(marginX, chartsTop, chartWidth, chartsHeight, 1.5, 1.5);
+  doc.roundedRect(marginX + chartWidth + chartGap, chartsTop, chartWidth, chartsHeight, 1.5, 1.5);
+
+  addChartToPdf(doc, 'radar-price-chart', marginX + 2, chartsTop + 2, chartWidth - 4, chartsHeight - 4);
+  addChartToPdf(doc, 'radar-depth-chart', marginX + chartWidth + chartGap + 2, chartsTop + 2, chartWidth - 4, chartsHeight - 4);
+
+  // 4. Full Quant Table — same 8 columns shown on screen, not just price
+  const fundScoreObj = currentRadarFundScore || { score: 0, hasData: false, sector: 'General' };
+  const holding = currentRadarHolding || null;
+  const rowAnalysis = currentRadarData.map(row => calculateQuantSignal(row, fundScoreObj, holding, ticker));
+
+  const tableHead = [["Date", "Close (TZS)", "Bids", "Offers", "Turnover (TZS)", "Score", "Action", "Commentary"]];
+  const tableRows = currentRadarData.map((row, i) => {
     const dStr = row.snapshot_date || (row.created_at ? row.created_at.split('T')[0] : 'N/A');
     const close = (row.close_price || 0).toLocaleString();
     const bids = (row.outstanding_bid || 0).toLocaleString();
     const offers = (row.outstanding_offer || 0).toLocaleString();
     const turnover = row.turnover ? row.turnover.toLocaleString() : "—";
-    return [dStr, close, bids, offers, turnover];
+    const a = rowAnalysis[i];
+    // strip emoji — default PDF fonts render them as blank boxes
+    const cleanComment = (a.comment || '').replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}]/gu, '').trim();
+    return [dStr, close, bids, offers, turnover, `${a.compositeScore}/100`, a.signal, cleanComment];
   });
 
-  // Render Table using autoTable plugin safely
-  if (typeof doc.autoTable === 'function') {
-    doc.autoTable({
-      startY: 58,
-      head: tableHead,
-      body: tableRows,
-      theme: 'grid',
-      headStyles: {
-        fillColor: [22, 27, 39],
-        textColor: [240, 234, 214],
-        fontSize: 8.5,
-        fontStyle: 'bold',
-        halign: 'center'
-      },
-      bodyStyles: {
-        fontSize: 8,
-        textColor: [40, 40, 40]
-      },
-      columnStyles: {
-        0: { halign: 'center' },
-        1: { halign: 'right', fontStyle: 'bold' },
-        2: { halign: 'right', textColor: [0, 150, 100] },
-        3: { halign: 'right', textColor: [200, 50, 50] },
-        4: { halign: 'right' }
-      },
-      alternateRowStyles: {
-        fillColor: [250, 252, 255]
-      },
-      margin: { left: 14, right: 14 }
-    });
-  } else if (typeof window.jspdfAutoTable === 'function') {
-    window.jspdfAutoTable(doc, {
-      startY: 58,
-      head: tableHead,
-      body: tableRows,
-      theme: 'grid'
-    });
-  }
+  doc.autoTable({
+    startY: chartsTop + chartsHeight + 8,
+    head: tableHead,
+    body: tableRows,
+    theme: 'grid',
+    styles: { font: 'helvetica', fontSize: 7.5, cellPadding: 2, overflow: 'linebreak' },
+    headStyles: {
+      fillColor: [22, 27, 39],
+      textColor: [240, 234, 214],
+      fontSize: 8,
+      fontStyle: 'bold',
+      halign: 'center'
+    },
+    bodyStyles: {
+      fontSize: 7.5,
+      textColor: [40, 40, 40]
+    },
+    columnStyles: {
+      0: { halign: 'center', cellWidth: 22 },
+      1: { halign: 'right', fontStyle: 'bold', cellWidth: 22 },
+      2: { halign: 'right', textColor: [0, 150, 100], cellWidth: 20 },
+      3: { halign: 'right', textColor: [200, 50, 50], cellWidth: 20 },
+      4: { halign: 'right', cellWidth: 26 },
+      5: { halign: 'center', fontStyle: 'bold', cellWidth: 18 },
+      6: { halign: 'center', fontStyle: 'bold', cellWidth: 34 },
+      7: { halign: 'left', cellWidth: 'auto' }
+    },
+    alternateRowStyles: { fillColor: [250, 252, 255] },
+    margin: { left: marginX, right: marginX },
+    didParseCell: function (data) {
+      if (data.section === 'body' && (data.column.index === 5 || data.column.index === 6)) {
+        const a = rowAnalysis[data.row.index];
+        if (a && a.color) data.cell.styles.textColor = hexToRgb(a.color);
+      }
+    }
+  });
 
   // Footer
+  const pageHeight = doc.internal.pageSize.getHeight();
   const pageCount = doc.internal.getNumberOfPages();
   for (let i = 1; i <= pageCount; i++) {
     doc.setPage(i);
     doc.setFontSize(8);
     doc.setTextColor(150, 150, 150);
-    doc.text(`Page ${i} of ${pageCount}`, 105, 290, { align: 'center' });
+    doc.text(`Page ${i} of ${pageCount}`, pageWidth / 2, pageHeight - 8, { align: 'center' });
   }
 
   doc.save(`${ticker}_Market_Radar_Statement.pdf`);
