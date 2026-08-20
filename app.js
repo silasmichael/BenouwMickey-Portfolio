@@ -4464,7 +4464,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.body.style.visibility = 'visible';
 });
 // ============================================================================
-// 📡 MARKET RADAR & SCORING ENGINE (HIGH PERFORMANCE & INSTANT LOAD)
+// 📡 MARKET RADAR & QUANTITATIVE ENGINE (FIXED & STANDARDIZED)
 // ============================================================================
 
 let radarPriceChartInstance = null;
@@ -4472,15 +4472,14 @@ let radarDepthChartInstance = null;
 let currentRadarData = [];
 let currentRadarTicker = '';
 
-// Default exchange tickers so UI renders instantly without waiting for DB
+// Default exchange tickers
 const DEFAULT_TICKERS = ["CRDB", "NMB", "NICOL", "SWIS", "TBL", "TCCL", "VODA", "DSE", "MCB", "DCB", "TICL"];
 
-// 1. Instant Initial Render
+// 1. Initial UI Render
 function renderRadar() {
   const pane = document.getElementById('pane-radar');
   if (!pane) return;
 
-  // Render UI layout immediately using default tickers
   pane.innerHTML = `
     <div style="padding: 16px; max-width: 1200px; margin: 0 auto;">
       <div style="font-size:18px;font-weight:900;color:var(--g);margin-bottom:16px;">📡 Market Radar & Quantitative Scoring Engine</div>
@@ -4514,14 +4513,15 @@ function renderRadar() {
           </select>
         </div>
 
-        <div style="display:flex; gap:8px;">
-        <button onclick="downloadRadarPDF()" style="background:#00C896; color:#0D1117; border:none; border-radius:6px; padding:9px 12px; font-size:12px; font-weight:bold; cursor:pointer;">📄 PDF Statement
-        </button>
-        <button onclick="downloadRadarCSV()" style="background:#1A2A3A; color:#F0EAD6; border:1px solid #2A3A4A; border-radius:6px; padding:9px 12px; font-size:12px; font-weight:bold; cursor:pointer;">
-        📊 CSV Data
-        </button>
+        <!-- Matching Green Action Buttons -->
+        <div style="display:flex; gap:8px; min-width: 240px;">
+          <button onclick="downloadRadarPDF()" style="flex:1; background:#00C896; color:#0D1117; border:none; border-radius:6px; padding:9px 12px; font-size:12px; font-weight:bold; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:4px;">
+            📄 Export PDF
+          </button>
+          <button onclick="downloadRadarCSV()" style="flex:1; background:#00C896; color:#0D1117; border:none; border-radius:6px; padding:9px 12px; font-size:12px; font-weight:bold; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:4px;">
+            📊 Export CSV
+          </button>
         </div>
-
       </div>
 
       <!-- Results Display Container -->
@@ -4533,11 +4533,10 @@ function renderRadar() {
     </div>
   `;
 
-  // Fetch missing DB dynamic tickers asynchronously in background without blocking
   fetchDynamicTickers();
 }
 
-// Background Ticker Loader (Optimized with Limit)
+// Dynamic Ticker Loader
 async function fetchDynamicTickers() {
   try {
     if (typeof sb !== 'undefined' && sb.from) {
@@ -4557,7 +4556,7 @@ async function fetchDynamicTickers() {
   }
 }
 
-// 2. Optimized Fetch for Selected Company
+// 2. Load Radar Data & Fundamental Calculation
 async function loadRadarData() {
   const ticker = document.getElementById('radar-stock-select')?.value;
   const days = parseInt(document.getElementById('radar-timeframe')?.value || 90);
@@ -4570,7 +4569,6 @@ async function loadRadarData() {
   let depthData = [];
   try {
     if (typeof sb !== 'undefined' && sb.from) {
-      // Indexed select query limited strictly to chosen window length
       const { data, error } = await sb
         .from('market_depth_logs')
         .select('snapshot_date, created_at, close_price, outstanding_bid, outstanding_offer, turnover, symbol')
@@ -4596,7 +4594,7 @@ async function loadRadarData() {
     return;
   }
 
-  // Fetch stock record asynchronously
+  // Fetch Fundamentals from Supabase if stored
   let stockDetails = null;
   try {
     if (typeof sb !== 'undefined' && sb.from) {
@@ -4607,6 +4605,7 @@ async function loadRadarData() {
     console.warn("Soft-fail fetching fundamentals:", e);
   }
 
+  // Check owned holdings in local portfolio memory
   let userHolding = null;
   if (typeof stocks !== 'undefined' && Array.isArray(stocks)) {
     userHolding = stocks.find(s => s.ticker === ticker || s.symbol === ticker);
@@ -4616,8 +4615,9 @@ async function loadRadarData() {
   const latestRow = depthData[0];
   const latestAnalysis = calculateQuantSignal(latestRow, fundScore, userHolding, ticker);
 
+  const fundDisplayStr = fundScore.hasData ? `${fundScore.score} <span style="font-size:11px; color:#666;">/ 60</span>` : `<span style="font-size:12px; color:#888;">N/A (No Data)</span>`;
+
   resultsDiv.innerHTML = `
-    <!-- Top Summary Banner -->
     <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap:10px; margin-bottom:15px;">
       <div style="background:#0D1117; border:1px solid #1E2A3A; padding:12px; border-radius:8px;">
         <div style="font-size:9px; color:#666; text-transform:uppercase;">Latest Close</div>
@@ -4625,7 +4625,7 @@ async function loadRadarData() {
       </div>
       <div style="background:#0D1117; border:1px solid #1E2A3A; padding:12px; border-radius:8px;">
         <div style="font-size:9px; color:#666; text-transform:uppercase;">Fundamental Score</div>
-        <div style="font-size:18px; font-weight:800; color:#00C896;">${fundScore.score} <span style="font-size:11px; color:#666;">/ 60</span></div>
+        <div style="font-size:18px; font-weight:800; color:#00C896;">${fundDisplayStr}</div>
       </div>
       <div style="background:#0D1117; border:1px solid #1E2A3A; padding:12px; border-radius:8px;">
         <div style="font-size:9px; color:#666; text-transform:uppercase;">Composite Score</div>
@@ -4637,7 +4637,6 @@ async function loadRadarData() {
       </div>
     </div>
 
-    <!-- Charts Workspace -->
     <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap:15px; margin-bottom:20px;">
       <div style="background:#0D1117; border:1px solid #1E2A3A; padding:15px; border-radius:8px;">
         <div style="font-size:12px; font-weight:700; color:var(--g); margin-bottom:10px;">Price Trend (TZS)</div>
@@ -4649,7 +4648,6 @@ async function loadRadarData() {
       </div>
     </div>
 
-    <!-- Table Container -->
     <div id="radar-table-container"></div>
   `;
 
@@ -4657,7 +4655,7 @@ async function loadRadarData() {
   renderRadarTableOnly(fundScore, userHolding);
 }
 
-// 3. Fast Table Render
+// 3. Render Table
 function renderRadarTableOnly(fundScoreObj = null, userHolding = null) {
   const container = document.getElementById('radar-table-container');
   if (!container || currentRadarData.length === 0) return;
@@ -4666,7 +4664,7 @@ function renderRadarTableOnly(fundScoreObj = null, userHolding = null) {
   const displayRows = limitVal === "ALL" ? currentRadarData : currentRadarData.slice(0, parseInt(limitVal));
 
   if (!fundScoreObj) {
-    fundScoreObj = { score: 40, sector: 'General' };
+    fundScoreObj = { score: 0, hasData: false, sector: 'General' };
   }
 
   let rowsHTML = displayRows.map(row => {
@@ -4676,6 +4674,8 @@ function renderRadarTableOnly(fundScoreObj = null, userHolding = null) {
     const bids = row.outstanding_bid || 0;
     const offers = row.outstanding_offer || 0;
     const turnover = row.turnover || 0;
+
+    const fundScoreLabel = fundScoreObj.hasData ? `F:${fundScoreObj.score}` : `F:N/A`;
 
     return `
       <tr style="border-bottom: 1px solid #1A2A3A;">
@@ -4687,7 +4687,7 @@ function renderRadarTableOnly(fundScoreObj = null, userHolding = null) {
         <td style="padding: 10px; font-size: 11px; font-weight: bold; color: ${analysis.color};">
           <div style="display:flex; align-items:center; gap:6px;">
             <span>${analysis.compositeScore}/100</span>
-            <span style="font-size:9px; color:#666;">(F:${fundScoreObj.score} + D:${analysis.depthScore})</span>
+            <span style="font-size:9px; color:#666;">(${fundScoreLabel} + D:${analysis.depthScore})</span>
           </div>
         </td>
         <td style="padding: 10px; font-size: 11px;">
@@ -4723,60 +4723,11 @@ function renderRadarTableOnly(fundScoreObj = null, userHolding = null) {
   `;
 }
 
-// 4. Download CSV Handler (Fixed Export Engine)
-function downloadRadarCSV() {
-  const ticker = currentRadarTicker || document.getElementById('radar-stock-select')?.value;
-
-  // 1. Check if data is loaded
-  if (!currentRadarData || currentRadarData.length === 0) {
-    alert("No data loaded yet. Please select a company and wait for the analysis to complete before downloading.");
-    return;
-  }
-
-  try {
-    // 2. Format Headers & Content
-    const headers = ["Symbol", "Date", "Close Price (TZS)", "Outstanding Bids", "Outstanding Offers", "Turnover"];
-    
-    const csvRows = [
-      headers.join(","),
-      ...currentRadarData.map(d => {
-        const symbol = d.symbol || ticker || "N/A";
-        const date = d.snapshot_date || (d.created_at ? d.created_at.split('T')[0] : 'N/A');
-        const price = d.close_price || 0;
-        const bids = d.outstanding_bid || 0;
-        const offers = d.outstanding_offer || 0;
-        const turnover = d.turnover || 0;
-
-        return `"${symbol}","${date}",${price},${bids},${offers},${turnover}`;
-      })
-    ];
-
-    const csvString = csvRows.join("\n");
-
-    // 3. Create Blob (Fixes browser download block issues)
-    const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    
-    const downloadLink = document.createElement("a");
-    downloadLink.href = url;
-    downloadLink.setAttribute("download", `${ticker || 'market'}_depth_data_${new Date().toISOString().split('T')[0]}.csv`);
-    
-    document.body.appendChild(downloadLink);
-    downloadLink.click();
-    
-    // Clean up memory
-    document.body.removeChild(downloadLink);
-    URL.revokeObjectURL(url);
-
-  } catch (err) {
-    console.error("CSV Download Error:", err);
-    alert("An error occurred while generating the CSV file. Check console for details.");
-  }
-}
-
-// 5. Fundamental Score Matrix
+// 4. Fundamental Score Matrix (Fixed Dynamic Checking)
 function calculateFundamentalScore(stock, symbol) {
-  if (!stock) return { score: 40, sector: 'General' };
+  if (!stock || Object.keys(stock).length === 0) {
+    return { score: 0, hasData: false, sector: 'General' };
+  }
 
   let score = 0;
   const sector = (stock.sector || '').toLowerCase();
@@ -4806,10 +4757,10 @@ function calculateFundamentalScore(stock, symbol) {
     if (stock.fair_value_discount >= 20) score += 10; else score += 5;
   }
 
-  return { score: Math.min(score, 60), sector: isBank ? 'Banking' : isHolding ? 'Holding' : 'Industrial' };
+  return { score: Math.min(score, 60), hasData: true, sector: isBank ? 'Banking' : isHolding ? 'Holding' : 'Industrial' };
 }
 
-// 6. Signal Decision Logic
+// 5. Signal Decision Engine
 function calculateQuantSignal(row, fundScoreObj, holding, symbol) {
   const closePx = row.close_price || 0;
   const bids = row.outstanding_bid || 0;
@@ -4823,7 +4774,8 @@ function calculateQuantSignal(row, fundScoreObj, holding, symbol) {
     depthScore = 40;
   }
 
-  let compositeScore = fundScoreObj.score + depthScore;
+  // If no fundamental metrics exist for the target company, rescale market depth to a 100-point scale
+  let compositeScore = fundScoreObj.hasData ? (fundScoreObj.score + depthScore) : Math.round((depthScore / 40) * 100);
 
   if (holding && holding.buy_price && holding.buy_price > 0) {
     const profitPct = ((closePx - holding.buy_price) / holding.buy_price) * 100;
@@ -4844,22 +4796,160 @@ function calculateQuantSignal(row, fundScoreObj, holding, symbol) {
       depthScore,
       signal: 'WAIT / SELL',
       color: '#E05656',
-      comment: `🔴 Supply overhang (Offers ${offers.toLocaleString()} vs Bids ${bids.toLocaleString()}).`
+      comment: `🔴 Heavy supply overhang (Offers ${offers.toLocaleString()} vs Bids ${bids.toLocaleString()}).`
     };
   }
 
-  if (compositeScore >= 80) {
-    return { compositeScore, depthScore, signal: 'BUY NOW', color: '#00C896', comment: `🟢 Strong score (${compositeScore}/100). High fundamental value + active buy demand.` };
-  } else if (compositeScore >= 60) {
-    return { compositeScore, depthScore, signal: 'HOLD / ACCUMULATE', color: '#4A90E2', comment: `🔵 Solid score (${compositeScore}/100). Good accumulation range.` };
-  } else if (compositeScore >= 40) {
-    return { compositeScore, depthScore, signal: 'WAIT', color: '#F4A623', comment: `🟡 Fair score (${compositeScore}/100). Fairly valued or supply building.` };
+  if (compositeScore >= 75) {
+    return { compositeScore, depthScore, signal: 'BUY NOW', color: '#00C896', comment: `🟢 Strong score (${compositeScore}/100). High demand interest.` };
+  } else if (compositeScore >= 55) {
+    return { compositeScore, depthScore, signal: 'HOLD / ACCUMULATE', color: '#4A90E2', comment: `🔵 Solid score (${compositeScore}/100). Balanced order flow.` };
+  } else if (compositeScore >= 35) {
+    return { compositeScore, depthScore, signal: 'WAIT', color: '#F4A623', comment: `🟡 Fair score (${compositeScore}/100). Moderate activity.` };
   } else {
-    return { compositeScore, depthScore, signal: 'AVOID', color: '#E05656', comment: `🔴 Low score (${compositeScore}/100). Poor fundamentals or no buy demand.` };
+    return { compositeScore, depthScore, signal: 'AVOID', color: '#E05656', comment: `🔴 Low score (${compositeScore}/100). Minimal buy demand.` };
   }
 }
 
-// 7. Chart Initializer
+// 6. PDF Exporter
+function downloadRadarPDF() {
+  const ticker = currentRadarTicker || document.getElementById('radar-stock-select')?.value;
+
+  if (!currentRadarData || currentRadarData.length === 0) {
+    alert("Please select a company with market data before exporting PDF.");
+    return;
+  }
+
+  const jsPDFLib = window.jspdf ? window.jspdf.jsPDF : window.jsPDF;
+  if (!jsPDFLib) {
+    alert("PDF library is loading or missing. Ensure jsPDF script tag is in index.html.");
+    return;
+  }
+
+  const doc = new jsPDFLib('p', 'mm', 'a4');
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+
+  // Dark Branding Header
+  doc.setFillColor(13, 17, 23);
+  doc.rect(0, 0, 210, 28, 'F');
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(15);
+  doc.setTextColor(0, 200, 150);
+  doc.text("MARKET RADAR & QUANT REPORT", 14, 16);
+
+  doc.setFontSize(9);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(170, 170, 170);
+  doc.text(`Generated: ${dateStr}`, 196, 16, { align: "right" });
+
+  // Metadata Box
+  doc.setFillColor(245, 247, 250);
+  doc.roundedRect(14, 34, 182, 20, 2, 2, 'F');
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(20, 30, 45);
+  doc.text(`Company Ticker: ${ticker}`, 18, 43);
+
+  const latest = currentRadarData[0] || {};
+  const closePx = (latest.close_price || 0).toLocaleString();
+  doc.setFontSize(9.5);
+  doc.setFont("helvetica", "normal");
+  doc.text(`Latest Close Price: TZS ${closePx}`, 18, 49);
+  doc.text(`Total Snapshots: ${currentRadarData.length} Days`, 190, 49, { align: "right" });
+
+  const tableHead = [["Snapshot Date", "Close (TZS)", "Bids (Demand)", "Offers (Supply)", "Turnover (TZS)"]];
+  const tableRows = currentRadarData.map(row => {
+    const dStr = row.snapshot_date || (row.created_at ? row.created_at.split('T')[0] : 'N/A');
+    const close = (row.close_price || 0).toLocaleString();
+    const bids = (row.outstanding_bid || 0).toLocaleString();
+    const offers = (row.outstanding_offer || 0).toLocaleString();
+    const turnover = row.turnover ? row.turnover.toLocaleString() : "—";
+    return [dStr, close, bids, offers, turnover];
+  });
+
+  doc.autoTable({
+    startY: 58,
+    head: tableHead,
+    body: tableRows,
+    theme: 'grid',
+    headStyles: {
+      fillColor: [22, 27, 39],
+      textColor: [240, 234, 214],
+      fontSize: 8.5,
+      fontStyle: 'bold',
+      halign: 'center'
+    },
+    bodyStyles: {
+      fontSize: 8,
+      textColor: [40, 40, 40]
+    },
+    columnStyles: {
+      0: { halign: 'center' },
+      1: { halign: 'right', fontStyle: 'bold' },
+      2: { halign: 'right', textColor: [0, 150, 100] },
+      3: { halign: 'right', textColor: [200, 50, 50] },
+      4: { halign: 'right' }
+    },
+    alternateRowStyles: {
+      fillColor: [250, 252, 255]
+    },
+    margin: { left: 14, right: 14 }
+  });
+
+  const pageCount = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    doc.setFontSize(8);
+    doc.setTextColor(150, 150, 150);
+    doc.text(`Page ${i} of ${pageCount}`, 105, 290, { align: 'center' });
+  }
+
+  doc.save(`${ticker}_Market_Radar_Statement.pdf`);
+}
+
+// 7. CSV Exporter
+function downloadRadarCSV() {
+  const ticker = currentRadarTicker || document.getElementById('radar-stock-select')?.value;
+
+  if (!currentRadarData || currentRadarData.length === 0) {
+    alert("Please select a company with market data before exporting CSV.");
+    return;
+  }
+
+  try {
+    const headers = ["Symbol", "Date", "Close Price (TZS)", "Outstanding Bids", "Outstanding Offers", "Turnover"];
+    const csvRows = [
+      headers.join(","),
+      ...currentRadarData.map(d => {
+        const symbol = d.symbol || ticker || "N/A";
+        const date = d.snapshot_date || (d.created_at ? d.created_at.split('T')[0] : 'N/A');
+        const price = d.close_price || 0;
+        const bids = d.outstanding_bid || 0;
+        const offers = d.outstanding_offer || 0;
+        const turnover = d.turnover || 0;
+        return `"${symbol}","${date}",${price},${bids},${offers},${turnover}`;
+      })
+    ];
+
+    const blob = new Blob([csvRows.join("\n")], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const downloadLink = document.createElement("a");
+    downloadLink.href = url;
+    downloadLink.setAttribute("download", `${ticker}_market_depth_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(downloadLink);
+    downloadLink.click();
+    document.body.removeChild(downloadLink);
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    console.error("CSV Export Error:", err);
+    alert("An error occurred while generating the CSV file.");
+  }
+}
+
+// 8. Chart Rendering Engine
 function initRadarCharts(depthData) {
   if (typeof Chart === 'undefined') return;
 
@@ -4923,112 +5013,5 @@ function initRadarCharts(depthData) {
   }
 }
 
-// Execute initial UI render immediately
+// Initial Call
 renderRadar();
-// ============================================================================
-// 📄 STANDARDIZED MARKET RADAR PDF EXPORTER
-// ============================================================================
-
-function downloadRadarPDF() {
-  const ticker = currentRadarTicker || document.getElementById('radar-stock-select')?.value;
-
-  if (!currentRadarData || currentRadarData.length === 0) {
-    alert("Please select a company with market data before generating a report.");
-    return;
-  }
-
-  // Ensure jsPDF library is loaded
-  const { jsPDF } = window.jspdf || {};
-  if (!jsPDF) {
-    alert("PDF generator library is loading. Please check if jsPDF and autoTable scripts are included in index.html.");
-    return;
-  }
-
-  const doc = new jsPDF('p', 'mm', 'a4');
-  const now = new Date();
-  const dateStr = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-
-  // 1. App Header & Branding (Matches App Theme)
-  doc.setFillColor(13, 17, 23); // #0D1117 Dark Header
-  doc.rect(0, 0, 210, 28, 'F');
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(16);
-  doc.setTextColor(0, 200, 150); // Accent Green
-  doc.text("MARKET RADAR & QUANT REPORT", 14, 15);
-
-  doc.setFontSize(9);
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(170, 170, 170);
-  doc.text(`Generated: ${dateStr}`, 196, 15, { align: "right" });
-
-  // 2. Target Stock Metadata Card
-  doc.setFillColor(245, 247, 250);
-  doc.roundedRect(14, 34, 182, 20, 2, 2, 'F');
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(12);
-  doc.setTextColor(20, 30, 45);
-  doc.text(`Company Ticker: ${ticker}`, 18, 43);
-
-  const latest = currentRadarData[0] || {};
-  const closePx = (latest.close_price || 0).toLocaleString();
-  doc.setFontSize(10);
-  doc.setFont("helvetica", "normal");
-  doc.text(`Latest Close Price: TZS ${closePx}`, 18, 49);
-  doc.text(`Total Snapshots: ${currentRadarData.length} Days`, 190, 49, { align: "right" });
-
-  // 3. Format Data Rows for AutoTable
-  const tableHead = [["Snapshot Date", "Close (TZS)", "Bids (Demand)", "Offers (Supply)", "Turnover (TZS)"]];
-  const tableRows = currentRadarData.map(row => {
-    const dStr = row.snapshot_date || (row.created_at ? row.created_at.split('T')[0] : 'N/A');
-    const close = (row.close_price || 0).toLocaleString();
-    const bids = (row.outstanding_bid || 0).toLocaleString();
-    const offers = (row.outstanding_offer || 0).toLocaleString();
-    const turnover = row.turnover ? row.turnover.toLocaleString() : "—";
-    return [dStr, close, bids, offers, turnover];
-  });
-
-  // 4. Render Table with App-Matching Styling
-  doc.autoTable({
-    startY: 60,
-    head: tableHead,
-    body: tableRows,
-    theme: 'grid',
-    headStyles: {
-      fillColor: [22, 27, 39], // #161B27 Header
-      textColor: [240, 234, 214],
-      fontSize: 9,
-      fontStyle: 'bold',
-      halign: 'center'
-    },
-    bodyStyles: {
-      fontSize: 8.5,
-      textColor: [40, 40, 40]
-    },
-    columnStyles: {
-      0: { halign: 'center' },
-      1: { halign: 'right', fontStyle: 'bold' },
-      2: { halign: 'right', textColor: [0, 150, 100] }, // Green Bids
-      3: { halign: 'right', textColor: [200, 50, 50] },  // Red Offers
-      4: { halign: 'right' }
-    },
-    alternateRowStyles: {
-      fillColor: [250, 252, 255]
-    },
-    margin: { left: 14, right: 14 }
-  });
-
-  // 5. Standard Footer
-  const pageCount = doc.internal.getNumberOfPages();
-  for (let i = 1; i <= pageCount; i++) {
-    doc.setPage(i);
-    doc.setFontSize(8);
-    doc.setTextColor(150, 150, 150);
-    doc.text(`Page ${i} of ${pageCount}`, 105, 290, { align: 'center' });
-  }
-
-  // Save PDF
-  doc.save(`${ticker}_Market_Radar_Statement.pdf`);
-}
-
