@@ -4340,11 +4340,8 @@ sb.auth.onAuthStateChange(async (event, session) => {
 async function syncLivePrices() {
   const btnDesk = document.getElementById('sync-btn');
   const btnMob  = document.getElementById('sync-btn-mob');
-  const icon    = document.getElementById('sync-icon');
-  const iconMob = document.getElementById('sync-icon-mob');
   const allBtns = [btnDesk, btnMob].filter(Boolean);
 
-  // Always rebuild spinner span — textContent in button states removes it from DOM
   allBtns.forEach(b => {
     const iconId = b.id === 'sync-btn' ? 'sync-icon' : 'sync-icon-mob';
     b.innerHTML     = '<span id="' + iconId + '" class="loading-spin"></span> Updating...';
@@ -4354,37 +4351,12 @@ async function syncLivePrices() {
     b.style.color       = '#555';
     b.style.borderColor = '#333';
   });
-  // Re-grab icon refs after innerHTML rebuild
+
   const iconFresh    = document.getElementById('sync-icon');
   const iconMobFresh = document.getElementById('sync-icon-mob');
 
   try {
-    // Determine which keys are missing — only fetch those sources
-    const _allKeys     = [
-      ...(typeof stocks !== 'undefined' ? stocks.map(s => s.id) : []),
-      ...(typeof funds  !== 'undefined' ? funds.map(f => f.id)  : []),
-    ];
-    const _tradingDay  = getMostRecentTradingDay();
-    const _priceDates  = (snapshots && snapshots._priceDates) ? snapshots._priceDates : {};
-    const _missingKeys = _allKeys.filter(k => {
-      if (!_priceDates[k]) return true;
-      const fetchDay   = new Date(_priceDates[k]).toDateString();
-      const lastFetch  = snapshots._lastPriceTime ? new Date(snapshots._lastPriceTime).getTime() : 0;
-      const keyTime    = new Date(_priceDates[k]).getTime();
-      const inLastFetch = Math.abs(keyTime - lastFetch) < 60000;
-      // Missing if not updated on the most recent trading day, or not part of the last closing fetch
-      const closingOk  = (() => {
-        if (!snapshots._lastPriceTime) return false;
-        const fetchDate    = new Date(snapshots._lastPriceTime);
-        const fetchEATMins = fetchDate.getUTCHours() * 60 + fetchDate.getUTCMinutes() + 3 * 60;
-        return fetchEATMins >= (16 * 60 + 30) && inLastFetch;
-      })();
-      return fetchDay !== _tradingDay && !closingOk;
-    });
-    const _fetchParam  = _missingKeys.length > 0 && _missingKeys.length < _allKeys.length
-      ? '?keys=' + _missingKeys.join(',')
-      : '';
-    const response = await fetch('https://brwkhnqnsoormvpjqcmd.supabase.co/functions/v1/get-prices' + _fetchParam, {
+    const response = await fetch('https://brwkhnqnsoormvpjqcmd.supabase.co/functions/v1/get-prices', {
       method: 'GET',
       headers: { 'Authorization': 'Bearer ' + SB_KEY }
     });
@@ -4392,24 +4364,39 @@ async function syncLivePrices() {
     if (!response.ok) throw new Error('Server error ' + response.status);
     const p = await response.json();
 
+    const _now = new Date().toISOString();
+    if (!snapshots._priceDates) snapshots._priceDates = {};
+
     // Update stocks
-    if (typeof stocks !== 'undefined') {
-      stocks.forEach(s => { if (p[s.id] != null) s.currentPrice = p[s.id]; });
+    if (typeof stocks !== 'undefined' && Array.isArray(stocks)) {
+      stocks.forEach(s => {
+        if (p[s.id] != null) {
+          s.currentPrice = p[s.id];
+          snapshots._priceDates[s.id] = _now;
+        }
+      });
     }
-    // Update funds — IDs are igrowth, umoja, liquid
-    if (typeof funds !== 'undefined') {
-      funds.forEach(f => { if (p[f.id] != null) f.nav = p[f.id]; });
+    // Update funds
+    if (typeof funds !== 'undefined' && Array.isArray(funds)) {
+      funds.forEach(f => {
+        if (p[f.id] != null) {
+          f.nav = p[f.id];
+          snapshots._priceDates[f.id] = _now;
+        }
+      });
     }
 
-    // Update UI immediately
-    if (typeof renderAll    === 'function') renderAll();
+    snapshots._lastPriceTime = _now;
+
+    // Refresh UI & state across portfolio
+    if (typeof renderAll === 'function') renderAll();
     if (typeof updateHeader === 'function') updateHeader();
-    stampPriceUpdate(snapshots._lastPriceTime || p['_igrowthDate'] || null);
+    stampPriceUpdate(_now);
     setStatus('synced');
 
-    // Success — green, stays clickable so user can re-run if needed
     if (iconFresh)    iconFresh.classList.remove('loading-spin');
     if (iconMobFresh) iconMobFresh.classList.remove('loading-spin');
+
     allBtns.forEach(b => {
       b.textContent      = 'Updated';
       b.style.background = 'var(--g)';
@@ -4420,25 +4407,17 @@ async function syncLivePrices() {
       b.disabled         = false;
     });
 
-    // Write today's ISO date into snapshots._priceDates for every key we received
-    if (!snapshots._priceDates) snapshots._priceDates = {};
-    const _now = new Date().toISOString();
-    snapshots._lastPriceTime = _now;
-    const _expKeys = [
-      ...(typeof stocks !== 'undefined' ? stocks.map(s => s.id) : []),
-      ...(typeof funds  !== 'undefined' ? funds.map(f => f.id)  : []),
-    ];
-    _expKeys.forEach(k => { if (p[k] != null) snapshots._priceDates[k] = _now; });
     saveToCache();
     setPriceButtonState();
-    syncToSupabase().catch(e => console.warn('Background sync failed:', e));
+    persist();
 
   } catch (err) {
+    console.error("Price sync error:", err);
     if (iconFresh)    iconFresh.classList.remove('loading-spin');
     if (iconMobFresh) iconMobFresh.classList.remove('loading-spin');
-    const label = 'Failed — Retry';
+    
     allBtns.forEach(b => {
-      b.textContent      = label;
+      b.textContent      = 'Failed — Retry';
       b.style.color      = 'var(--r)';
       b.style.borderColor= 'var(--r)';
       b.style.background = 'transparent';
@@ -4446,7 +4425,7 @@ async function syncLivePrices() {
       b.style.cursor     = 'pointer';
       b.disabled         = false;
     });
-    // Reset label after 8 seconds so it doesn't stay as "Retry" forever
+
     setTimeout(() => {
       allBtns.forEach(b => {
         if (b.textContent.includes('Retry')) {
@@ -4557,6 +4536,44 @@ async function fetchDynamicTickers() {
     console.warn("Background ticker sync skipped:", err);
   }
 }
+// 📡 Metrics Extractor for Radar Fundamental Scoring
+function getCompanyMetricsForRadar(ticker) {
+  if (!ticker || !Array.isArray(stocks)) return null;
+  
+  const cleanTicker = ticker.trim().toUpperCase();
+  // Find stock in user's holdings / tracked stocks
+  const s = stocks.find(st => 
+    (st.id && st.id.toUpperCase() === cleanTicker) ||
+    (st.ticker && st.ticker.toUpperCase() === cleanTicker) ||
+    (st.name && st.name.toUpperCase().includes(cleanTicker))
+  );
+
+  if (!s) return null;
+
+  // Extract raw fundamentals & computed metrics from portfolio
+  const raw = (s.fundamentals && s.fundamentals.raw) ? s.fundamentals.raw : {};
+  const computed = typeof computeMetrics === 'function' ? computeMetrics(s) : {};
+
+  const parseNum = (val) => {
+    if (val == null) return 0;
+    if (typeof val === 'number') return val;
+    const n = parseFloat(String(val).replace(/[^0-9.-]/g, ''));
+    return isNaN(n) ? 0 : n;
+  };
+
+  return {
+    ...s,
+    pe_ratio: parseNum(raw.eps && s.currentPrice ? (s.currentPrice / raw.eps) : computed['P/E']),
+    pb_ratio: parseNum(raw.bvps && s.currentPrice ? (s.currentPrice / raw.bvps) : computed['P/B']),
+    roe: parseNum(raw.roe || computed['ROE']),
+    div_yield: parseNum(raw.divPerShare && s.currentPrice ? (raw.divPerShare / s.currentPrice * 100) : computed['Div Yield']),
+    npl: parseNum(raw.npl || computed['NPL']),
+    cir: parseNum(raw.cir || computed['CIR']),
+    p_nav: parseNum(computed['P/NAV']),
+    nav_discount: parseNum(raw.navDiscount || computed['NAV Discount']),
+    buy_price: s.tranches && s.tranches.length > 0 ? cS(s).avgBuy : (s.currentPrice || 0)
+  };
+}
 
 // 2. Load Radar Data & Calculate Scores
 async function loadRadarData() {
@@ -4596,31 +4613,10 @@ async function loadRadarData() {
     return;
   }
 
-  // 1. Check Supabase DB for Stock Record
-  let stockDetails = null;
-  try {
-    if (typeof sb !== 'undefined' && sb.from) {
-      const { data } = await sb.from('stocks').select('*').or(`ticker.eq.${ticker},symbol.eq.${ticker}`).limit(1);
-      if (data && data.length > 0) stockDetails = data[0];
-    }
-  } catch (e) {
-    console.warn("Soft-fail fetching stock DB record:", e);
-  }
+  // Get user's stock metrics from the active portfolio memory
+  const userHolding = getCompanyMetricsForRadar(ticker);
 
-  // 2. Check local portfolio memory (Stocks tab array)
-  let userHolding = null;
-  if (typeof stocks !== 'undefined' && Array.isArray(stocks)) {
-    userHolding = stocks.find(s => 
-      (s.ticker && s.ticker.toUpperCase() === ticker.toUpperCase()) || 
-      (s.symbol && s.symbol.toUpperCase() === ticker.toUpperCase()) ||
-      (s.name && s.name.toUpperCase().includes(ticker.toUpperCase()))
-    );
-  }
-
-  // Combine database fundamental record with portfolio stock object metrics
-  const combinedStockMetrics = Object.assign({}, userHolding || {}, stockDetails || {});
-
-  const fundScore = calculateFundamentalScore(combinedStockMetrics, ticker);
+  const fundScore = calculateFundamentalScore(userHolding, ticker);
   currentRadarFundScore = fundScore;
   currentRadarHolding = userHolding;
   const latestRow = depthData[0];
@@ -4744,15 +4740,14 @@ function calculateFundamentalScore(stock, symbol) {
   let matchesFound = 0;
 
   const symUpper = symbol.toUpperCase();
-  const sector = (stock.sector || stock.category || '').toLowerCase();
+  const sector = (stock.sector || stock.type || '').toLowerCase();
   const isBank = sector.includes('bank') || ["CRDB", "NMB", "DCB", "MCB"].includes(symUpper);
   const isHolding = sector.includes('holding') || ["NICOL", "NICO"].includes(symUpper);
 
-  // Parse numerical fields from Stock object (handles strings or numbers)
-  const pe = parseFloat(stock.pe_ratio || stock.pe || 0);
-  const pb = parseFloat(stock.pb_ratio || stock.pb || 0);
+  const pe = parseFloat(stock.pe_ratio || 0);
+  const pb = parseFloat(stock.pb_ratio || 0);
   const roe = parseFloat(stock.roe || 0);
-  const divYield = parseFloat(stock.div_yield || stock.dividend_yield || 0);
+  const divYield = parseFloat(stock.div_yield || 0);
   const navDisc = parseFloat(stock.nav_discount || 0);
   const pNav = parseFloat(stock.p_nav || 0);
 
@@ -4761,28 +4756,25 @@ function calculateFundamentalScore(stock, symbol) {
     if (pb > 0 && pb < 1.5) { score += 10; matchesFound++; } else if (pb <= 3.0 && pb > 0) { score += 5; matchesFound++; }
     if (roe >= 20) { score += 10; matchesFound++; } else if (roe >= 15) { score += 5; matchesFound++; }
     if (divYield >= 5) { score += 10; matchesFound++; } else if (divYield >= 3) { score += 5; matchesFound++; }
-    if (stock.npl && stock.npl < 3) score += 10; else if (stock.npl && stock.npl <= 5) score += 5;
-    if (stock.cir && stock.cir < 40) score += 10; else if (stock.cir && stock.cir <= 55) score += 5;
+    if (stock.npl && stock.npl < 3) { score += 10; matchesFound++; } else if (stock.npl && stock.npl <= 5) { score += 5; matchesFound++; }
+    if (stock.cir && stock.cir < 40) { score += 10; matchesFound++; } else if (stock.cir && stock.cir <= 55) { score += 5; matchesFound++; }
   } else if (isHolding) {
     if (pNav > 0 && pNav < 0.8) { score += 10; matchesFound++; } else if (pNav <= 1.0 && pNav > 0) { score += 5; matchesFound++; }
     if (navDisc >= 25) { score += 10; matchesFound++; } else if (navDisc >= 10) { score += 5; matchesFound++; }
     if (roe >= 15) { score += 10; matchesFound++; } else if (roe >= 10) { score += 5; matchesFound++; }
     if (divYield >= 4) { score += 10; matchesFound++; } else if (divYield >= 2) { score += 5; matchesFound++; }
-    if (stock.buy_zone_status === 'Buy Zone' || (stock.fair_value_discount && stock.fair_value_discount >= 20)) score += 10;
   } else {
     if (pe > 0 && pe < 12) { score += 10; matchesFound++; } else if (pe <= 18 && pe > 0) { score += 5; matchesFound++; }
     if (divYield >= 5) { score += 10; matchesFound++; } else if (divYield >= 3) { score += 5; matchesFound++; }
     if (roe >= 12) { score += 10; matchesFound++; } else if (roe >= 8) { score += 5; matchesFound++; }
-    if (stock.ev_ebitda > 0 && stock.ev_ebitda < 8) score += 10;
   }
 
-  // Fallback for custom ETF / Funds like IEACLC
-  if (symUpper === 'IEACLC' || sector.includes('etf') || sector.includes('fund')) {
-    score = 45; // Default solid rating for structured market index funds
+  if (symUpper === 'IEACLC' || sector.includes('etf')) {
+    score = 45;
     matchesFound = 1;
   }
 
-  const hasData = matchesFound > 0 || Boolean(stock.pe_ratio || stock.div_yield || stock.roe || stock.buy_price);
+  const hasData = matchesFound > 0 || Boolean(pe || divYield || roe || stock.fairValue);
 
   return { score: Math.min(score, 60), hasData, sector: isBank ? 'Banking' : isHolding ? 'Holding' : 'Industrial' };
 }
