@@ -4336,12 +4336,37 @@ sb.auth.onAuthStateChange(async (event, session) => {
   }
 })();
 
-// --- AUTO-UPDATE LOGIC ---
+// --- SMART MARKET-AWARE PRICE SYNC ---
 async function syncLivePrices() {
   const btnDesk = document.getElementById('sync-btn');
   const btnMob  = document.getElementById('sync-btn-mob');
   const allBtns = [btnDesk, btnMob].filter(Boolean);
 
+  const marketInfo = getLatestMarketSession();
+  const priceDates = (snapshots && snapshots._priceDates) ? snapshots._priceDates : {};
+
+  const expKeys = [
+    ...(typeof stocks !== 'undefined' ? stocks.map(s => s.id) : []),
+    ...(typeof funds  !== 'undefined' ? funds.map(f => f.id)  : []),
+  ];
+
+  // Check if we ALREADY have the closing prices for the latest valid session
+  const alreadyUpToDate = expKeys.length > 0 && expKeys.every(k => {
+    if (!priceDates[k]) return false;
+    const keyDay = new Date(priceDates[k]).toDateString();
+    return new Date(keyDay) >= new Date(marketInfo.sessionDateStr);
+  });
+
+  if (alreadyUpToDate) {
+    const nextMsg = marketInfo.isTodayClosed 
+      ? 'Next update available tomorrow after 5:00 PM EAT.' 
+      : 'Market closes at 5:00 PM EAT (Mon-Fri).';
+    showToast(`Prices are already up-to-date for session (${marketInfo.sessionDateStr}). ${nextMsg}`);
+    setPriceButtonState();
+    return;
+  }
+
+  // Show Loading Spinners
   allBtns.forEach(b => {
     const iconId = b.id === 'sync-btn' ? 'sync-icon' : 'sync-icon-mob';
     b.innerHTML     = '<span id="' + iconId + '" class="loading-spin"></span> Updating...';
@@ -4364,23 +4389,34 @@ async function syncLivePrices() {
     if (!response.ok) throw new Error('Server error ' + response.status);
     const p = await response.json();
 
+    // Create a normalized case-insensitive dictionary
+    const normP = {};
+    if (p && typeof p === 'object') {
+      Object.keys(p).forEach(k => {
+        if (p[k] != null) normP[k.toLowerCase()] = p[k];
+      });
+    }
+
     const _now = new Date().toISOString();
     if (!snapshots._priceDates) snapshots._priceDates = {};
 
-    // Update stocks
+    // 1. Update Stock Prices in Portfolio
     if (typeof stocks !== 'undefined' && Array.isArray(stocks)) {
       stocks.forEach(s => {
-        if (p[s.id] != null) {
-          s.currentPrice = p[s.id];
+        const val = normP[s.id.toLowerCase()];
+        if (val != null && !isNaN(val) && val > 0) {
+          s.currentPrice = val;
           snapshots._priceDates[s.id] = _now;
         }
       });
     }
-    // Update funds
+
+    // 2. Update Mutual Fund NAVs in Portfolio
     if (typeof funds !== 'undefined' && Array.isArray(funds)) {
       funds.forEach(f => {
-        if (p[f.id] != null) {
-          f.nav = p[f.id];
+        const val = normP[f.id.toLowerCase()];
+        if (val != null && !isNaN(val) && val > 0) {
+          f.nav = val;
           snapshots._priceDates[f.id] = _now;
         }
       });
@@ -4388,11 +4424,20 @@ async function syncLivePrices() {
 
     snapshots._lastPriceTime = _now;
 
-    // Refresh UI & state across portfolio
+    // Preserve expanded accordion cards
+    const _oids = typeof getOpenIds === 'function' ? getOpenIds() : [];
     if (typeof renderAll === 'function') renderAll();
     if (typeof updateHeader === 'function') updateHeader();
+    if (typeof restoreOpenIds === 'function') restoreOpenIds(_oids);
+
+    // Refresh Radar if visible
+    if (typeof loadRadarData === 'function' && document.getElementById('pane-radar')?.classList.contains('on')) {
+      loadRadarData();
+    }
+
     stampPriceUpdate(_now);
     setStatus('synced');
+    showToast(`Prices updated for session ${marketInfo.sessionDateStr}`);
 
     if (iconFresh)    iconFresh.classList.remove('loading-spin');
     if (iconMobFresh) iconMobFresh.classList.remove('loading-spin');
@@ -4428,7 +4473,7 @@ async function syncLivePrices() {
 
     setTimeout(() => {
       allBtns.forEach(b => {
-        if (b.textContent.includes('Retry')) {
+        if (b.textContent && b.textContent.includes('Retry')) {
           b.innerHTML        = '<span id="' + (b.id === 'sync-btn' ? 'sync-icon' : 'sync-icon-mob') + '"></span> Update Prices';
           b.style.color      = '#555';
           b.style.borderColor= '#333';
@@ -4437,6 +4482,7 @@ async function syncLivePrices() {
     }, 8000);
   }
 }
+
 
 // Reveal page once JS is fully loaded — prevents CSS flash on open
 document.addEventListener('DOMContentLoaded', () => {
