@@ -4372,7 +4372,8 @@ async function syncLivePrices() {
     });
 
     if (!response.ok) throw new Error('Server error ' + response.status);
-    const p = await response.json();
+    const result = await response.json();
+    const p = result.prices || result; // handles either { prices: {...} } or direct object
 
     // Create a normalized case-insensitive dictionary
     const normP = {};
@@ -4385,13 +4386,17 @@ async function syncLivePrices() {
     const _now = new Date().toISOString();
     if (!snapshots._priceDates) snapshots._priceDates = {};
 
+    let stocksUpdated = 0;
+    let fundsUpdated = 0;
+
     // 1. Update Stock Prices in Portfolio
     if (typeof stocks !== 'undefined' && Array.isArray(stocks)) {
       stocks.forEach(s => {
         const val = normP[s.id.toLowerCase()];
         if (val != null && !isNaN(val) && val > 0) {
-          s.currentPrice = val;
+          s.currentPrice = Number(val);
           snapshots._priceDates[s.id] = _now;
+          stocksUpdated++;
         }
       });
     }
@@ -4401,28 +4406,54 @@ async function syncLivePrices() {
       funds.forEach(f => {
         const val = normP[f.id.toLowerCase()];
         if (val != null && !isNaN(val) && val > 0) {
-          f.nav = val;
+          f.nav = Number(val);
           snapshots._priceDates[f.id] = _now;
+          fundsUpdated++;
         }
       });
     }
 
     snapshots._lastPriceTime = _now;
 
-    // Preserve expanded accordion cards
+    // 3. Re-apply metric calculations and snapshots
+    if (typeof applyMigrations === 'function') applyMigrations(stocks, funds);
+    if (typeof updateMonthlySnapshots === 'function') updateMonthlySnapshots();
+
+    // 4. Save to local cache
+    saveToCache();
+
+    // 5. Explicitly force write to Supabase portfolio table (id=1)
+    snapshots._dividends = dividends;
+    snapshots._reserves  = reserves;
+    snapshots._bonds     = bonds;
+    snapshots.projYear   = projYear;
+
+    if (currentToken && _dataReady) {
+      await fetch(SB_URL + '/rest/v1/portfolio?id=eq.1', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': SB_KEY,
+          'Authorization': 'Bearer ' + currentToken
+        },
+        body: JSON.stringify({ stocks, funds, snapshots, updated_at: new Date().toISOString() })
+      });
+    }
+
+    // 6. Preserve open accordion state & re-render Portfolio UI
     const _oids = typeof getOpenIds === 'function' ? getOpenIds() : [];
     if (typeof renderAll === 'function') renderAll();
     if (typeof updateHeader === 'function') updateHeader();
     if (typeof restoreOpenIds === 'function') restoreOpenIds(_oids);
 
-    // Refresh Radar if visible
+    // Refresh Radar if active
     if (typeof loadRadarData === 'function' && document.getElementById('pane-radar')?.classList.contains('on')) {
       loadRadarData();
     }
 
     stampPriceUpdate(_now);
     setStatus('synced');
-    showToast(`Prices updated for session ${marketInfo.sessionDateStr}`);
+    showToast(`Updated ${stocksUpdated} stocks & ${fundsUpdated} funds for session ${marketInfo.sessionDateStr}`);
 
     if (iconFresh)    iconFresh.classList.remove('loading-spin');
     if (iconMobFresh) iconMobFresh.classList.remove('loading-spin');
@@ -4437,9 +4468,7 @@ async function syncLivePrices() {
       b.disabled         = false;
     });
 
-    saveToCache();
     setPriceButtonState();
-    persist();
 
   } catch (err) {
     console.error("Price sync error:", err);
@@ -4467,7 +4496,6 @@ async function syncLivePrices() {
     }, 8000);
   }
 }
-
 
 // Reveal page once JS is fully loaded — prevents CSS flash on open
 document.addEventListener('DOMContentLoaded', () => {
