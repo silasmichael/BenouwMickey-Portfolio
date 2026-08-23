@@ -4597,19 +4597,36 @@ async function fetchDynamicTickers() {
 }
 // 📡 Metrics Extractor for Radar Fundamental Scoring
 function getCompanyMetricsForRadar(ticker) {
-  if (!ticker || !Array.isArray(stocks)) return null;
-  
+  if (!ticker) return null;
   const cleanTicker = ticker.trim().toUpperCase();
-  // Find stock in user's holdings / tracked stocks
-  const s = stocks.find(st => 
+  
+  // 1. Try finding in active portfolio holdings
+  let s = Array.isArray(stocks) ? stocks.find(st => 
     (st.id && st.id.toUpperCase() === cleanTicker) ||
     (st.ticker && st.ticker.toUpperCase() === cleanTicker) ||
     (st.name && st.name.toUpperCase().includes(cleanTicker))
-  );
+  ) : null;
+
+  // 2. Fallback to Watchlist Data
+  if (!s && snapshots && snapshots._watchlist && snapshots._watchlist[cleanTicker]) {
+    const wl = snapshots._watchlist[cleanTicker];
+    // Find the latest year reported
+    const years = Object.keys(wl.reports || {}).sort((a,b) => b - a);
+    const latestRaw = years.length > 0 ? wl.reports[years[0]] : {};
+    
+    s = {
+      id: wl.ticker,
+      name: wl.name,
+      type: wl.type || 'general',
+      currentPrice: wl.currentPrice || 0,
+      fundamentals: { raw: latestRaw },
+      tranches: [] // Dummy to prevent cS(s) crashing
+    };
+  }
 
   if (!s) return null;
 
-  // Extract raw fundamentals & computed metrics from portfolio
+  // Extract raw fundamentals & computed metrics
   const raw = (s.fundamentals && s.fundamentals.raw) ? s.fundamentals.raw : {};
   const computed = typeof computeMetrics === 'function' ? computeMetrics(s) : {};
 
