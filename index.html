@@ -503,7 +503,7 @@
 <!-- MODAL: ADD WATCHLIST COMPANY -->
 <div class="modal-bg" id="modal-watchlist-fund">
   <div class="modal" style="max-height:90vh;overflow-y:auto;width:min(520px,calc(100vw - 32px))">
-    <div style="font-size:13px;font-weight:800;color:var(--g);margin-bottom:12px">Company Watchlist Financials</div>
+    <div style="font-size:13px;font-weight:800;color:var(--g);margin-bottom:12px">Company Financial Report Entry</div>
     
     <div class="g2" style="margin-bottom:8px">
       <div><div class="sec" style="margin-bottom:3px">Ticker</div><input id="wl-ticker" placeholder="e.g. CRDB" oninput="checkWatchlistData()" style="text-transform:uppercase"></div>
@@ -523,10 +523,9 @@
           <option value="general">Other</option>
         </select>
       </div>
-	<div>
+      <div>
         <div class="sec" style="margin-bottom:3px">Financial Period</div>
         <div style="display:flex; gap:4px;">
-          <!-- JS will populate options 2022 to 2100 here -->
           <select id="wl-year" onchange="checkWatchlistData()" style="flex:3;background:#1A1A28;border:1px solid #2A2A3A;color:#F0EAD6;padding:7px;border-radius:6px;font-size:12px;outline:none"></select>
           <select id="wl-period" onchange="checkWatchlistData()" style="flex:2;background:#1A1A28;border:1px solid #2A2A3A;color:#F0EAD6;padding:7px;border-radius:6px;font-size:12px;outline:none">
             <option value="FY">FY (Full)</option>
@@ -536,7 +535,6 @@
           </select>
         </div>
       </div>
-
     </div>
 
     <div style="font-size:9px;color:#555;margin-bottom:10px">TSh millions unless noted. Entering data calculates scores automatically.</div>
