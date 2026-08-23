@@ -5225,34 +5225,70 @@ function initRadarCharts(depthData) {
 renderRadar();
 
 // ── WATCHLIST ENGINE ──────────────────────────────────────────────────────────
+function openWatchlistModal(prefillTicker) {
+  if (!snapshots._watchlist) snapshots._watchlist = {};
+  
+  // Populate Years 2022 to 2100 dynamically
+  let yrOpts = '';
+  const curYr = new Date().getFullYear();
+  for (let y = 2022; y <= 2100; y++) {
+    yrOpts += `<option value="${y}" ${y === curYr - 1 ? 'selected' : ''}>${y}</option>`;
+  }
+  const yrEl = document.getElementById('wl-year');
+  if (yrEl) yrEl.innerHTML = yrOpts;
+
+  const tInput = document.getElementById('wl-ticker');
+  if (tInput) tInput.value = prefillTicker ? prefillTicker.toUpperCase() : '';
+  
+  document.getElementById('wl-name').value = '';
+  document.getElementById('wl-r-type').value = 'bank';
+  
+  // Render dynamic form fields
+  renderReportFields('wl-r-');
+  
+  if (prefillTicker) checkWatchlistData();
+  openModal('modal-watchlist-fund');
+}
+
 function checkWatchlistData() {
   if (!snapshots._watchlist) return;
-  const ticker = document.getElementById('wl-ticker').value.toUpperCase().trim();
-  const year = document.getElementById('wl-year').value;
-  const period = document.getElementById('wl-period').value;
-  const reportKey = `${year} ${period}`; // e.g. "2024 H1"
+  const ticker = (document.getElementById('wl-ticker')?.value || '').toUpperCase().trim();
+  const year = document.getElementById('wl-year')?.value || new Date().getFullYear() - 1;
+  const period = document.getElementById('wl-period')?.value || 'FY';
+  const reportKey = `${year} ${period}`;
   
+  // First check if stock exists in owned stocks to prefill company name & type
+  const owned = stocks.find(s => s.id === ticker);
+  if (owned) {
+    document.getElementById('wl-name').value = owned.name || '';
+    if (owned.type) {
+      document.getElementById('wl-r-type').value = owned.type;
+      renderReportFields('wl-r-');
+    }
+  }
+
   if (snapshots._watchlist[ticker]) {
     const wl = snapshots._watchlist[ticker];
-    document.getElementById('wl-name').value = wl.name || '';
+    if (wl.name) document.getElementById('wl-name').value = wl.name;
     if (wl.type) {
       document.getElementById('wl-r-type').value = wl.type;
       renderReportFields('wl-r-');
     }
     
-    const r = wl.reports[reportKey];
+    const r = wl.reports ? wl.reports[reportKey] : null;
     if (r) {
       const set = (id, val) => { const el = document.getElementById('wl-r-'+id); if(el && val!=null) el.value = val; };
-      set('curprice', wl.currentPrice); set('netprofit', r.netProfit);
-      set('shares', r.sharesOut);       set('divpaid', r.divPaid);
-      set('equity', r.equity);          set('equityprior', r.equityPrior);
-      set('assets', r.assets);          set('assetsprior', r.assetsPrior);
-      set('nii', r.nii);                set('avgea', r.avgea);
-      set('niexp', r.niexp);            set('niinc', r.niinc);
-      set('npl', r.nplAmt);             set('grossloans', r.grossLoans);
-      set('ebitda', r.ebitda);          set('totaldebt', r.totalDebt);
-      set('ev', r.ev);                  set('nav', r.navPerShare); 
-      set('launchnav', r.launchNav);
+      set('curprice', wl.currentPrice || (owned ? owned.currentPrice : ''));
+      set('netprofit', r.netProfit || r.netprofit);
+      set('shares', r.sharesOut || r.shares);
+      set('divpaid', r.divPaid || r.divpaid);
+      set('equity', r.equity); set('equityprior', r.equityPrior || r.equityprior);
+      set('assets', r.assets); set('assetsprior', r.assetsPrior || r.assetsprior);
+      set('nii', r.nii); set('avgea', r.avgea);
+      set('niexp', r.niexp); set('niinc', r.niinc);
+      set('npl', r.nplAmt || r.npl); set('grossloans', r.grossLoans || r.grossloans);
+      set('ebitda', r.ebitda); set('totaldebt', r.totalDebt || r.totaldebt);
+      set('ev', r.ev); set('nav', r.navPerShare); 
       previewReport('wl-r-');
     } else {
       renderReportFields('wl-r-'); 
@@ -5261,12 +5297,12 @@ function checkWatchlistData() {
 }
 
 function saveWatchlistFundamentals() {
-  const ticker = document.getElementById('wl-ticker').value.toUpperCase().trim();
-  const name = document.getElementById('wl-name').value.trim();
-  const type = document.getElementById('wl-r-type').value;
-  const year = document.getElementById('wl-year').value;
-  const period = document.getElementById('wl-period').value;
-  const reportKey = `${year} ${period}`; // e.g. "2024 H1"
+  const ticker = (document.getElementById('wl-ticker')?.value || '').toUpperCase().trim();
+  const name = (document.getElementById('wl-name')?.value || '').trim();
+  const type = document.getElementById('wl-r-type')?.value || 'bank';
+  const year = document.getElementById('wl-year')?.value || new Date().getFullYear();
+  const period = document.getElementById('wl-period')?.value || 'FY';
+  const reportKey = `${year} ${period}`;
   
   if (!ticker) { showToast('Ticker is required', true); return; }
 
@@ -5289,84 +5325,126 @@ function saveWatchlistFundamentals() {
   persist(); 
   showToast(`Saved ${reportKey} financials for ${ticker}`);
   
+  // Refresh views
   if (currentRadarTicker === ticker) loadRadarData();
+  const compSelect = document.getElementById('compare-stock-select');
+  if (compSelect && compSelect.value === ticker) updateComparisonTable();
 }
+
 
 // ── MULTI-YEAR COMPARISON ENGINE (PLANNER TAB) ────────────────────────────────
 function updateComparisonTable() {
-  const ticker = document.getElementById('compare-stock-select').value;
+  const ticker = (document.getElementById('compare-stock-select')?.value || '').toUpperCase();
   const container = document.getElementById('compare-table-container');
+  if (!container) return;
   
   if (!ticker) {
     container.innerHTML = `<div style="text-align:center; color:#555; font-size:11px; padding:20px; border:1px dashed #2A2A3A; border-radius:8px;">Select a company above to view its historical fundamentals side-by-side.</div>`;
     return;
   }
 
-  const wl = snapshots._watchlist ? snapshots._watchlist[ticker] : null;
+  // Combine reports from Watchlist AND owned stocks
+  const combinedReports = {};
   
-  if (!wl || !wl.reports || Object.keys(wl.reports).length === 0) {
+  // 1. Check Watchlist
+  const wl = snapshots._watchlist ? snapshots._watchlist[ticker] : null;
+  if (wl && wl.reports) {
+    Object.keys(wl.reports).forEach(pKey => {
+      combinedReports[pKey] = wl.reports[pKey];
+    });
+  }
+
+  // 2. Check Owned Stock fundamentals (so owned stocks show up automatically!)
+  const owned = stocks.find(s => s.id === ticker);
+  if (owned && owned.fundamentals && owned.fundamentals.raw && Object.keys(owned.fundamentals.raw).length > 0) {
+    // If no specific year tagged, label it "Current" or "Latest"
+    if (!Object.keys(combinedReports).some(k => k.startsWith('Latest') || k.startsWith('Current'))) {
+      combinedReports['Current'] = owned.fundamentals.raw;
+    }
+  }
+
+  if (Object.keys(combinedReports).length === 0) {
     container.innerHTML = `
       <div style="text-align:center; padding:24px; background:#1A1111; border:1px solid #3A1A1A; border-radius:8px;">
-        <div style="font-size:14px; font-weight:bold; color:#E05656; margin-bottom:8px;">No Historical Data Found</div>
-        <div style="font-size:11px; color:#AAA;">
-          You haven't logged any yearly financials for <strong>${ticker}</strong> yet.<br><br>
-          To compare years, go to the <strong>Radar Tab</strong>, click <strong>+ Add Watchlist</strong>, and save data for specific years (e.g., 2022, 2023).
+        <div style="font-size:14px; font-weight:bold; color:#E05656; margin-bottom:8px;">No Fundamental Data Found for ${ticker}</div>
+        <div style="font-size:11px; color:#AAA; margin-bottom:12px;">
+          To add financial reports for this company, click below:
         </div>
+        <button onclick="openWatchlistModal('${ticker}')" style="background:#00C89622; border:1px solid #00C89644; color:var(--g); padding:8px 16px; border-radius:6px; font-weight:bold; cursor:pointer;">
+          + Add ${ticker} Financial Report
+        </button>
       </div>`;
     return;
   }
 
- // Sort descending by Year, then by Period (FY > 9M > H1 > Q1)
-  const periodWeight = { 'FY': 4, '9M': 3, 'H1': 2, 'Q1': 1 };
-  const years = Object.keys(wl.reports).sort((a, b) => {
+  // Smart sort periods (e.g. Current > 2024 FY > 2024 H1 > 2023 FY)
+  const periodWeight = { 'Current': 99, 'Latest': 98, 'FY': 4, '9M': 3, 'H1': 2, 'Q1': 1 };
+  const periodKeys = Object.keys(combinedReports).sort((a, b) => {
+    if (a === 'Current' || a === 'Latest') return -1;
+    if (b === 'Current' || b === 'Latest') return 1;
     const [yearA, perA] = a.split(' ');
     const [yearB, perB] = b.split(' ');
-    if (yearA !== yearB) return parseInt(yearB) - parseInt(yearA);
+    if (yearA !== yearB) return parseInt(yearB || 0) - parseInt(yearA || 0);
     return (periodWeight[perB] || 0) - (periodWeight[perA] || 0);
   });
 
-  
+  // Helper functions for calculated metrics
+  const getCalculated = (raw, key) => {
+    if (!raw) return null;
+    if (raw[key] != null) return raw[key];
+    
+    // Auto-calculate derived metrics if not directly present
+    const p = raw.curprice || (owned ? owned.currentPrice : null);
+    if (key === 'eps' && raw.netProfit && raw.sharesOut) return raw.netProfit / raw.sharesOut;
+    if (key === 'bvps' && raw.equity && raw.sharesOut) return raw.equity / raw.sharesOut;
+    if (key === 'divPerShare' && raw.divPaid && raw.sharesOut) return raw.divPaid / raw.sharesOut;
+    if (key === 'roe' && raw.netProfit && raw.equity) return (raw.netProfit / raw.equity) * 100;
+    if (key === 'roa' && raw.netProfit && raw.assets) return (raw.netProfit / raw.assets) * 100;
+    if (key === 'npl' && raw.nplAmt && raw.grossLoans) return (raw.nplAmt / raw.grossLoans) * 100;
+    if (key === 'cir' && raw.niexp && (raw.nii || raw.niinc)) return (raw.niexp / ((raw.nii||0) + (raw.niinc||0))) * 100;
+    if (key === 'pe' && raw.eps && p) return p / raw.eps;
+    if (key === 'pb' && raw.bvps && p) return p / raw.bvps;
+    return null;
+  };
+
   // Formatters
   const fmtM = v => v != null ? Math.round(v).toLocaleString() : '—';
   const fmtP = v => v != null ? v.toFixed(1) + '%' : '—';
   const fmtX = v => v != null ? v.toFixed(2) + 'x' : '—';
-  
-  // Define the rows we want to show based on standard metrics calculated in calcFromReport
+
   const metrics = [
     { label: "Net Profit (TSh M)", key: "netProfit", fmt: fmtM },
     { label: "Total Equity (TSh M)", key: "equity", fmt: fmtM },
-    { label: "Gross Loans (TSh M)", key: "grossLoans", fmt: fmtM }, // Banks mostly
+    { label: "Gross Loans / Assets (TSh M)", key: "grossLoans", fmt: fmtM },
     { label: "EPS (TSh)", key: "eps", fmt: fmtM },
     { label: "Book Value/Share (TSh)", key: "bvps", fmt: fmtM },
-    { label: "Dividends Paid (TSh M)", key: "divPaid", fmt: fmtM },
     { label: "Div per Share (TSh)", key: "divPerShare", fmt: fmtM },
+    { label: "P/E Ratio", key: "pe", fmt: fmtX, colorRule: (v) => v > 0 && v <= 10 ? '#00C896' : v <= 15 ? '#F4A623' : '#E05656' },
+    { label: "P/B Ratio", key: "pb", fmt: fmtX, colorRule: (v) => v > 0 && v <= 1.5 ? '#00C896' : v <= 3.0 ? '#F4A623' : '#E05656' },
     { label: "ROE (%)", key: "roe", fmt: fmtP, colorRule: (v) => v >= 20 ? '#00C896' : v >= 15 ? '#F4A623' : '#E05656' },
     { label: "ROA (%)", key: "roa", fmt: fmtP, colorRule: (v) => v >= 3 ? '#00C896' : v >= 1.5 ? '#F4A623' : '#E05656' },
     { label: "NPL (%)", key: "npl", fmt: fmtP, colorRule: (v) => v < 3 ? '#00C896' : v <= 5 ? '#F4A623' : '#E05656' },
     { label: "Cost-to-Income (CIR %)", key: "cir", fmt: fmtP, colorRule: (v) => v < 40 ? '#00C896' : v <= 55 ? '#F4A623' : '#E05656' }
   ];
 
-  // Build the Header Row
-  let thead = `<tr><th style="text-align:left; color:#888; font-size:10px; width:140px;">METRIC</th>`;
-  years.forEach(y => {
-    thead += `<th style="text-align:right; color:var(--g); font-size:11px;">${y}</th>`;
+  let thead = `<tr><th style="text-align:left; color:#888; font-size:10px; padding:10px; width:160px;">METRIC</th>`;
+  periodKeys.forEach(pKey => {
+    thead += `<th style="text-align:right; color:var(--g); font-size:11px; padding:10px;">${pKey}</th>`;
   });
   thead += `</tr>`;
 
-  // Build the Body Rows
   let tbody = '';
   metrics.forEach(m => {
-    // Only show row if at least one year has data for this metric
-    const hasData = years.some(y => wl.reports[y][m.key] != null);
+    const hasData = periodKeys.some(pKey => getCalculated(combinedReports[pKey], m.key) != null);
     if (!hasData) return;
 
     tbody += `<tr style="border-bottom: 1px solid #1A1A24;">
-      <td style="padding:10px 8px; font-size:11px; font-weight:bold; color:#CCC;">${m.label}</td>`;
+      <td style="padding:10px; font-size:11px; font-weight:bold; color:#CCC;">${m.label}</td>`;
       
-    years.forEach(y => {
-      const val = wl.reports[y][m.key];
+    periodKeys.forEach(pKey => {
+      const val = getCalculated(combinedReports[pKey], m.key);
       const color = (m.colorRule && val != null) ? m.colorRule(val) : '#F0EAD6';
-      tbody += `<td style="padding:10px 8px; text-align:right; font-size:12px; font-weight:bold; color:${color};">${m.fmt(val)}</td>`;
+      tbody += `<td style="padding:10px; text-align:right; font-size:12px; font-weight:bold; color:${color};">${val != null ? m.fmt(val) : '—'}</td>`;
     });
     
     tbody += `</tr>`;
@@ -5379,6 +5457,10 @@ function updateComparisonTable() {
         <tbody>${tbody}</tbody>
       </table>
     </div>
+    <div style="display:flex; justify-content:flex-end; margin-top:10px;">
+      <button onclick="openWatchlistModal('${ticker}')" style="background:#4A90E218; border:1px solid #4A90E244; color:#4A90E2; padding:6px 12px; border-radius:6px; font-size:11px; font-weight:bold; cursor:pointer;">
+        + Add Another Period for ${ticker}
+      </button>
+    </div>
   `;
 }
-
