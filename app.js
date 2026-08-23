@@ -2858,6 +2858,28 @@ function openEditFundamentals(stockId){
   document.getElementById('ef-fairvalue').value =s.fairValue||'';
   document.getElementById('ef-zone').value      =s.buyZone||'';
   document.getElementById('ef-avoidabove').value=s.avoidAbove||'';
+
+  // --- Populate Year Options for ef-r-year and ns-r-year ---
+  const curYr = new Date().getFullYear();
+  let yrOpts = '';
+  for (let y = 2022; y <= 2100; y++) {
+    yrOpts += `<option value="${y}" ${y === curYr - 1 ? 'selected' : ''}>${y}</option>`;
+  }
+  const efYrEl = document.getElementById('ef-r-year');
+  if (efYrEl) efYrEl.innerHTML = yrOpts;
+  const nsYrEl = document.getElementById('ns-r-year');
+  if (nsYrEl) nsYrEl.innerHTML = yrOpts;
+
+  // Prefill existing period if saved (e.g. reportPeriod = "2024 FY")
+  if (f.reportPeriod) {
+    const parts = f.reportPeriod.split(' ');
+    if (parts.length >= 2) {
+      if (efYrEl) efYrEl.value = parts[0];
+      const pEl = document.getElementById('ef-r-period');
+      if (pEl) pEl.value = parts[1];
+    }
+  }
+
   const typeEl=document.getElementById('ef-r-type');if(typeEl)typeEl.value=s.type||'bank';
   if(Object.keys(r).some(k=>r[k]!=null)){
     renderReportFields('ef-r-');
@@ -2874,6 +2896,7 @@ function openEditFundamentals(stockId){
   }
   efTab('manual'); checkEfSave(); openModal('modal-edit-fund');
 }
+
 function saveEditFundamentals(){
   const s=stocks.find(x=>x.id===_efStockId);if(!s)return;
   const usingReport=document.getElementById('ef-panel-report')?.style.display!=='none';
@@ -2883,6 +2906,19 @@ function saveEditFundamentals(){
     const result=calcFromReport('ef-r-',typ);
     if(result&&result.raw&&Object.keys(result.raw).some(k=>result.raw[k]!=null)){
       applyReportToStock(s,result.raw,result.currentPrice);if(typ)s.type=typ;
+
+      // 1. Tag the financial period on the stock itself
+      const yr = document.getElementById('ef-r-year')?.value || new Date().getFullYear();
+      const pd = document.getElementById('ef-r-period')?.value || 'FY';
+      s.fundamentals.reportPeriod = `${yr} ${pd}`;
+
+      // 2. Automatically save this period into Watchlist so Multi-Year Comparison Table sees it!
+      if (!snapshots._watchlist) snapshots._watchlist = {};
+      if (!snapshots._watchlist[s.id]) {
+        snapshots._watchlist[s.id] = { ticker: s.id, name: s.name, type: s.type, reports: {} };
+      }
+      snapshots._watchlist[s.id].reports[`${yr} ${pd}`] = result.raw;
+
     }else{showToast('Enter at least Shares Outstanding to calculate', true);return;}
   }else{
     const cur=parseFloat(document.getElementById('ef-curprice').value);
@@ -2899,6 +2935,7 @@ function saveEditFundamentals(){
   closeModal('modal-edit-fund');stampPriceUpdate();persist();renderAll();updateHeader();
   restoreOpenIds(_oids);
 }
+
 
 
 // ── ADD NEW STOCK
@@ -2926,15 +2963,30 @@ function saveNewStock(){
   const d=inputToDate(dRaw)||dRaw;
   const raw=(reportResult&&reportResult.raw)?reportResult.raw:{};
   const zoneBasic=document.getElementById('ns-zone')?.value.trim();
+
+  // Read the year and period from modal dropdowns
+  const reportYr = document.getElementById('ns-r-year')?.value || new Date().getFullYear();
+  const reportPd = document.getElementById('ns-r-period')?.value || 'FY';
+  const reportTag = usingReport ? `${reportYr} ${reportPd}` : null;
+
   stocks.push({id,name,sector,type:typ,color,currentPrice:cur,
     fairValue:raw.fairValue||null,avoidAbove:raw.avoidAbove||Math.round(cur*1.2),
     buyZone:raw.buyZoneLow?('TSh '+Math.round(raw.buyZoneLow).toLocaleString()+' – '+Math.round(raw.buyZoneHigh).toLocaleString()):(zoneBasic||'TSh —'),
-    signal:sig,fundamentals:{raw},metrics:{},tranches:[{date:d,shares:sh,price:pr}]});
+    signal:sig,fundamentals:{raw, reportPeriod: reportTag},metrics:{},tranches:[{date:d,shares:sh,price:pr}]});
+
+  // Automatically save to Watchlist multi-year store as well
+  if (usingReport && raw && Object.keys(raw).length > 0) {
+    if (!snapshots._watchlist) snapshots._watchlist = {};
+    if (!snapshots._watchlist[id]) snapshots._watchlist[id] = { ticker: id, name, type: typ, reports: {} };
+    snapshots._watchlist[id].reports[reportTag] = raw;
+  }
+
   closeModal('modal-stock');
   ['ns-ticker','ns-name','ns-sector','ns-signal','ns-shares','ns-buyprice','ns-curprice','ns-date','ns-color','ns-zone'].forEach(x=>{const el=document.getElementById(x);if(el)el.value='';});
   const prev=document.getElementById('ns-r-preview');if(prev)prev.innerHTML='';
   persist();renderAll();updateHeader();
 }
+
 
 
 // ── ADD NEW FUND
