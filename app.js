@@ -289,12 +289,13 @@ async function syncFromSupabase() {
         if (snapshots._bonds)     bonds     = snapshots._bonds;
         if (snapshots.projYear)   projYear  = Math.max(2026, snapshots.projYear);
       }
-      if (!snapshots.plans)          snapshots.plans = {};
+      if (!snapshots.plans)          snapshots.plans = {}; 
       if (!snapshots.plans['2026'])  snapshots.plans['2026'] = {Jan:2000000,Feb:2000000,Mar:2000000,Apr:2000000,May:2000000,Jun:2000000,Jul:2000000,Aug:1000000,Sep:1000000,Oct:1000000,Nov:1000000,Dec:1000000};
       if (!snapshots.plans['2027'])  snapshots.plans['2027'] = getDefaultPlan();
       if (!snapshots.plans['2028'])  snapshots.plans['2028'] = getDefaultPlan();
       if (!snapshots.plans['2029'])  snapshots.plans['2029'] = getDefaultPlan();
       if (!snapshots.plans['2030'])  snapshots.plans['2030'] = getDefaultPlan();
+      if (!snapshots._watchlist)     snapshots._watchlist = {};
       if (!snapshots.goals)          snapshots.goals = {};
       if (!snapshots.goals['2026'])  snapshots.goals['2026'] = 38000000;
       if ((snapshots._snapV || 0) < 3) {
