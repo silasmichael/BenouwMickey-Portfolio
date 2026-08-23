@@ -1139,10 +1139,11 @@ function renderStocks() {
               <div style="font-size:14px;font-weight:800">${s.name}</div>
               <div class="mob-hide" style="font-size:10px;color:#444;margin-top:1px;font-style:italic">${s.sector||''}</div>
               <div class="mob-hide" style="font-size:10px;color:#888;margin-top:2px">${s.buyZone}${s.fairValue?' · Fair Value '+fT(s.fairValue):''}</div>
-              <div class="mob-hide" style="margin-top:5px;display:flex;gap:6px;flex-wrap:wrap">
-                ${bdg(s.signal,sigC)}
-                ${s.currentPrice<=s.avoidAbove?bdg('✅ In Range','#00C896'):bdg('⚠️ Near Limit','#E05656')}
-              </div>
+                 <div class="mob-hide" style="margin-top:5px;display:flex;gap:6px;flex-wrap:wrap">
+                   ${bdg(s.signal,sigC)}
+                   ${s.fundamentals && s.fundamentals.reportPeriod ? bdg('📋 ' + s.fundamentals.reportPeriod, '#4A90E2') : ''}
+                   ${s.currentPrice<=s.avoidAbove?bdg('✅ In Range','#00C896'):bdg('⚠️ Near Limit','#E05656')}
+                  </div>
             </div>
           </div>
           <div style="text-align:right;min-width:0;flex-shrink:0;margin-left:auto">
@@ -5406,14 +5407,12 @@ function updateComparisonTable() {
     });
   }
 
-  // 2. Check Owned Stock fundamentals (so owned stocks show up automatically!)
-  const owned = stocks.find(s => s.id === ticker);
-  if (owned && owned.fundamentals && owned.fundamentals.raw && Object.keys(owned.fundamentals.raw).length > 0) {
-    // If no specific year tagged, label it "Current" or "Latest"
-    if (!Object.keys(combinedReports).some(k => k.startsWith('Latest') || k.startsWith('Current'))) {
-      combinedReports['Current'] = owned.fundamentals.raw;
-    }
-  }
+  // 2. Check Owned Stock fundamentals
+   const owned = stocks.find(s => s.id === ticker);
+   if (owned && owned.fundamentals && owned.fundamentals.raw && Object.keys(owned.fundamentals.raw).length > 0) {
+     const periodTag = owned.fundamentals.reportPeriod || 'Latest';
+     combinedReports[periodTag] = owned.fundamentals.raw;
+   }
 
   if (Object.keys(combinedReports).length === 0) {
     container.innerHTML = `
