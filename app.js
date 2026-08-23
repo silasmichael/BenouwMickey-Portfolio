@@ -3336,6 +3336,13 @@ function renderPlanner() {
   // Stock options — only stocks currently held (shares > 0)
   const heldStocks = stocks.filter(s => cS(s).shares > 0);
 
+    // --- NEW: Gather all unique tickers for the comparison dropdown ---
+  const allTickers = new Set([...heldStocks.map(s=>s.id), ...stocks.map(s=>s.id)]);
+  if (snapshots._watchlist) {
+    Object.keys(snapshots._watchlist).forEach(k => allTickers.add(k));
+  }
+  const compareOpts = Array.from(allTickers).sort().map(t => `<option value="${t}">${t}</option>`).join('');
+
   document.getElementById('pane-planner').innerHTML = `
   <div style="display:grid;gap:14px;min-width:0;max-width:100%">
 
@@ -3481,10 +3488,30 @@ function renderPlanner() {
       </div>
     </div>
 
-    <!-- FUNDAMENTALS GUIDE -->
+        <!-- MULTI-YEAR COMPARISON & GUIDE -->
     <div class="card" style="border-color:#1A2A1A">
-      <div class="sec" style="color:var(--g);margin-bottom:14px">&#128218; Fundamentals Reference Guide</div>
-      <div id="fund-guide-body"></div>
+      <div class="sec" style="color:var(--g);margin-bottom:14px">📊 Multi-Year Fundamental Comparison</div>
+      
+      <div style="margin-bottom:16px; max-width:300px;">
+        <div class="sec" style="margin-bottom:4px">Select Company to Compare</div>
+        <select id="compare-stock-select" onchange="updateComparisonTable()" style="width:100%;background:#1A1A28;border:1px solid #2A2A3A;border-radius:6px;padding:7px 9px;color:#F0EAD6;font-size:12px;outline:none">
+          <option value="">-- Choose Company --</option>
+          ${compareOpts}
+        </select>
+      </div>
+
+      <div id="compare-table-container">
+         <div style="text-align:center; color:#555; font-size:11px; padding:20px; border:1px dashed #2A2A3A; border-radius:8px;">
+           Select a company above to view its historical fundamentals side-by-side.<br><br>
+           <em>Note: Historical data is pulled from your Watchlist entries.</em>
+         </div>
+      </div>
+      
+      <!-- Collapsed Reference Guide -->
+      <details style="margin-top:20px; border-top:1px solid #1A1A24; padding-top:14px;">
+        <summary style="font-size:11px; color:#888; cursor:pointer; font-weight:bold; outline:none;">&#128218; View Fundamentals Reference Guide</summary>
+        <div id="fund-guide-body" style="margin-top:12px;"></div>
+      </details>
     </div>
 
   </div>`;
@@ -5284,5 +5311,87 @@ function saveWatchlistFundamentals() {
   
   // If we are currently on the radar viewing this stock, refresh it
   if (currentRadarTicker === ticker) loadRadarData();
+}
+// ── MULTI-YEAR COMPARISON ENGINE (PLANNER TAB) ────────────────────────────────
+function updateComparisonTable() {
+  const ticker = document.getElementById('compare-stock-select').value;
+  const container = document.getElementById('compare-table-container');
+  
+  if (!ticker) {
+    container.innerHTML = `<div style="text-align:center; color:#555; font-size:11px; padding:20px; border:1px dashed #2A2A3A; border-radius:8px;">Select a company above to view its historical fundamentals side-by-side.</div>`;
+    return;
+  }
+
+  const wl = snapshots._watchlist ? snapshots._watchlist[ticker] : null;
+  
+  if (!wl || !wl.reports || Object.keys(wl.reports).length === 0) {
+    container.innerHTML = `
+      <div style="text-align:center; padding:24px; background:#1A1111; border:1px solid #3A1A1A; border-radius:8px;">
+        <div style="font-size:14px; font-weight:bold; color:#E05656; margin-bottom:8px;">No Historical Data Found</div>
+        <div style="font-size:11px; color:#AAA;">
+          You haven't logged any yearly financials for <strong>${ticker}</strong> yet.<br><br>
+          To compare years, go to the <strong>Radar Tab</strong>, click <strong>+ Add Watchlist</strong>, and save data for specific years (e.g., 2022, 2023).
+        </div>
+      </div>`;
+    return;
+  }
+
+  // Sort years descending (e.g., 2024, 2023, 2022)
+  const years = Object.keys(wl.reports).sort((a, b) => b - a);
+  
+  // Formatters
+  const fmtM = v => v != null ? Math.round(v).toLocaleString() : '—';
+  const fmtP = v => v != null ? v.toFixed(1) + '%' : '—';
+  const fmtX = v => v != null ? v.toFixed(2) + 'x' : '—';
+  
+  // Define the rows we want to show based on standard metrics calculated in calcFromReport
+  const metrics = [
+    { label: "Net Profit (TSh M)", key: "netProfit", fmt: fmtM },
+    { label: "Total Equity (TSh M)", key: "equity", fmt: fmtM },
+    { label: "Gross Loans (TSh M)", key: "grossLoans", fmt: fmtM }, // Banks mostly
+    { label: "EPS (TSh)", key: "eps", fmt: fmtM },
+    { label: "Book Value/Share (TSh)", key: "bvps", fmt: fmtM },
+    { label: "Dividends Paid (TSh M)", key: "divPaid", fmt: fmtM },
+    { label: "Div per Share (TSh)", key: "divPerShare", fmt: fmtM },
+    { label: "ROE (%)", key: "roe", fmt: fmtP, colorRule: (v) => v >= 20 ? '#00C896' : v >= 15 ? '#F4A623' : '#E05656' },
+    { label: "ROA (%)", key: "roa", fmt: fmtP, colorRule: (v) => v >= 3 ? '#00C896' : v >= 1.5 ? '#F4A623' : '#E05656' },
+    { label: "NPL (%)", key: "npl", fmt: fmtP, colorRule: (v) => v < 3 ? '#00C896' : v <= 5 ? '#F4A623' : '#E05656' },
+    { label: "Cost-to-Income (CIR %)", key: "cir", fmt: fmtP, colorRule: (v) => v < 40 ? '#00C896' : v <= 55 ? '#F4A623' : '#E05656' }
+  ];
+
+  // Build the Header Row
+  let thead = `<tr><th style="text-align:left; color:#888; font-size:10px; width:140px;">METRIC</th>`;
+  years.forEach(y => {
+    thead += `<th style="text-align:right; color:var(--g); font-size:11px;">${y}</th>`;
+  });
+  thead += `</tr>`;
+
+  // Build the Body Rows
+  let tbody = '';
+  metrics.forEach(m => {
+    // Only show row if at least one year has data for this metric
+    const hasData = years.some(y => wl.reports[y][m.key] != null);
+    if (!hasData) return;
+
+    tbody += `<tr style="border-bottom: 1px solid #1A1A24;">
+      <td style="padding:10px 8px; font-size:11px; font-weight:bold; color:#CCC;">${m.label}</td>`;
+      
+    years.forEach(y => {
+      const val = wl.reports[y][m.key];
+      const color = (m.colorRule && val != null) ? m.colorRule(val) : '#F0EAD6';
+      tbody += `<td style="padding:10px 8px; text-align:right; font-size:12px; font-weight:bold; color:${color};">${m.fmt(val)}</td>`;
+    });
+    
+    tbody += `</tr>`;
+  });
+
+  container.innerHTML = `
+    <div style="background:#0D1117; border:1px solid #1E2A3A; border-radius:8px; overflow-x:auto;">
+      <table style="width:100%; border-collapse:collapse;">
+        <thead style="background:#161B27; border-bottom:2px solid #1E2A3A;">${thead}</thead>
+        <tbody>${tbody}</tbody>
+      </table>
+    </div>
+  `;
 }
 
