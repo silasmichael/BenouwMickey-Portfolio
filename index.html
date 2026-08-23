@@ -542,9 +542,18 @@
     <div style="font-size:13px;font-weight:800;color:var(--g);margin-bottom:12px">Company Financial Report Entry</div>
     
     <div class="g2" style="margin-bottom:8px">
-      <div><div class="sec" style="margin-bottom:3px">Ticker</div><input id="wl-ticker" placeholder="e.g. CRDB" oninput="checkWatchlistData()" style="text-transform:uppercase"></div>
-      <div><div class="sec" style="margin-bottom:3px">Company Name</div><input id="wl-name" placeholder="CRDB Bank Plc"></div>
+      <div>
+        <div class="sec" style="margin-bottom:3px">Ticker</div>
+        <select id="wl-ticker" onchange="checkWatchlistData()" style="width:100%;background:#0D1F12;border:1px solid #1A2A1A;color:#F0EAD6;padding:7px 9px;border-radius:6px;font-size:12px">
+          <!-- JS will populate this from DSE data -->
+        </select>
+      </div>
+      <div>
+        <div class="sec" style="margin-bottom:3px">Company Name</div>
+        <input id="wl-name" placeholder="CRDB Bank Plc">
+      </div>
     </div>
+
 
     <div class="g2" style="margin-bottom:12px">
       <div>
