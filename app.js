@@ -4521,9 +4521,18 @@ function renderRadar() {
   const pane = document.getElementById('pane-radar');
   if (!pane) return;
 
-  pane.innerHTML = `
+    pane.innerHTML = `
     <div style="padding: 16px; max-width: 1200px; margin: 0 auto;">
-      <div style="font-size:18px;font-weight:900;color:var(--g);margin-bottom:16px;">📡 Market Radar & Quantitative Scoring Engine</div>
+      
+      <!-- Top Title & Action Buttons -->
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:16px;">
+        <div style="font-size:18px;font-weight:900;color:var(--g);">📡 Market Radar & Quantitative Scoring Engine</div>
+        <div style="display:flex; gap:8px;">
+          <button onclick="openWatchlistModal()" style="background:#4A90E222; color:#4A90E2; border:1px solid #4A90E244; border-radius:6px; padding:8px 12px; font-size:11px; font-weight:bold; cursor:pointer;">+ Add Watchlist</button>
+          <button onclick="downloadRadarPDF()" style="background:#00C89622; color:var(--g); border:1px solid #00C89644; border-radius:6px; padding:8px 12px; font-size:11px; font-weight:bold; cursor:pointer;">📄 Export PDF</button>
+          <button onclick="downloadRadarCSV()" style="background:#00C89622; color:var(--g); border:1px solid #00C89644; border-radius:6px; padding:8px 12px; font-size:11px; font-weight:bold; cursor:pointer;">📊 Export CSV</button>
+        </div>
+      </div>
       
       <!-- Top Control Bar -->
       <div style="display:flex; flex-wrap:wrap; gap:12px; margin-bottom: 20px; background: #0D1117; padding: 15px; border-radius: 8px; border: 1px solid #1E2A3A; align-items:flex-end;">
@@ -4552,16 +4561,6 @@ function renderRadar() {
             <option value="90">Latest 90</option>
             <option value="ALL">Show All</option>
           </select>
-        </div>
-
-        <!-- Matching Action Buttons -->
-        <div style="display:flex; gap:8px; min-width: 240px;">
-          <button onclick="downloadRadarPDF()" style="flex:1; background:#00C896; color:#0D1117; border:none; border-radius:6px; padding:9px 12px; font-size:12px; font-weight:bold; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:4px;">
-            📄 Export PDF
-          </button>
-          <button onclick="downloadRadarCSV()" style="flex:1; background:#00C896; color:#0D1117; border:none; border-radius:6px; padding:9px 12px; font-size:12px; font-weight:bold; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:4px;">
-            📊 Export CSV
-          </button>
         </div>
       </div>
 
