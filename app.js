@@ -5223,33 +5223,14 @@ function initRadarCharts(depthData) {
 
 // Initial Call
 renderRadar();
+
 // ── WATCHLIST ENGINE ──────────────────────────────────────────────────────────
-function openWatchlistModal() {
-  if (!snapshots._watchlist) snapshots._watchlist = {};
-  
-  // Build dynamic year options: 2022 to 2100
-  let yrOpts = '';
-  const currentYear = new Date().getFullYear();
-  for (let y = 2022; y <= 2100; y++) {
-    // Default to the previous year (e.g., in 2026, default to 2025 reports)
-    yrOpts += `<option value="${y}" ${y === currentYear - 1 ? 'selected' : ''}>${y}</option>`;
-  }
-  document.getElementById('wl-year').innerHTML = yrOpts;
-
-  // Clear Form
-  document.getElementById('wl-ticker').value = '';
-  document.getElementById('wl-name').value = '';
-  document.getElementById('wl-r-type').value = 'bank';
-  
-  // Render empty fields & open
-  renderReportFields('wl-r-');
-  openModal('modal-watchlist-fund');
-}
-
 function checkWatchlistData() {
   if (!snapshots._watchlist) return;
   const ticker = document.getElementById('wl-ticker').value.toUpperCase().trim();
   const year = document.getElementById('wl-year').value;
+  const period = document.getElementById('wl-period').value;
+  const reportKey = `${year} ${period}`; // e.g. "2024 H1"
   
   if (snapshots._watchlist[ticker]) {
     const wl = snapshots._watchlist[ticker];
@@ -5259,9 +5240,8 @@ function checkWatchlistData() {
       renderReportFields('wl-r-');
     }
     
-    const r = wl.reports[year];
+    const r = wl.reports[reportKey];
     if (r) {
-      // Re-populate if data exists for this year
       const set = (id, val) => { const el = document.getElementById('wl-r-'+id); if(el && val!=null) el.value = val; };
       set('curprice', wl.currentPrice); set('netprofit', r.netProfit);
       set('shares', r.sharesOut);       set('divpaid', r.divPaid);
@@ -5275,7 +5255,6 @@ function checkWatchlistData() {
       set('launchnav', r.launchNav);
       previewReport('wl-r-');
     } else {
-      // Clear fields if no data for selected year
       renderReportFields('wl-r-'); 
     }
   }
@@ -5286,6 +5265,8 @@ function saveWatchlistFundamentals() {
   const name = document.getElementById('wl-name').value.trim();
   const type = document.getElementById('wl-r-type').value;
   const year = document.getElementById('wl-year').value;
+  const period = document.getElementById('wl-period').value;
+  const reportKey = `${year} ${period}`; // e.g. "2024 H1"
   
   if (!ticker) { showToast('Ticker is required', true); return; }
 
@@ -5299,19 +5280,18 @@ function saveWatchlistFundamentals() {
     snapshots._watchlist[ticker] = { ticker, name, type, reports: {} };
   }
   
-  // Save the report for this specific year
-  snapshots._watchlist[ticker].reports[year] = result.raw;
+  snapshots._watchlist[ticker].reports[reportKey] = result.raw;
   if (result.currentPrice > 0) {
     snapshots._watchlist[ticker].currentPrice = result.currentPrice;
   }
   
   closeModal('modal-watchlist-fund');
-  persist(); // Syncs to Supabase automatically
-  showToast(`Saved ${year} financials for ${ticker}`);
+  persist(); 
+  showToast(`Saved ${reportKey} financials for ${ticker}`);
   
-  // If we are currently on the radar viewing this stock, refresh it
   if (currentRadarTicker === ticker) loadRadarData();
 }
+
 // ── MULTI-YEAR COMPARISON ENGINE (PLANNER TAB) ────────────────────────────────
 function updateComparisonTable() {
   const ticker = document.getElementById('compare-stock-select').value;
@@ -5336,8 +5316,15 @@ function updateComparisonTable() {
     return;
   }
 
-  // Sort years descending (e.g., 2024, 2023, 2022)
-  const years = Object.keys(wl.reports).sort((a, b) => b - a);
+ // Sort descending by Year, then by Period (FY > 9M > H1 > Q1)
+  const periodWeight = { 'FY': 4, '9M': 3, 'H1': 2, 'Q1': 1 };
+  const years = Object.keys(wl.reports).sort((a, b) => {
+    const [yearA, perA] = a.split(' ');
+    const [yearB, perB] = b.split(' ');
+    if (yearA !== yearB) return parseInt(yearB) - parseInt(yearA);
+    return (periodWeight[perB] || 0) - (periodWeight[perA] || 0);
+  });
+
   
   // Formatters
   const fmtM = v => v != null ? Math.round(v).toLocaleString() : '—';
