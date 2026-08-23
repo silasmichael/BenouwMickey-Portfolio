@@ -5179,3 +5179,93 @@ function initRadarCharts(depthData) {
 
 // Initial Call
 renderRadar();
+// ── WATCHLIST ENGINE ──────────────────────────────────────────────────────────
+function openWatchlistModal() {
+  if (!snapshots._watchlist) snapshots._watchlist = {};
+  
+  // Build dynamic year options: 2022 to 2100
+  let yrOpts = '';
+  const currentYear = new Date().getFullYear();
+  for (let y = 2022; y <= 2100; y++) {
+    // Default to the previous year (e.g., in 2026, default to 2025 reports)
+    yrOpts += `<option value="${y}" ${y === currentYear - 1 ? 'selected' : ''}>${y}</option>`;
+  }
+  document.getElementById('wl-year').innerHTML = yrOpts;
+
+  // Clear Form
+  document.getElementById('wl-ticker').value = '';
+  document.getElementById('wl-name').value = '';
+  document.getElementById('wl-r-type').value = 'bank';
+  
+  // Render empty fields & open
+  renderReportFields('wl-r-');
+  openModal('modal-watchlist-fund');
+}
+
+function checkWatchlistData() {
+  if (!snapshots._watchlist) return;
+  const ticker = document.getElementById('wl-ticker').value.toUpperCase().trim();
+  const year = document.getElementById('wl-year').value;
+  
+  if (snapshots._watchlist[ticker]) {
+    const wl = snapshots._watchlist[ticker];
+    document.getElementById('wl-name').value = wl.name || '';
+    if (wl.type) {
+      document.getElementById('wl-r-type').value = wl.type;
+      renderReportFields('wl-r-');
+    }
+    
+    const r = wl.reports[year];
+    if (r) {
+      // Re-populate if data exists for this year
+      const set = (id, val) => { const el = document.getElementById('wl-r-'+id); if(el && val!=null) el.value = val; };
+      set('curprice', wl.currentPrice); set('netprofit', r.netProfit);
+      set('shares', r.sharesOut);       set('divpaid', r.divPaid);
+      set('equity', r.equity);          set('equityprior', r.equityPrior);
+      set('assets', r.assets);          set('assetsprior', r.assetsPrior);
+      set('nii', r.nii);                set('avgea', r.avgea);
+      set('niexp', r.niexp);            set('niinc', r.niinc);
+      set('npl', r.nplAmt);             set('grossloans', r.grossLoans);
+      set('ebitda', r.ebitda);          set('totaldebt', r.totalDebt);
+      set('ev', r.ev);                  set('nav', r.navPerShare); 
+      set('launchnav', r.launchNav);
+      previewReport('wl-r-');
+    } else {
+      // Clear fields if no data for selected year
+      renderReportFields('wl-r-'); 
+    }
+  }
+}
+
+function saveWatchlistFundamentals() {
+  const ticker = document.getElementById('wl-ticker').value.toUpperCase().trim();
+  const name = document.getElementById('wl-name').value.trim();
+  const type = document.getElementById('wl-r-type').value;
+  const year = document.getElementById('wl-year').value;
+  
+  if (!ticker) { showToast('Ticker is required', true); return; }
+
+  const result = calcFromReport('wl-r-', type);
+  if (!result || !result.raw || !Object.keys(result.raw).some(k=>result.raw[k]!=null)) {
+    showToast('Please enter fundamental data to save', true); return;
+  }
+
+  if (!snapshots._watchlist) snapshots._watchlist = {};
+  if (!snapshots._watchlist[ticker]) {
+    snapshots._watchlist[ticker] = { ticker, name, type, reports: {} };
+  }
+  
+  // Save the report for this specific year
+  snapshots._watchlist[ticker].reports[year] = result.raw;
+  if (result.currentPrice > 0) {
+    snapshots._watchlist[ticker].currentPrice = result.currentPrice;
+  }
+  
+  closeModal('modal-watchlist-fund');
+  persist(); // Syncs to Supabase automatically
+  showToast(`Saved ${year} financials for ${ticker}`);
+  
+  // If we are currently on the radar viewing this stock, refresh it
+  if (currentRadarTicker === ticker) loadRadarData();
+}
+
