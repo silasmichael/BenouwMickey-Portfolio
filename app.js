@@ -1136,13 +1136,15 @@ function renderStocks() {
             <div style="width:38px;height:38px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:900;background:${s.color}20;color:${s.color}">${s.id}</div>
             <div>
               <div style="font-size:14px;font-weight:800">${s.name}</div>
-              <div class="mob-hide" style="font-size:10px;color:#444;margin-top:1px;font-style:italic">${s.sector||''}</div>
+              <div class="mob-hide" style="font-size:10px;color:#888;margin-top:2px">
+                <span style="color:#555;font-style:italic">${s.sector||''}</span>
+                ${s.fundamentals && s.fundamentals.reportPeriod ? `<span style="color:#4A90E2;font-weight:bold;margin-left:6px;">[📋 ${s.fundamentals.reportPeriod}]</span>` : ''}
+              </div>
               <div class="mob-hide" style="font-size:10px;color:#888;margin-top:2px">${s.buyZone}${s.fairValue?' · Fair Value '+fT(s.fairValue):''}</div>
-                 <div class="mob-hide" style="margin-top:5px;display:flex;gap:6px;flex-wrap:wrap">
-                   ${bdg(s.signal,sigC)}
-                   ${s.fundamentals && s.fundamentals.reportPeriod ? bdg('📋 ' + s.fundamentals.reportPeriod, '#4A90E2') : ''}
-                   ${s.currentPrice<=s.avoidAbove?bdg('✅ In Range','#00C896'):bdg('⚠️ Near Limit','#E05656')}
-                  </div>
+              <div class="mob-hide" style="margin-top:5px;display:flex;gap:6px;flex-wrap:wrap">
+                ${bdg(s.signal,sigC)}
+                ${s.currentPrice<=s.avoidAbove?bdg('✅ In Range','#00C896'):bdg('⚠️ Near Limit','#E05656')}
+              </div>
             </div>
           </div>
           <div style="text-align:right;min-width:0;flex-shrink:0;margin-left:auto">
