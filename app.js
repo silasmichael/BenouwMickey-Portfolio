@@ -3389,11 +3389,6 @@ function renderPlanner() {
   const heldStocks = stocks.filter(s => cS(s).shares > 0);
 
     // --- NEW: Gather all unique tickers for the comparison dropdown ---
-  const allTickers = new Set([...heldStocks.map(s=>s.id), ...stocks.map(s=>s.id)]);
-  if (snapshots._watchlist) {
-    Object.keys(snapshots._watchlist).forEach(k => allTickers.add(k));
-  }
-  
   const allTickers = getFullMarketTickers();
   let compareOpts = allTickers.map(t => `<option value="${t}">${t}</option>`).join('');
 
