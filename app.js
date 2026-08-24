@@ -4653,12 +4653,17 @@ function renderRadar() {
 }
 
 // Dynamic Ticker Loader
+// Dynamic Ticker Loader — saves fetched DSE symbols globally
 async function fetchDynamicTickers() {
   try {
     if (typeof sb !== 'undefined' && sb.from) {
-      const { data, error } = await sb.from('market_depth_logs').select('symbol').limit(100);
+      const { data, error } = await sb.from('market_depth_logs').select('symbol').limit(500);
       if (!error && data && data.length > 0) {
         const unique = [...new Set(data.map(l => l.symbol))].filter(Boolean).sort();
+        
+        // SAVE GLOBALLY so Watchlist & Planner Comparison dropdowns can read them!
+        window.marketData = unique.map(s => ({ ticker: s }));
+
         const select = document.getElementById('radar-stock-select');
         if (select && unique.length > 0) {
           const currentVal = select.value;
@@ -4671,6 +4676,7 @@ async function fetchDynamicTickers() {
     console.warn("Background ticker sync skipped:", err);
   }
 }
+
 // 📡 Metrics Extractor for Radar Fundamental Scoring
 function getCompanyMetricsForRadar(ticker) {
   if (!ticker) return null;
