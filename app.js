@@ -5463,6 +5463,9 @@ function updateComparisonTable() {
   // Combine reports from Watchlist AND owned stocks
   const combinedReports = {};
   
+    // Define owned stock at top level of function
+  const owned = stocks.find(s => s.id === ticker);
+
   // 1. Check Watchlist
   const wl = snapshots._watchlist ? snapshots._watchlist[ticker] : null;
   if (wl && wl.reports) {
@@ -5472,11 +5475,10 @@ function updateComparisonTable() {
   }
 
   // 2. Check Owned Stock fundamentals
-   const owned = stocks.find(s => s.id === ticker);
-   if (owned && owned.fundamentals && owned.fundamentals.raw && Object.keys(owned.fundamentals.raw).length > 0) {
-     const periodTag = owned.fundamentals.reportPeriod || 'Latest';
-     combinedReports[periodTag] = owned.fundamentals.raw;
-   }
+  if (owned && owned.fundamentals && owned.fundamentals.raw && Object.keys(owned.fundamentals.raw).length > 0) {
+    const periodTag = owned.fundamentals.reportPeriod || 'Latest';
+    combinedReports[periodTag] = owned.fundamentals.raw;
+  }
 
   if (Object.keys(combinedReports).length === 0) {
     container.innerHTML = `
