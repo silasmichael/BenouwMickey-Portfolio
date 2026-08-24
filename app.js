@@ -1,4 +1,3 @@
-
 // ── SEED DATA (intentionally empty — all data lives in Supabase)
 // ── STOCK METADATA (fundamentals & signals — code, not data) ─────────────────
 const SEED_STOCKS = [];
@@ -5276,6 +5275,50 @@ function initRadarCharts(depthData) {
 
 // Initial Call
 renderRadar();
+
+// Master Ticker Helper
+function getFullMarketTickers() {
+  const uniqueTickers = new Set();
+
+  // 1. Check Radar snapshots and dynamic market data objects
+  const dseSources = [
+    snapshots._radar,
+    window.marketData,
+    window.radarData,
+    window.dseData
+  ];
+
+  dseSources.forEach(source => {
+    if (Array.isArray(source)) {
+      source.forEach(item => {
+        if (item.ticker) uniqueTickers.add(item.ticker.toUpperCase());
+        else if (item.id) uniqueTickers.add(item.id.toUpperCase());
+      });
+    } else if (source && typeof source === 'object') {
+      Object.keys(source).forEach(key => {
+        if (key !== '_watchlist') uniqueTickers.add(key.toUpperCase());
+      });
+    }
+  });
+
+  // 2. Add saved Watchlist tickers
+  if (snapshots._watchlist) {
+    Object.keys(snapshots._watchlist).forEach(ticker => uniqueTickers.add(ticker.toUpperCase()));
+  }
+
+  // 3. Add Owned stocks
+  if (Array.isArray(stocks)) {
+    stocks.forEach(s => { if (s.id) uniqueTickers.add(s.id.toUpperCase()); });
+  }
+
+  // Fallback defaults if no network data is present
+  if (uniqueTickers.size === 0) {
+    ['CRDB', 'NMB', 'NICO', 'VODA', 'TCCL', 'TPCC', 'TBL', 'TCC', 'DSE', 'TICL', 'SWIS', 'DCB', 'MBP', 'PAL', 'NMG', 'JATU', 'EABL', 'KA'].forEach(t => uniqueTickers.add(t));
+  }
+
+  return Array.from(uniqueTickers).sort();
+}
+
 
 // ── WATCHLIST ENGINE ──────────────────────────────────────────────────────────
 function openWatchlistModal(prefillTicker) {
