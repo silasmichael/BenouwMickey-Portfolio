@@ -3393,7 +3393,9 @@ function renderPlanner() {
   if (snapshots._watchlist) {
     Object.keys(snapshots._watchlist).forEach(k => allTickers.add(k));
   }
-  const compareOpts = Array.from(allTickers).sort().map(t => `<option value="${t}">${t}</option>`).join('');
+  
+  const allTickers = getFullMarketTickers();
+  let compareOpts = allTickers.map(t => `<option value="${t}">${t}</option>`).join('');
 
   document.getElementById('pane-planner').innerHTML = `
   <div style="display:grid;gap:14px;min-width:0;max-width:100%">
