@@ -5318,50 +5318,42 @@ function getFullMarketTickers() {
 
   return Array.from(uniqueTickers).sort();
 }
-
+// helper function
+function populateCompareDropdown() {
+  const select = document.getElementById('compare-stock-select');
+  if (!select) return;
+  
+  const currentVal = select.value;
+  const tickers = getFullMarketTickers();
+  
+  let opts = '<option value="" disabled ' + (!currentVal ? 'selected' : '') + '>Select Company to Compare...</option>';
+  tickers.forEach(t => {
+    opts += `<option value="${t}" ${t === currentVal ? 'selected' : ''}>${t}</option>`;
+  });
+  
+  select.innerHTML = opts;
+}
 
 // ── WATCHLIST ENGINE ──────────────────────────────────────────────────────────
 function openWatchlistModal(prefillTicker) {
   if (!snapshots._watchlist) snapshots._watchlist = {};
   
-  // 1. Build the dynamic Ticker Dropdown
+  // 1. Populate dynamic Ticker dropdown using all DSE companies
   const tickerSelect = document.getElementById('wl-ticker');
   if (tickerSelect) {
-    // Gather unique tickers from market data and owned stocks
-    const uniqueTickers = new Set();
-    
-    // Assuming DSE market data is stored in window.marketData or similar array
-    // Adjust 'window.marketData' to whatever variable holds your fetched DSE array
-    if (window.marketData && Array.isArray(window.marketData)) {
-      window.marketData.forEach(item => {
-        if (item.ticker) uniqueTickers.add(item.ticker.toUpperCase());
-      });
-    }
-    
-    // Add owned stocks (just in case they aren't in the DSE fetch yet)
-    stocks.forEach(s => uniqueTickers.add(s.id.toUpperCase()));
-    
-    // If we have no data yet, provide a fallback array of major ones
-    if (uniqueTickers.size === 0) {
-      ['CRDB', 'NMB', 'NICO', 'VODA', 'TCCL', 'TPCC', 'TBL', 'TCC', 'DSE', 'TICL', 'SWIS'].forEach(t => uniqueTickers.add(t));
-    }
-
-    // Sort alphabetically and build options
-    const sortedTickers = Array.from(uniqueTickers).sort();
+    const tickers = getFullMarketTickers();
     let opts = '<option value="" disabled selected>Select Ticker...</option>';
-    sortedTickers.forEach(t => {
+    tickers.forEach(t => {
       opts += `<option value="${t}">${t}</option>`;
     });
-    
     tickerSelect.innerHTML = opts;
     
-    // Select the prefill ticker if provided
     if (prefillTicker) {
       tickerSelect.value = prefillTicker.toUpperCase();
     }
   }
 
-  // 2. Populate Years 2022 to 2100 dynamically
+  // 2. Populate Years 2022 to 2100
   let yrOpts = '';
   const curYr = new Date().getFullYear();
   for (let y = 2022; y <= 2100; y++) {
@@ -5373,9 +5365,7 @@ function openWatchlistModal(prefillTicker) {
   document.getElementById('wl-name').value = '';
   document.getElementById('wl-r-type').value = 'bank';
   
-  // Render dynamic form fields
   renderReportFields('wl-r-');
-  
   if (prefillTicker) checkWatchlistData();
   openModal('modal-watchlist-fund');
 }
