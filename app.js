@@ -5589,78 +5589,105 @@ function updateComparisonTable() {
 
   const combinedReports = {};
 
-  // 1. Grab reports from Watchlist if available
+  // 1. Pull from Watchlist
   if (typeof snapshots !== 'undefined' && snapshots._watchlist && snapshots._watchlist[ticker]) {
     const wl = snapshots._watchlist[ticker];
-    if (wl.reports) {
+    if (wl.reports && typeof wl.reports === 'object') {
       Object.assign(combinedReports, wl.reports);
     }
   }
 
-  // 2. Grab fundamentals directly from Portfolio Owned Stocks
+  // 2. Pull from Portfolio / Owned Stocks
   if (typeof stocks !== 'undefined' && Array.isArray(stocks)) {
     const owned = stocks.find(s => s.id === ticker);
-    if (owned && owned.fundamentals) {
-      const pTag = owned.fundamentals.reportPeriod || owned.reportPeriod || 'Latest';
-      // Store whichever raw object exists
-      combinedReports[pTag] = owned.fundamentals.raw || owned.fundamentals;
+    if (owned) {
+      // Check if reports object exists on stock
+      if (owned.reports && typeof owned.reports === 'object') {
+        Object.assign(combinedReports, owned.reports);
+      }
+      // Check fundamentals object
+      if (owned.fundamentals) {
+        const pTag = owned.fundamentals.reportPeriod || owned.reportPeriod || 'Latest';
+        const dataObj = owned.fundamentals.raw || owned.fundamentals;
+        combinedReports[pTag] = dataObj;
+      }
     }
   }
 
-  // Filter keys safely
+  console.log(`[Planner Debug] Combined reports found for ${ticker}:`, combinedReports);
+
   let periodKeys = Object.keys(combinedReports);
+
+  // Apply Filter if user didn't pick "ALL"
   if (periodFilter !== 'ALL') {
-    periodKeys = periodKeys.filter(k => k.toUpperCase().includes(periodFilter.toUpperCase()));
-  }
-
-  // If no period matches the filter, fallback to showing all available keys so it's never empty
-  if (periodKeys.length === 0) {
-    periodKeys = Object.keys(combinedReports);
+    const filtered = periodKeys.filter(k => k.toUpperCase().includes(periodFilter.toUpperCase()));
+    if (filtered.length > 0) periodKeys = filtered;
   }
 
   if (periodKeys.length === 0) {
-    container.innerHTML = `<div style="color:#888;font-size:11px;text-align:center;padding:20px">No financial reports saved yet for <b>${ticker}</b>.</div>`;
+    container.innerHTML = `<div style="color:#888;font-size:11px;text-align:center;padding:20px">No financial reports saved yet for <b>${ticker}</b>.<br><span style="font-size:10px;color:#555">Add fundamental data via Watchlist or Stock Edit form.</span></div>`;
     return;
   }
 
-  // Determine stock type
+  periodKeys.sort();
+
   const ownedStock = Array.isArray(stocks) ? stocks.find(s => s.id === ticker) : null;
   const compType = (ownedStock ? ownedStock.type : 'bank') || 'bank';
 
-  // Build Table Headers
+  // Table Header
   let ths = periodKeys.map(k => `<th style="padding:7px;text-align:right;border-bottom:1px solid #2A2A3A">${k}</th>`).join('');
 
-  // Define Rows
-  const rowDefs = compType === 'bank' ? [
-    { label: 'Net Profit (TSh M)', key: 'netProfit', fmt: v => v ? Number(v).toLocaleString() : '—', mKey: 'eps' },
-    { label: 'ROE (%)', key: 'roe', fmt: v => v ? Number(v).toFixed(1) + '%' : '—', mKey: 'roe' },
-    { label: 'ROA (%)', key: 'roa', fmt: v => v ? Number(v).toFixed(1) + '%' : '—', mKey: 'roa' },
-    { label: 'NPL Ratio (%)', key: 'npl', fmt: v => v ? Number(v).toFixed(1) + '%' : '—', mKey: 'npl' },
-    { label: 'Cost to Income / CIR (%)', key: 'cir', fmt: v => v ? Number(v).toFixed(1) + '%' : '—', mKey: 'cir' },
-    { label: 'EPS (TSh)', key: 'eps', fmt: v => v ? Math.round(Number(v)).toLocaleString() : '—', mKey: 'eps' },
-    { label: 'Book Value/Share (TSh)', key: 'bvps', fmt: v => v ? Math.round(Number(v)).toLocaleString() : '—' }
+  // Table Row Definitions
+  const rowDefs = (compType === 'bank') ? [
+    { label: 'Net Profit (TSh M)', key: 'netProfit', mKey: 'eps' },
+    { label: 'ROE (%)', key: 'roe', isPct: true, mKey: 'roe' },
+    { label: 'ROA (%)', key: 'roa', isPct: true, mKey: 'roa' },
+    { label: 'NPL Ratio (%)', key: 'npl', isPct: true, mKey: 'npl' },
+    { label: 'Cost to Income / CIR (%)', key: 'cir', isPct: true, mKey: 'cir' },
+    { label: 'EPS (TSh)', key: 'eps', mKey: 'eps' },
+    { label: 'Book Value/Share (TSh)', key: 'bvps' }
   ] : [
-    { label: 'Net Profit (TSh M)', key: 'netProfit', fmt: v => v ? Number(v).toLocaleString() : '—', mKey: 'eps' },
-    { label: 'ROE (%)', key: 'roe', fmt: v => v ? Number(v).toFixed(1) + '%' : '—', mKey: 'roe' },
-    { label: 'Debt / Equity Ratio', key: 'de', fmt: v => v || '—', mKey: 'de' },
-    { label: 'EPS (TSh)', key: 'eps', fmt: v => v ? Math.round(Number(v)).toLocaleString() : '—', mKey: 'eps' },
-    { label: 'Book Value/Share (TSh)', key: 'bvps', fmt: v => v ? Math.round(Number(v)).toLocaleString() : '—' }
+    { label: 'Net Profit (TSh M)', key: 'netProfit', mKey: 'eps' },
+    { label: 'ROE (%)', key: 'roe', isPct: true, mKey: 'roe' },
+    { label: 'Debt / Equity Ratio', key: 'de', mKey: 'de' },
+    { label: 'EPS (TSh)', key: 'eps', mKey: 'eps' },
+    { label: 'Book Value/Share (TSh)', key: 'bvps' }
   ];
 
   let tbody = rowDefs.map(rd => {
     const latestKey = periodKeys[periodKeys.length - 1];
-    const latestVal = combinedReports[latestKey] ? combinedReports[latestKey][rd.key] : null;
-    const rating = (rd.mKey && typeof rateMetric === 'function') ? rateMetric(rd.mKey, latestVal, compType) : { text: '—', color: '#555' };
+    const latestData = combinedReports[latestKey] || {};
+    const latestVal = latestData[rd.key] !== undefined ? latestData[rd.key] : null;
+
+    const rating = (rd.mKey && typeof rateMetric === 'function') 
+      ? rateMetric(rd.mKey, latestVal, compType) 
+      : { text: '—', color: '#555' };
 
     let tr = `<tr>
       <td style="padding:7px;border-bottom:1px solid #1A1A28;font-weight:600;color:#AAA">${rd.label}</td>
-      <td style="padding:7px;border-bottom:1px solid #1A1A28;text-align:center"><span style="background:${rating.color}22;color:${rating.color};border:1px solid ${rating.color}44;padding:2px 6px;border-radius:4px;font-size:9px;font-weight:700">${rating.text}</span></td>`;
-    
+      <td style="padding:7px;border-bottom:1px solid #1A1A28;text-align:center">
+        <span style="background:${rating.color}22;color:${rating.color};border:1px solid ${rating.color}44;padding:2px 6px;border-radius:4px;font-size:9px;font-weight:700">${rating.text}</span>
+      </td>`;
+
     periodKeys.forEach(k => {
-      const r = combinedReports[k];
-      const val = r ? r[k === latestKey && !r[rd.key] ? rd.key : rd.key] : null;
-      tr += `<td style="padding:7px;border-bottom:1px solid #1A1A28;text-align:right">${rd.fmt(val)}</td>`;
+      const rep = combinedReports[k] || {};
+      let val = rep[rd.key];
+
+      // Format string/number output
+      let displayVal = '—';
+      if (val !== undefined && val !== null && val !== '') {
+        const num = parseFloat(val);
+        if (!isNaN(num)) {
+          if (rd.isPct) displayVal = num.toFixed(1) + '%';
+          else displayVal = Math.round(num).toLocaleString();
+        } else {
+          displayVal = val;
+        }
+      }
+
+      tr += `<td style="padding:7px;border-bottom:1px solid #1A1A28;text-align:right">${displayVal}</td>`;
     });
+
     tr += `</tr>`;
     return tr;
   }).join('');
