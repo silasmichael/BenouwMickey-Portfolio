@@ -5587,85 +5587,64 @@ function updateComparisonTable() {
     return;
   }
 
-  const owned = (typeof stocks !== 'undefined' && Array.isArray(stocks)) ? stocks.find(s => s.id === ticker) : null;
   const combinedReports = {};
 
-  // 1. Gather Watchlist reports (where multi-year entries live)
+  // 1. Grab reports from Watchlist if available
   if (typeof snapshots !== 'undefined' && snapshots._watchlist && snapshots._watchlist[ticker]) {
     const wl = snapshots._watchlist[ticker];
-    if (wl.reports && typeof wl.reports === 'object') {
-      Object.keys(wl.reports).forEach(pKey => {
-        combinedReports[pKey] = wl.reports[pKey];
-      });
+    if (wl.reports) {
+      Object.assign(combinedReports, wl.reports);
     }
   }
 
-  // 2. Gather Global Financials snapshots (if stored globally)
-  if (typeof snapshots !== 'undefined' && snapshots._financials && snapshots._financials[ticker]) {
-    const fin = snapshots._financials[ticker];
-    if (typeof fin === 'object') {
-      Object.keys(fin).forEach(pKey => {
-        combinedReports[pKey] = fin[pKey];
-      });
+  // 2. Grab fundamentals directly from Portfolio Owned Stocks
+  if (typeof stocks !== 'undefined' && Array.isArray(stocks)) {
+    const owned = stocks.find(s => s.id === ticker);
+    if (owned && owned.fundamentals) {
+      const pTag = owned.fundamentals.reportPeriod || owned.reportPeriod || 'Latest';
+      // Store whichever raw object exists
+      combinedReports[pTag] = owned.fundamentals.raw || owned.fundamentals;
     }
   }
 
-  // 3. Gather Owned Stock fundamentals (fallback if no multi-year reports saved yet)
-  if (owned) {
-    if (owned.reports && typeof owned.reports === 'object') {
-      Object.keys(owned.reports).forEach(pKey => {
-        combinedReports[pKey] = owned.reports[pKey];
-      });
-    }
-    if (owned.fundamentals) {
-      const rawData = owned.fundamentals.raw || owned.fundamentals;
-      if (rawData && (rawData.netProfit || rawData.eps || rawData.roe || rawData.equity)) {
-        const periodTag = owned.fundamentals.reportPeriod || owned.reportPeriod || 'Latest';
-        combinedReports[periodTag] = rawData;
-      }
-    }
-  }
-
+  // Filter keys safely
   let periodKeys = Object.keys(combinedReports);
-
-  // 4. Apply Period Filtering (FY, H1, 9M, Q1)
   if (periodFilter !== 'ALL') {
     periodKeys = periodKeys.filter(k => k.toUpperCase().includes(periodFilter.toUpperCase()));
   }
 
-  // Sort periods chronologically
-  periodKeys.sort();
+  // If no period matches the filter, fallback to showing all available keys so it's never empty
+  if (periodKeys.length === 0) {
+    periodKeys = Object.keys(combinedReports);
+  }
 
   if (periodKeys.length === 0) {
-    container.innerHTML = `
-      <div style="color:#888;font-size:11px;text-align:center;padding:25px;background:#13131D;border-radius:8px;border:1px dashed #2A2A3A">
-        No <b>${periodFilter === 'ALL' ? '' : periodFilter}</b> financial reports found for <b>${ticker}</b>.<br><br>
-        <span style="font-size:10px;color:#666">
-          To add financial data for ${ticker}, go to <b>Watchlist Tab</b> or click <b>+ Add Report</b> in Stock Edit.
-        </span>
-      </div>`;
+    container.innerHTML = `<div style="color:#888;font-size:11px;text-align:center;padding:20px">No financial reports saved yet for <b>${ticker}</b>.</div>`;
     return;
   }
 
-  const compType = (owned ? owned.type : (snapshots && snapshots._watchlist && snapshots._watchlist[ticker] ? snapshots._watchlist[ticker].type : 'bank')) || 'bank';
+  // Determine stock type
+  const ownedStock = Array.isArray(stocks) ? stocks.find(s => s.id === ticker) : null;
+  const compType = (ownedStock ? ownedStock.type : 'bank') || 'bank';
 
+  // Build Table Headers
   let ths = periodKeys.map(k => `<th style="padding:7px;text-align:right;border-bottom:1px solid #2A2A3A">${k}</th>`).join('');
 
-  const rowDefs = (compType === 'bank') ? [
-    { label: 'Net Profit (TSh M)', key: 'netProfit', fmt: v => v != null ? Number(v).toLocaleString() : '—', mKey: 'eps' },
-    { label: 'ROE (%)', key: 'roe', fmt: v => v != null ? Number(v).toFixed(1) + '%' : '—', mKey: 'roe' },
-    { label: 'ROA (%)', key: 'roa', fmt: v => v != null ? Number(v).toFixed(1) + '%' : '—', mKey: 'roa' },
-    { label: 'NPL Ratio (%)', key: 'npl', fmt: v => v != null ? Number(v).toFixed(1) + '%' : '—', mKey: 'npl' },
-    { label: 'Cost to Income / CIR (%)', key: 'cir', fmt: v => v != null ? Number(v).toFixed(1) + '%' : '—', mKey: 'cir' },
-    { label: 'Net Interest Margin (%)', key: 'nim', fmt: v => v != null ? Number(v).toFixed(1) + '%' : '—', mKey: 'nim' },
-    { label: 'EPS (TSh)', key: 'eps', fmt: v => v != null ? Math.round(Number(v)).toLocaleString() : '—', mKey: 'eps' },
-    { label: 'Book Value/Share (TSh)', key: 'bvps', fmt: v => v != null ? Math.round(Number(v)).toLocaleString() : '—' }
+  // Define Rows
+  const rowDefs = compType === 'bank' ? [
+    { label: 'Net Profit (TSh M)', key: 'netProfit', fmt: v => v ? Number(v).toLocaleString() : '—', mKey: 'eps' },
+    { label: 'ROE (%)', key: 'roe', fmt: v => v ? Number(v).toFixed(1) + '%' : '—', mKey: 'roe' },
+    { label: 'ROA (%)', key: 'roa', fmt: v => v ? Number(v).toFixed(1) + '%' : '—', mKey: 'roa' },
+    { label: 'NPL Ratio (%)', key: 'npl', fmt: v => v ? Number(v).toFixed(1) + '%' : '—', mKey: 'npl' },
+    { label: 'Cost to Income / CIR (%)', key: 'cir', fmt: v => v ? Number(v).toFixed(1) + '%' : '—', mKey: 'cir' },
+    { label: 'EPS (TSh)', key: 'eps', fmt: v => v ? Math.round(Number(v)).toLocaleString() : '—', mKey: 'eps' },
+    { label: 'Book Value/Share (TSh)', key: 'bvps', fmt: v => v ? Math.round(Number(v)).toLocaleString() : '—' }
   ] : [
-    { label: 'Net Profit (TSh M)', key: 'netProfit', fmt: v => v != null ? Number(v).toLocaleString() : '—', mKey: 'eps' },
-    { label: 'ROE (%)', key: 'roe', fmt: v => v != null ? Number(v).toFixed(1) + '%' : '—', mKey: 'roe' },
-    { label: 'Debt / Equity Ratio', key: 'de', fmt: v => v != null ? v : '—', mKey: 'de' },
-    { label: 'EPS (TSh)', key: 'eps', fmt: v => v != null ? Math.round(Number(v)).toLocaleString() : '—', mKey: 'eps' },
-    { label: 'Book Value/Share (TSh)', key: 'bvps', fmt: v => v != null ? Math.round(Number(v)).toLocaleString() : '—' }
+    { label: 'Net Profit (TSh M)', key: 'netProfit', fmt: v => v ? Number(v).toLocaleString() : '—', mKey: 'eps' },
+    { label: 'ROE (%)', key: 'roe', fmt: v => v ? Number(v).toFixed(1) + '%' : '—', mKey: 'roe' },
+    { label: 'Debt / Equity Ratio', key: 'de', fmt: v => v || '—', mKey: 'de' },
+    { label: 'EPS (TSh)', key: 'eps', fmt: v => v ? Math.round(Number(v)).toLocaleString() : '—', mKey: 'eps' },
+    { label: 'Book Value/Share (TSh)', key: 'bvps', fmt: v => v ? Math.round(Number(v)).toLocaleString() : '—' }
   ];
 
   let tbody = rowDefs.map(rd => {
@@ -5679,7 +5658,7 @@ function updateComparisonTable() {
     
     periodKeys.forEach(k => {
       const r = combinedReports[k];
-      const val = r ? r[rd.key] : null;
+      const val = r ? r[k === latestKey && !r[rd.key] ? rd.key : rd.key] : null;
       tr += `<td style="padding:7px;border-bottom:1px solid #1A1A28;text-align:right">${rd.fmt(val)}</td>`;
     });
     tr += `</tr>`;
