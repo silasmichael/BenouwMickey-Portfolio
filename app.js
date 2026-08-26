@@ -3595,11 +3595,19 @@ function renderPlanner() {
       <div class="sec" style="color:var(--g);margin-bottom:14px">📊 Multi-Year Fundamental Comparison</div>
       
       <div style="margin-bottom:16px; max-width:300px;">
-        <div class="sec" style="margin-bottom:4px">Select Company to Compare</div>
-        <select id="compare-stock-select" onchange="updateComparisonTable()" style="width:100%;background:#1A1A28;border:1px solid #2A2A3A;border-radius:6px;padding:7px 9px;color:#F0EAD6;font-size:12px;outline:none">
-          <option value="">-- Choose Company --</option>
-          ${compareOpts}
-        </select>
+        <div class="sec" style="margin-bottom:4px">Select Company & Period Filter</div>
+        <div style="display:flex;gap:8px;margin-bottom:12px">
+          <select id="compare-stock-select" onchange="updateComparisonTable()" style="flex:2;background:#1A1A28;border:1px solid #2A2A3A;border-radius:6px;padding:7px 9px;color:#F0EAD6;font-size:12px;outline:none">
+            ${compareOpts}
+          </select>
+          <select id="compare-period-filter" onchange="updateComparisonTable()" style="flex:1;background:#1A1A28;border:1px solid #2A2A3A;border-radius:6px;padding:7px 9px;color:#F0EAD6;font-size:12px;outline:none">
+            <option value="ALL">All Reports</option>
+            <option value="FY">FY Only (Full Year)</option>
+            <option value="H1">H1 Only (Half Year)</option>
+            <option value="9M">9M Only (Q3)</option>
+            <option value="Q1">Q1 Only</option>
+          </select>
+        </div>
       </div>
 
       <div id="compare-table-container">
@@ -3777,6 +3785,66 @@ function sellUpdate() {
     <div style="margin-top:10px;padding:8px 10px;background:#1A1A24;border-radius:6px;font-size:10px;color:#555">
       Remaining holding after sale: ${(pos.shares - result.sharesToSell).toLocaleString()} shares
     </div>`;
+}
+
+// Sector-Aware Rating Engine
+function rateMetric(metric, value, companyType) {
+  if (value === null || value === undefined || isNaN(value)) return { text: '—', color: '#555' };
+  const type = companyType || 'bank';
+
+  // 1. ROE (Return on Equity) — All Sectors
+  if (metric === 'roe') {
+    if (value >= 22) return { text: 'Very Good', color: '#00C896' };
+    if (value >= 15) return { text: 'Good', color: '#10B981' };
+    if (value >= 10) return { text: 'OK', color: '#F4A623' };
+    if (value >= 5)  return { text: 'Bad', color: '#E056A0' };
+    return { text: 'Worst', color: '#E05656' };
+  }
+
+  // 2. NPL Ratio (Banks only - lower is better)
+  if (metric === 'npl') {
+    if (value <= 3.0) return { text: 'Very Good', color: '#00C896' };
+    if (value <= 5.0) return { text: 'Good', color: '#10B981' }; // BOT benchmark is 5%
+    if (value <= 7.0) return { text: 'OK', color: '#F4A623' };
+    if (value <= 10.0) return { text: 'Bad', color: '#E056A0' };
+    return { text: 'Worst', color: '#E05656' };
+  }
+
+  // 3. CIR / Cost-to-Income (Banks only - lower is better)
+  if (metric === 'cir') {
+    if (value <= 48) return { text: 'Very Good', color: '#00C896' };
+    if (value <= 55) return { text: 'Good', color: '#10B981' };
+    if (value <= 65) return { text: 'OK', color: '#F4A623' };
+    if (value <= 75) return { text: 'Bad', color: '#E056A0' };
+    return { text: 'Worst', color: '#E05656' };
+  }
+
+  // 4. Debt-to-Equity (Non-Bank / Industrial - lower is better)
+  if (metric === 'de') {
+    const val = parseFloat(value);
+    if (val <= 0.5) return { text: 'Very Good', color: '#00C896' };
+    if (val <= 1.0) return { text: 'Good', color: '#10B981' };
+    if (val <= 1.8) return { text: 'OK', color: '#F4A623' };
+    if (val <= 2.5) return { text: 'Bad', color: '#E056A0' };
+    return { text: 'Worst', color: '#E05656' };
+  }
+
+  // 5. Net Interest Margin / NIM (Banks)
+  if (metric === 'nim') {
+    if (value >= 8.5) return { text: 'Very Good', color: '#00C896' };
+    if (value >= 6.5) return { text: 'Good', color: '#10B981' };
+    if (value >= 5.0) return { text: 'OK', color: '#F4A623' };
+    if (value >= 3.5) return { text: 'Bad', color: '#E056A0' };
+    return { text: 'Worst', color: '#E05656' };
+  }
+
+  // 6. EPS Growth / Profit Growth
+  if (metric === 'eps') {
+    if (value > 0) return { text: 'Profitable', color: '#00C896' };
+    return { text: 'Loss', color: '#E05656' };
+  }
+
+  return { text: '—', color: '#555' };
 }
 
 function renderFundGuide(){
@@ -5506,22 +5574,20 @@ function saveWatchlistFundamentals() {
 
 // ── MULTI-YEAR COMPARISON ENGINE (PLANNER TAB) ────────────────────────────────
 function updateComparisonTable() {
-  const ticker = (document.getElementById('compare-stock-select')?.value || '').toUpperCase();
-  const container = document.getElementById('compare-table-container');
+  const ticker = document.getElementById('compare-stock-select')?.value;
+  const periodFilter = document.getElementById('compare-period-filter')?.value || 'ALL';
+  const container = document.getElementById('planner-comparison-container');
   if (!container) return;
-  
+
   if (!ticker) {
-    container.innerHTML = `<div style="text-align:center; color:#555; font-size:11px; padding:20px; border:1px dashed #2A2A3A; border-radius:8px;">Select a company above to view its historical fundamentals side-by-side.</div>`;
+    container.innerHTML = `<div style="color:#555;font-size:11px;text-align:center;padding:20px">Select a company above to view financial performance comparison.</div>`;
     return;
   }
 
-  // Combine reports from Watchlist AND owned stocks
-  const combinedReports = {};
-  
-    // Define owned stock at top level of function
   const owned = stocks.find(s => s.id === ticker);
+  const combinedReports = {};
 
-  // 1. Check Watchlist
+  // 1. Gather Watchlist reports
   const wl = snapshots._watchlist ? snapshots._watchlist[ticker] : null;
   if (wl && wl.reports) {
     Object.keys(wl.reports).forEach(pKey => {
@@ -5529,112 +5595,83 @@ function updateComparisonTable() {
     });
   }
 
-  // 2. Check Owned Stock fundamentals
+  // 2. Gather Owned Stock reports
   if (owned && owned.fundamentals && owned.fundamentals.raw && Object.keys(owned.fundamentals.raw).length > 0) {
     const periodTag = owned.fundamentals.reportPeriod || 'Latest';
     combinedReports[periodTag] = owned.fundamentals.raw;
   }
 
-  if (Object.keys(combinedReports).length === 0) {
-    container.innerHTML = `
-      <div style="text-align:center; padding:24px; background:#1A1111; border:1px solid #3A1A1A; border-radius:8px;">
-        <div style="font-size:14px; font-weight:bold; color:#E05656; margin-bottom:8px;">No Fundamental Data Found for ${ticker}</div>
-        <div style="font-size:11px; color:#AAA; margin-bottom:12px;">
-          To add financial reports for this company, click below:
-        </div>
-        <button onclick="openWatchlistModal('${ticker}')" style="background:#00C89622; border:1px solid #00C89644; color:var(--g); padding:8px 16px; border-radius:6px; font-weight:bold; cursor:pointer;">
-          + Add ${ticker} Financial Report
-        </button>
-      </div>`;
+  // 3. Apply Period Filtering (e.g. FY vs FY only)
+  let periodKeys = Object.keys(combinedReports);
+  if (periodFilter !== 'ALL') {
+    periodKeys = periodKeys.filter(k => k.includes(periodFilter));
+  }
+
+  // Sort periods chronologically
+  periodKeys.sort();
+
+  if (periodKeys.length === 0) {
+    container.innerHTML = `<div style="color:#555;font-size:11px;text-align:center;padding:20px">No financial reports match the period filter "<b>${periodFilter}</b>" for ${ticker}.</div>`;
     return;
   }
 
-  // Smart sort periods (e.g. Current > 2024 FY > 2024 H1 > 2023 FY)
-  const periodWeight = { 'Current': 99, 'Latest': 98, 'FY': 4, '9M': 3, 'H1': 2, 'Q1': 1 };
-  const periodKeys = Object.keys(combinedReports).sort((a, b) => {
-    if (a === 'Current' || a === 'Latest') return -1;
-    if (b === 'Current' || b === 'Latest') return 1;
-    const [yearA, perA] = a.split(' ');
-    const [yearB, perB] = b.split(' ');
-    if (yearA !== yearB) return parseInt(yearB || 0) - parseInt(yearA || 0);
-    return (periodWeight[perB] || 0) - (periodWeight[perA] || 0);
-  });
+  const compType = (owned ? owned.type : wl ? wl.type : 'bank') || 'bank';
 
-  // Helper functions for calculated metrics
-  const getCalculated = (raw, key) => {
-    if (!raw) return null;
-    if (raw[key] != null) return raw[key];
-    
-    // Auto-calculate derived metrics if not directly present
-    const p = raw.curprice || (owned ? owned.currentPrice : null);
-    if (key === 'eps' && raw.netProfit && raw.sharesOut) return raw.netProfit / raw.sharesOut;
-    if (key === 'bvps' && raw.equity && raw.sharesOut) return raw.equity / raw.sharesOut;
-    if (key === 'divPerShare' && raw.divPaid && raw.sharesOut) return raw.divPaid / raw.sharesOut;
-    if (key === 'roe' && raw.netProfit && raw.equity) return (raw.netProfit / raw.equity) * 100;
-    if (key === 'roa' && raw.netProfit && raw.assets) return (raw.netProfit / raw.assets) * 100;
-    if (key === 'npl' && raw.nplAmt && raw.grossLoans) return (raw.nplAmt / raw.grossLoans) * 100;
-    if (key === 'cir' && raw.niexp && (raw.nii || raw.niinc)) return (raw.niexp / ((raw.nii||0) + (raw.niinc||0))) * 100;
-    if (key === 'pe' && raw.eps && p) return p / raw.eps;
-    if (key === 'pb' && raw.bvps && p) return p / raw.bvps;
-    return null;
-  };
-
-  // Formatters
-  const fmtM = v => v != null ? Math.round(v).toLocaleString() : '—';
-  const fmtP = v => v != null ? v.toFixed(1) + '%' : '—';
-  const fmtX = v => v != null ? v.toFixed(2) + 'x' : '—';
-
-  const metrics = [
-    { label: "Net Profit (TSh M)", key: "netProfit", fmt: fmtM },
-    { label: "Total Equity (TSh M)", key: "equity", fmt: fmtM },
-    { label: "Gross Loans / Assets (TSh M)", key: "grossLoans", fmt: fmtM },
-    { label: "EPS (TSh)", key: "eps", fmt: fmtM },
-    { label: "Book Value/Share (TSh)", key: "bvps", fmt: fmtM },
-    { label: "Div per Share (TSh)", key: "divPerShare", fmt: fmtM },
-    { label: "P/E Ratio", key: "pe", fmt: fmtX, colorRule: (v) => v > 0 && v <= 10 ? '#00C896' : v <= 15 ? '#F4A623' : '#E05656' },
-    { label: "P/B Ratio", key: "pb", fmt: fmtX, colorRule: (v) => v > 0 && v <= 1.5 ? '#00C896' : v <= 3.0 ? '#F4A623' : '#E05656' },
-    { label: "ROE (%)", key: "roe", fmt: fmtP, colorRule: (v) => v >= 20 ? '#00C896' : v >= 15 ? '#F4A623' : '#E05656' },
-    { label: "ROA (%)", key: "roa", fmt: fmtP, colorRule: (v) => v >= 3 ? '#00C896' : v >= 1.5 ? '#F4A623' : '#E05656' },
-    { label: "NPL (%)", key: "npl", fmt: fmtP, colorRule: (v) => v < 3 ? '#00C896' : v <= 5 ? '#F4A623' : '#E05656' },
-    { label: "Cost-to-Income (CIR %)", key: "cir", fmt: fmtP, colorRule: (v) => v < 40 ? '#00C896' : v <= 55 ? '#F4A623' : '#E05656' }
+  // Build Table Headers
+  let ths = periodKeys.map(k => `<th style="padding:7px;text-align:right;border-bottom:1px solid #2A2A3A">${k}</th>`).join('');
+  
+  // Rows Data Definition
+  const rowDefs = compType === 'bank' ? [
+    { label: 'Net Profit (TSh M)', key: 'netProfit', fmt: v => v ? v.toLocaleString() : '—', mKey: 'eps' },
+    { label: 'ROE (%)', key: 'roe', fmt: v => v ? v.toFixed(1) + '%' : '—', mKey: 'roe' },
+    { label: 'ROA (%)', key: 'roa', fmt: v => v ? v.toFixed(1) + '%' : '—', mKey: 'roa' },
+    { label: 'NPL Ratio (%)', key: 'npl', fmt: v => v ? v.toFixed(1) + '%' : '—', mKey: 'npl' },
+    { label: 'Cost to Income / CIR (%)', key: 'cir', fmt: v => v ? v.toFixed(1) + '%' : '—', mKey: 'cir' },
+    { label: 'Net Interest Margin (%)', key: 'nim', fmt: v => v ? v.toFixed(1) + '%' : '—', mKey: 'nim' },
+    { label: 'EPS (TSh)', key: 'eps', fmt: v => v ? Math.round(v).toLocaleString() : '—', mKey: 'eps' },
+    { label: 'Book Value/Share (TSh)', key: 'bvps', fmt: v => v ? Math.round(v).toLocaleString() : '—' }
+  ] : [
+    { label: 'Net Profit (TSh M)', key: 'netProfit', fmt: v => v ? v.toLocaleString() : '—', mKey: 'eps' },
+    { label: 'ROE (%)', key: 'roe', fmt: v => v ? v.toFixed(1) + '%' : '—', mKey: 'roe' },
+    { label: 'Debt / Equity Ratio', key: 'de', fmt: v => v || '—', mKey: 'de' },
+    { label: 'EPS (TSh)', key: 'eps', fmt: v => v ? Math.round(v).toLocaleString() : '—', mKey: 'eps' },
+    { label: 'Book Value/Share (TSh)', key: 'bvps', fmt: v => v ? Math.round(v).toLocaleString() : '—' }
   ];
 
-  let thead = `<tr><th style="text-align:left; color:#888; font-size:10px; padding:10px; width:160px;">METRIC</th>`;
-  periodKeys.forEach(pKey => {
-    thead += `<th style="text-align:right; color:var(--g); font-size:11px; padding:10px;">${pKey}</th>`;
-  });
-  thead += `</tr>`;
+  let tbody = rowDefs.map(rd => {
+    // Determine rating based on latest available report period
+    const latestKey = periodKeys[periodKeys.length - 1];
+    const latestVal = combinedReports[latestKey] ? combinedReports[latestKey][rd.key] : null;
+    const rating = rd.mKey ? rateMetric(rd.mKey, latestVal, compType) : { text: '—', color: '#555' };
 
-  let tbody = '';
-  metrics.forEach(m => {
-    const hasData = periodKeys.some(pKey => getCalculated(combinedReports[pKey], m.key) != null);
-    if (!hasData) return;
-
-    tbody += `<tr style="border-bottom: 1px solid #1A1A24;">
-      <td style="padding:10px; font-size:11px; font-weight:bold; color:#CCC;">${m.label}</td>`;
-      
-    periodKeys.forEach(pKey => {
-      const val = getCalculated(combinedReports[pKey], m.key);
-      const color = (m.colorRule && val != null) ? m.colorRule(val) : '#F0EAD6';
-      tbody += `<td style="padding:10px; text-align:right; font-size:12px; font-weight:bold; color:${color};">${val != null ? m.fmt(val) : '—'}</td>`;
-    });
+    let tr = `<tr>
+      <td style="padding:7px;border-bottom:1px solid #1A1A28;font-weight:600;color:#AAA">${rd.label}</td>
+      <td style="padding:7px;border-bottom:1px solid #1A1A28;text-align:center"><span style="background:${rating.color}22;color:${rating.color};border:1px solid ${rating.color}44;padding:2px 6px;border-radius:4px;font-size:9px;font-weight:700">${rating.text}</span></td>`;
     
-    tbody += `</tr>`;
-  });
+    periodKeys.forEach(k => {
+      const r = combinedReports[k];
+      const val = r ? r[rd.key] : null;
+      tr += `<td style="padding:7px;border-bottom:1px solid #1A1A28;text-align:right">${rd.fmt(val)}</td>`;
+    });
+    tr += `</tr>`;
+    return tr;
+  }).join('');
 
   container.innerHTML = `
-    <div style="background:#0D1117; border:1px solid #1E2A3A; border-radius:8px; overflow-x:auto;">
-      <table style="width:100%; border-collapse:collapse;">
-        <thead style="background:#161B27; border-bottom:2px solid #1E2A3A;">${thead}</thead>
-        <tbody>${tbody}</tbody>
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:11px">
+        <thead>
+          <tr style="color:#555;text-transform:uppercase;font-size:9px">
+            <th style="padding:7px;text-align:left;border-bottom:1px solid #2A2A3A">Metric</th>
+            <th style="padding:7px;text-align:center;border-bottom:1px solid #2A2A3A">Rating</th>
+            ${ths}
+          </tr>
+        </thead>
+        <tbody>
+          ${tbody}
+        </tbody>
       </table>
-    </div>
-    <div style="display:flex; justify-content:flex-end; margin-top:10px;">
-      <button onclick="openWatchlistModal('${ticker}')" style="background:#4A90E218; border:1px solid #4A90E244; color:#4A90E2; padding:6px 12px; border-radius:6px; font-size:11px; font-weight:bold; cursor:pointer;">
-        + Add Another Period for ${ticker}
-      </button>
-    </div>
-  `;
+    </div>`;
 }
 // Fetch all DSE tickers immediately on startup
 fetchDynamicTickers();
