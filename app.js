@@ -5590,7 +5590,7 @@ function updateComparisonTable() {
   const owned = (typeof stocks !== 'undefined' && Array.isArray(stocks)) ? stocks.find(s => s.id === ticker) : null;
   const combinedReports = {};
 
-  // 1. Gather Watchlist reports
+  // 1. Gather Watchlist reports (where multi-year entries live)
   if (typeof snapshots !== 'undefined' && snapshots._watchlist && snapshots._watchlist[ticker]) {
     const wl = snapshots._watchlist[ticker];
     if (wl.reports && typeof wl.reports === 'object') {
@@ -5600,7 +5600,17 @@ function updateComparisonTable() {
     }
   }
 
-  // 2. Gather Owned Stock reports & fundamentals (flexible structure support)
+  // 2. Gather Global Financials snapshots (if stored globally)
+  if (typeof snapshots !== 'undefined' && snapshots._financials && snapshots._financials[ticker]) {
+    const fin = snapshots._financials[ticker];
+    if (typeof fin === 'object') {
+      Object.keys(fin).forEach(pKey => {
+        combinedReports[pKey] = fin[pKey];
+      });
+    }
+  }
+
+  // 3. Gather Owned Stock fundamentals (fallback if no multi-year reports saved yet)
   if (owned) {
     if (owned.reports && typeof owned.reports === 'object') {
       Object.keys(owned.reports).forEach(pKey => {
@@ -5610,7 +5620,7 @@ function updateComparisonTable() {
     if (owned.fundamentals) {
       const rawData = owned.fundamentals.raw || owned.fundamentals;
       if (rawData && (rawData.netProfit || rawData.eps || rawData.roe || rawData.equity)) {
-        const periodTag = owned.fundamentals.reportPeriod || owned.reportPeriod || 'Latest FY';
+        const periodTag = owned.fundamentals.reportPeriod || owned.reportPeriod || 'Latest';
         combinedReports[periodTag] = rawData;
       }
     }
@@ -5618,17 +5628,24 @@ function updateComparisonTable() {
 
   let periodKeys = Object.keys(combinedReports);
 
-  // 3. Filter by selected report type (FY, H1, 9M, Q1)
+  // 4. Apply Period Filtering (FY, H1, 9M, Q1)
   if (periodFilter !== 'ALL') {
     periodKeys = periodKeys.filter(k => k.toUpperCase().includes(periodFilter.toUpperCase()));
   }
 
+  // Sort periods chronologically
+  periodKeys.sort();
+
   if (periodKeys.length === 0) {
-    container.innerHTML = `<div style="color:#888;font-size:11px;text-align:center;padding:20px">No <b>${periodFilter}</b> financial reports found for <b>${ticker}</b>.<br><span style="font-size:10px;color:#555">Switch the filter to "All Reports" or add data via Watchlist / Edit Fundamentals.</span></div>`;
+    container.innerHTML = `
+      <div style="color:#888;font-size:11px;text-align:center;padding:25px;background:#13131D;border-radius:8px;border:1px dashed #2A2A3A">
+        No <b>${periodFilter === 'ALL' ? '' : periodFilter}</b> financial reports found for <b>${ticker}</b>.<br><br>
+        <span style="font-size:10px;color:#666">
+          To add financial data for ${ticker}, go to <b>Watchlist Tab</b> or click <b>+ Add Report</b> in Stock Edit.
+        </span>
+      </div>`;
     return;
   }
-
-  periodKeys.sort();
 
   const compType = (owned ? owned.type : (snapshots && snapshots._watchlist && snapshots._watchlist[ticker] ? snapshots._watchlist[ticker].type : 'bank')) || 'bank';
 
@@ -5654,7 +5671,7 @@ function updateComparisonTable() {
   let tbody = rowDefs.map(rd => {
     const latestKey = periodKeys[periodKeys.length - 1];
     const latestVal = combinedReports[latestKey] ? combinedReports[latestKey][rd.key] : null;
-    const rating = rd.mKey ? rateMetric(rd.mKey, latestVal, compType) : { text: '—', color: '#555' };
+    const rating = (rd.mKey && typeof rateMetric === 'function') ? rateMetric(rd.mKey, latestVal, compType) : { text: '—', color: '#555' };
 
     let tr = `<tr>
       <td style="padding:7px;border-bottom:1px solid #1A1A28;font-weight:600;color:#AAA">${rd.label}</td>
@@ -5685,6 +5702,7 @@ function updateComparisonTable() {
       </table>
     </div>`;
 }
+
 
 // Fetch all DSE tickers immediately on startup
 fetchDynamicTickers();
