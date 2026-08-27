@@ -3600,13 +3600,6 @@ function renderPlanner() {
           <select id="compare-stock-select" onchange="updateComparisonTable()" style="flex:2;background:#1A1A28;border:1px solid #2A2A3A;border-radius:6px;padding:7px 9px;color:#F0EAD6;font-size:12px;outline:none">
             ${compareOpts}
           </select>
-          <select id="compare-period-filter" onchange="updateComparisonTable()" style="flex:1;background:#1A1A28;border:1px solid #2A2A3A;border-radius:6px;padding:7px 9px;color:#F0EAD6;font-size:12px;outline:none">
-            <option value="ALL">All Reports</option>
-            <option value="FY">FY Only (Full Year)</option>
-            <option value="H1">H1 Only (Half Year)</option>
-            <option value="9M">9M Only (Q3)</option>
-            <option value="Q1">Q1 Only</option>
-          </select>
         </div>
       </div>
 
