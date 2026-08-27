@@ -5683,12 +5683,14 @@ function updateComparisonTable() {
 
   const combinedReports = {};
   let companyType = 'bank';
+  let currentPrice = 0;
 
   // 1. Check in owned stocks (Portfolio)
   if (typeof stocks !== 'undefined' && Array.isArray(stocks)) {
     const owned = stocks.find(s => s.id === ticker || s.symbol === ticker);
     if (owned) {
       if (owned.type) companyType = owned.type;
+      if (owned.currentPrice) currentPrice = owned.currentPrice;
       if (owned.reports) Object.assign(combinedReports, owned.reports);
       if (owned.fundamentals && owned.fundamentals.raw) {
         const period = owned.fundamentals.reportPeriod || 'Current';
@@ -5701,6 +5703,7 @@ function updateComparisonTable() {
   if (typeof snapshots !== 'undefined' && snapshots && snapshots._watchlist && snapshots._watchlist[ticker]) {
     const wl = snapshots._watchlist[ticker];
     if (wl.type) companyType = wl.type;
+    if (wl.currentPrice && currentPrice === 0) currentPrice = wl.currentPrice;
     if (wl.reports) Object.assign(combinedReports, wl.reports);
   }
 
@@ -5742,9 +5745,9 @@ function updateComparisonTable() {
     { label: 'NIM (%)', key: 'nim', pct: true, evalKey: 'nim' },
     { label: 'NPL Ratio (%)', key: 'npl', pct: true, evalKey: 'npl' },
     { label: 'Cost to Income / CIR (%)', key: 'cir', pct: true, evalKey: 'cir' },
-    { label: 'P/E Ratio', key: 'pe', evalKey: 'pe' },
-    { label: 'P/B Ratio', key: 'bvps', evalKey: 'pb' },
-    { label: 'D/E Ratio', key: 'de', evalKey: 'de' },
+    { label: 'P/E Ratio', key: 'pe', evalKey: 'pe', isMultiple: true },
+    { label: 'P/B Ratio', key: 'pb', evalKey: 'pb', isMultiple: true }, // Fixed mapping from bvps to pb
+    { label: 'D/E Ratio', key: 'de', evalKey: 'de', isMultiple: true },
     { label: 'Book Value/Share (TSh)', key: 'bvps' },
     { label: 'Fair Value (TSh)', key: 'fairValue' }
   ];
@@ -5756,34 +5759,52 @@ function updateComparisonTable() {
     periodKeys.forEach(k => {
       const rep = combinedReports[k] || {};
 
-      // Compute or retrieve raw metric value
+      // 1. Get exact saved value
       let val = rep[m.key];
-      if (val === undefined && m.key === 'roe' && rep.netProfit && rep.equity) {
-        val = (rep.netProfit / rep.equity) * 100;
-      }
-      if (val === undefined && m.key === 'roa' && rep.netProfit && rep.assets) {
-        val = (rep.netProfit / rep.assets) * 100;
-      }
-      if (val === undefined && m.key === 'eps' && rep.netProfit && rep.sharesOut) {
-        val = rep.netProfit / rep.sharesOut;
+
+      // 2. Dynamically calculate missing fundamentals if the raw inputs exist
+      if (val === undefined || val === null) {
+        if (m.key === 'roe' && rep.netProfit && rep.equity) val = (rep.netProfit / rep.equity) * 100;
+        if (m.key === 'roa' && rep.netProfit && rep.assets) val = (rep.netProfit / rep.assets) * 100;
+        if (m.key === 'eps' && rep.netProfit && rep.sharesOut) val = rep.netProfit / rep.sharesOut;
+        if (m.key === 'bvps' && rep.equity && rep.sharesOut) val = rep.equity / rep.sharesOut;
+        
+        // P/E and P/B dynamically require the current stock price
+        if (m.key === 'pe' && currentPrice > 0) {
+          let eps = rep.eps || (rep.netProfit && rep.sharesOut ? rep.netProfit / rep.sharesOut : null);
+          if (eps > 0) val = currentPrice / eps;
+        }
+        if (m.key === 'pb' && currentPrice > 0) {
+          let bvps = rep.bvps || (rep.equity && rep.sharesOut ? rep.equity / rep.sharesOut : null);
+          if (bvps > 0) val = currentPrice / bvps;
+        }
       }
 
       let formatted = '—';
       let ratingBadge = '';
 
       if (val !== undefined && val !== null && val !== '') {
-        let num = parseFloat(val);
+        // Strip out existing letters (like 'x' or '%') if stored as string, so we can rate it
+        let num = typeof val === 'string' ? parseFloat(val.replace(/[^0-9.-]/g, '')) : parseFloat(val);
+        
         if (!isNaN(num)) {
           hasDataInRow = true;
-          formatted = m.pct ? num.toFixed(1) + '%' : Math.round(num).toLocaleString();
+          // Apply correct formatting
+          if (m.pct) formatted = num.toFixed(1) + '%';
+          else if (m.isMultiple) formatted = num.toFixed(2) + 'x';
+          else formatted = Math.round(num).toLocaleString();
 
-          // Evaluate fundamental rating comment badge if evaluation key exists
+          // Evaluate fundamental rating badge
           if (m.evalKey) {
             const rating = rateMetric(m.evalKey, num, companyType);
             if (rating && rating.text !== '—') {
               ratingBadge = `<span style="display:inline-block;margin-left:5px;padding:1px 5px;border-radius:3px;font-size:8px;font-weight:700;background:${rating.color}20;color:${rating.color};border:1px solid ${rating.color}40">${rating.text}</span>`;
             }
           }
+        } else {
+          // Fallback if data is non-numeric text
+          formatted = val;
+          hasDataInRow = true;
         }
       }
 
@@ -5793,7 +5814,7 @@ function updateComparisonTable() {
         </td>`;
     });
 
-    if (!hasDataInRow) return ''; // Skip empty metric rows for cleaner view
+    if (!hasDataInRow) return ''; // Hides rows entirely if no data exists across selected periods
 
     return `<tr>
       <td style="padding:8px 12px;border-bottom:1px solid #1A1A28;font-weight:600;color:#AAA">${m.label}</td>
@@ -5816,6 +5837,7 @@ function updateComparisonTable() {
       </table>
     </div>`;
 }
+
 // Fetch all DSE tickers immediately on startup
 fetchDynamicTickers();
 
