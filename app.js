@@ -3594,29 +3594,40 @@ function renderPlanner() {
     <div class="card" style="border-color:#1A2A1A">
       <div class="sec" style="color:var(--g);margin-bottom:14px">📊 Multi-Year Fundamental Comparison</div>
       
-      <div style="margin-bottom:16px; max-width:300px;">
-        <div class="sec" style="margin-bottom:4px">Select Company & Period Filter</div>
-        <div style="display:flex;gap:8px;margin-bottom:12px">
-          <select id="compare-stock-select" onchange="updateComparisonTable()" style="flex:2;background:#1A1A28;border:1px solid #2A2A3A;border-radius:6px;padding:7px 9px;color:#F0EAD6;font-size:12px;outline:none">
-            ${compareOpts}
-          </select>
+      <div style="margin-bottom:16px;">
+        <div class="sec" style="margin-bottom:6px">Select Company & Periods to Compare</div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+          <div style="flex:1; min-width:140px;">
+            <select id="compare-stock-select" onchange="onCompareStockChange()" style="width:100%;background:#1A1A28;border:1px solid #2A2A3A;border-radius:6px;padding:7px 9px;color:#F0EAD6;font-size:12px;outline:none">
+              ${compareOpts}
+            </select>
+          </div>
+          <div style="flex:1; min-width:130px;">
+            <select id="compare-period-1" onchange="updateComparisonTable()" style="width:100%;background:#1A1A28;border:1px solid #2A2A3A;border-radius:6px;padding:7px 9px;color:#00C896;font-size:12px;outline:none">
+              <option value="ALL">All Saved Periods</option>
+            </select>
+          </div>
+          <div style="flex:1; min-width:130px;">
+            <select id="compare-period-2" onchange="updateComparisonTable()" style="width:100%;background:#1A1A28;border:1px solid #2A2A3A;border-radius:6px;padding:7px 9px;color:#4A90E2;font-size:12px;outline:none">
+              <option value="ALL">All Saved Periods</option>
+            </select>
+          </div>
         </div>
       </div>
 
       <div id="compare-table-container">
          <div style="text-align:center; color:#555; font-size:11px; padding:20px; border:1px dashed #2A2A3A; border-radius:8px;">
            Select a company above to view its historical fundamentals side-by-side.<br><br>
-           <em>Note: Historical data is pulled from your Watchlist entries.</em>
+           <em>Note: Historical data is pulled from your Watchlist and Stock entries.</em>
          </div>
       </div>
       
       <!-- Collapsed Reference Guide -->
       <details style="margin-top:20px; border-top:1px solid #1A1A24; padding-top:14px;">
-        <summary style="font-size:11px; color:#888; cursor:pointer; font-weight:bold; outline:none;">&#128218; View Fundamentals Reference Guide</summary>
+        <summary style="font-size:11px; color:#888; cursor:pointer; font-weight:bold; outline:none;">📖 View Fundamentals Reference Guide</summary>
         <div id="fund-guide-body" style="margin-top:12px;"></div>
       </details>
     </div>
-
   </div>`;
 
   dcaUpdate();
