@@ -3780,60 +3780,104 @@ function sellUpdate() {
     </div>`;
 }
 
-// Sector-Aware Rating Engine
+// Sector-Aware Rating Engine (Updated with full Reference Guide benchmarks)
 function rateMetric(metric, value, companyType) {
-  if (value === null || value === undefined || isNaN(value)) return { text: '—', color: '#555' };
-  const type = companyType || 'bank';
+  if (value === null || value === undefined || isNaN(value) || value === '—') return { text: '—', color: '#555' };
+  const val = parseFloat(value);
+  if (isNaN(val)) return { text: '—', color: '#555' };
+  const type = (companyType || 'bank').toLowerCase();
 
-  // 1. ROE (Return on Equity) — All Sectors
-  if (metric === 'roe') {
-    if (value >= 22) return { text: 'Very Good', color: '#00C896' };
-    if (value >= 15) return { text: 'Good', color: '#10B981' };
-    if (value >= 10) return { text: 'OK', color: '#F4A623' };
-    if (value >= 5)  return { text: 'Bad', color: '#E056A0' };
+  // 1. P/E Ratio
+  if (metric === 'pe' || metric === 'pe_ratio' || metric === 'P/E') {
+    if (type.includes('aviation') || type.includes('industrial')) {
+      if (val > 0 && val < 12) return { text: 'Very Good', color: '#00C896' };
+      if (val <= 18) return { text: 'OK', color: '#F4A623' };
+      return { text: 'Bad', color: '#E05656' };
+    }
+    if (val > 0 && val < 10) return { text: 'Very Good', color: '#00C896' };
+    if (val <= 15) return { text: 'OK', color: '#F4A623' };
+    return { text: 'Bad', color: '#E05656' };
+  }
+
+  // 2. P/B Ratio
+  if (metric === 'pb' || metric === 'pb_ratio' || metric === 'P/B') {
+    if (val > 0 && val < 1.5) return { text: 'Very Good', color: '#00C896' };
+    if (val <= 3.0) return { text: 'OK', color: '#F4A623' };
+    return { text: 'Bad', color: '#E05656' };
+  }
+
+  // 3. ROE (Return on Equity)
+  if (metric === 'roe' || metric === 'ROE') {
+    if (val >= 20) return { text: 'Very Good', color: '#00C896' };
+    if (val >= 15) return { text: 'Good', color: '#10B981' };
+    if (val >= 10) return { text: 'OK', color: '#F4A623' };
+    if (val >= 5)  return { text: 'Bad', color: '#E056A0' };
     return { text: 'Worst', color: '#E05656' };
   }
 
-  // 2. NPL Ratio (Banks only - lower is better)
-  if (metric === 'npl') {
-    if (value <= 3.0) return { text: 'Very Good', color: '#00C896' };
-    if (value <= 5.0) return { text: 'Good', color: '#10B981' }; // BOT benchmark is 5%
-    if (value <= 7.0) return { text: 'OK', color: '#F4A623' };
-    if (value <= 10.0) return { text: 'Bad', color: '#E056A0' };
+  // 4. ROA (Return on Assets)
+  if (metric === 'roa' || metric === 'ROA') {
+    if (val >= 3.0) return { text: 'Very Good', color: '#00C896' };
+    if (val >= 1.5) return { text: 'Good', color: '#10B981' };
+    return { text: 'Bad', color: '#E05656' };
+  }
+
+  // 5. NPL Ratio (Banks - lower is better)
+  if (metric === 'npl' || metric === 'NPL') {
+    if (val <= 3.0) return { text: 'Very Good', color: '#00C896' };
+    if (val <= 5.0) return { text: 'Good', color: '#10B981' };
+    if (val <= 7.0) return { text: 'OK', color: '#F4A623' };
+    if (val <= 10.0) return { text: 'Bad', color: '#E056A0' };
     return { text: 'Worst', color: '#E05656' };
   }
 
-  // 3. CIR / Cost-to-Income (Banks only - lower is better)
-  if (metric === 'cir') {
-    if (value <= 48) return { text: 'Very Good', color: '#00C896' };
-    if (value <= 55) return { text: 'Good', color: '#10B981' };
-    if (value <= 65) return { text: 'OK', color: '#F4A623' };
-    if (value <= 75) return { text: 'Bad', color: '#E056A0' };
+  // 6. CIR / Cost-to-Income (Banks - lower is better)
+  if (metric === 'cir' || metric === 'CIR') {
+    if (val <= 40) return { text: 'Very Good', color: '#00C896' };
+    if (val <= 48) return { text: 'Good', color: '#10B981' };
+    if (val <= 55) return { text: 'OK', color: '#F4A623' };
+    if (val <= 65) return { text: 'Bad', color: '#E056A0' };
     return { text: 'Worst', color: '#E05656' };
   }
 
-  // 4. Debt-to-Equity (Non-Bank / Industrial - lower is better)
-  if (metric === 'de') {
-    const val = parseFloat(value);
+  // 7. NIM / Net Interest Margin (Banks)
+  if (metric === 'nim' || metric === 'NIM') {
+    if (val >= 8.0) return { text: 'Very Good', color: '#00C896' };
+    if (val >= 5.0) return { text: 'Good', color: '#10B981' };
+    return { text: 'Bad', color: '#E05656' };
+  }
+
+  // 8. Dividend Yield
+  if (metric === 'div_yield' || metric === 'Div Yield') {
+    if (val >= 5.0) return { text: 'Very Good', color: '#00C896' };
+    if (val >= 3.0) return { text: 'Good', color: '#10B981' };
+    return { text: 'Bad', color: '#E05656' };
+  }
+
+  // 9. Debt-to-Equity (Lower is better)
+  if (metric === 'de' || metric === 'D/E') {
     if (val <= 0.5) return { text: 'Very Good', color: '#00C896' };
-    if (val <= 1.0) return { text: 'Good', color: '#10B981' };
-    if (val <= 1.8) return { text: 'OK', color: '#F4A623' };
-    if (val <= 2.5) return { text: 'Bad', color: '#E056A0' };
-    return { text: 'Worst', color: '#E05656' };
+    if (val <= 1.5) return { text: 'OK', color: '#F4A623' };
+    return { text: 'Bad', color: '#E05656' };
   }
 
-  // 5. Net Interest Margin / NIM (Banks)
-  if (metric === 'nim') {
-    if (value >= 8.5) return { text: 'Very Good', color: '#00C896' };
-    if (value >= 6.5) return { text: 'Good', color: '#10B981' };
-    if (value >= 5.0) return { text: 'OK', color: '#F4A623' };
-    if (value >= 3.5) return { text: 'Bad', color: '#E056A0' };
-    return { text: 'Worst', color: '#E05656' };
+  // 10. P/NAV (Holding Companies)
+  if (metric === 'p_nav' || metric === 'P/NAV') {
+    if (val < 0.8) return { text: 'Very Good', color: '#00C896' };
+    if (val <= 1.0) return { text: 'OK', color: '#F4A623' };
+    return { text: 'Bad', color: '#E05656' };
   }
 
-  // 6. EPS Growth / Profit Growth
-  if (metric === 'eps') {
-    if (value > 0) return { text: 'Profitable', color: '#00C896' };
+  // 11. NAV Discount
+  if (metric === 'nav_discount' || metric === 'NAV Discount') {
+    if (val >= 25) return { text: 'Very Good', color: '#00C896' };
+    if (val >= 10) return { text: 'OK', color: '#F4A623' };
+    return { text: 'Bad', color: '#E05656' };
+  }
+
+  // 12. EPS / Net Profit
+  if (metric === 'eps' || metric === 'netProfit') {
+    if (val > 0) return { text: 'Profitable', color: '#00C896' };
     return { text: 'Loss', color: '#E05656' };
   }
 
