@@ -5567,8 +5567,10 @@ function saveWatchlistFundamentals() {
 
 // ── MULTI-YEAR COMPARISON ENGINE (PLANNER TAB) ────────────────────────────────
 function updateComparisonTable() {
-  const ticker = document.getElementById('compare-stock-select')?.value;
+  const tickerSelect = document.getElementById('compare-stock-select');
+  const ticker = tickerSelect ? tickerSelect.value : '';
   const container = document.getElementById('planner-comparison-container');
+  
   if (!container) return;
 
   if (!ticker) {
@@ -5576,84 +5578,86 @@ function updateComparisonTable() {
     return;
   }
 
-  const owned = (typeof stocks !== 'undefined' && Array.isArray(stocks)) ? stocks.find(s => s.id === ticker) : null;
   const combinedReports = {};
 
-  // 1. Check Watchlist reports
-  const wl = (typeof snapshots !== 'undefined' && snapshots._watchlist) ? snapshots._watchlist[ticker] : null;
-  if (wl && wl.reports) {
-    Object.keys(wl.reports).forEach(pKey => {
-      combinedReports[pKey] = wl.reports[pKey];
-    });
+  // 1. Direct check in owned stocks (Portfolio)
+  if (typeof stocks !== 'undefined' && Array.isArray(stocks)) {
+    const owned = stocks.find(s => s.id === ticker || s.symbol === ticker);
+    if (owned) {
+      if (owned.reports) Object.assign(combinedReports, owned.reports);
+      if (owned.fundamentals) {
+        const period = owned.fundamentals.reportPeriod || owned.reportPeriod || 'Current';
+        combinedReports[period] = owned.fundamentals.raw || owned.fundamentals;
+      }
+    }
   }
 
-  // 2. Check Owned Stock fundamentals
-  if (owned && owned.fundamentals) {
-    const rawData = owned.fundamentals.raw || owned.fundamentals;
-    if (Object.keys(rawData).length > 0) {
-      const periodTag = owned.fundamentals.reportPeriod || owned.reportPeriod || 'Latest';
-      combinedReports[periodTag] = rawData;
-    }
+  // 2. Direct check in Watchlist snapshots
+  if (typeof snapshots !== 'undefined' && snapshots && snapshots._watchlist && snapshots._watchlist[ticker]) {
+    const wl = snapshots._watchlist[ticker];
+    if (wl.reports) Object.assign(combinedReports, wl.reports);
+    if (wl.fundamentals) combinedReports['Watchlist'] = wl.fundamentals.raw || wl.fundamentals;
   }
 
   const periodKeys = Object.keys(combinedReports);
 
+  // If no report objects were mapped, draw an explicit notification box instead of leaving it blank
   if (periodKeys.length === 0) {
-    container.innerHTML = `<div style="color:#555;font-size:11px;text-align:center;padding:20px">No financial reports found for ${ticker}.</div>`;
+    container.innerHTML = `
+      <div style="color:#A0A0B0;font-size:12px;text-align:center;padding:25px;background:#161622;border:1px dashed #2A2A3D;border-radius:8px">
+        No saved fundamental reports found for <b style="color:#FFF">${ticker}</b>.<br>
+        <span style="font-size:10px;color:#666;margin-top:6px;display:block">
+          Open the <b>Watchlist Tab</b> or click <b>Edit Stock</b> to add financial data for this company.
+        </span>
+      </div>`;
     return;
   }
 
-  // Sort periods chronologically
   periodKeys.sort();
 
-  const compType = (owned ? owned.type : wl ? wl.type : 'bank') || 'bank';
+  // Draw headers
+  let ths = periodKeys.map(k => `<th style="padding:8px;text-align:right;border-bottom:1px solid #2A2A3A;color:#FFF">${k}</th>`).join('');
 
-  // Build Table Headers
-  let ths = periodKeys.map(k => `<th style="padding:7px;text-align:right;border-bottom:1px solid #2A2A3A">${k}</th>`).join('');
-  
-  // Rows Data Definition
-  const rowDefs = compType === 'bank' ? [
-    { label: 'Net Profit (TSh M)', key: 'netProfit', fmt: v => v ? Number(v).toLocaleString() : '—', mKey: 'eps' },
-    { label: 'ROE (%)', key: 'roe', fmt: v => v ? Number(v).toFixed(1) + '%' : '—', mKey: 'roe' },
-    { label: 'ROA (%)', key: 'roa', fmt: v => v ? Number(v).toFixed(1) + '%' : '—', mKey: 'roa' },
-    { label: 'NPL Ratio (%)', key: 'npl', fmt: v => v ? Number(v).toFixed(1) + '%' : '—', mKey: 'npl' },
-    { label: 'Cost to Income / CIR (%)', key: 'cir', fmt: v => v ? Number(v).toFixed(1) + '%' : '—', mKey: 'cir' },
-    { label: 'Net Interest Margin (%)', key: 'nim', fmt: v => v ? Number(v).toFixed(1) + '%' : '—', mKey: 'nim' },
-    { label: 'EPS (TSh)', key: 'eps', fmt: v => v ? Math.round(Number(v)).toLocaleString() : '—', mKey: 'eps' },
-    { label: 'Book Value/Share (TSh)', key: 'bvps', fmt: v => v ? Math.round(Number(v)).toLocaleString() : '—' }
-  ] : [
-    { label: 'Net Profit (TSh M)', key: 'netProfit', fmt: v => v ? Number(v).toLocaleString() : '—', mKey: 'eps' },
-    { label: 'ROE (%)', key: 'roe', fmt: v => v ? Number(v).toFixed(1) + '%' : '—', mKey: 'roe' },
-    { label: 'Debt / Equity Ratio', key: 'de', fmt: v => v || '—', mKey: 'de' },
-    { label: 'EPS (TSh)', key: 'eps', fmt: v => v ? Math.round(Number(v)).toLocaleString() : '—', mKey: 'eps' },
-    { label: 'Book Value/Share (TSh)', key: 'bvps', fmt: v => v ? Math.round(Number(v)).toLocaleString() : '—' }
+  // Standard Metrics to display
+  const metrics = [
+    { label: 'Net Profit (TSh M)', key: 'netProfit' },
+    { label: 'ROE (%)', key: 'roe', pct: true },
+    { label: 'ROA (%)', key: 'roa', pct: true },
+    { label: 'NPL Ratio (%)', key: 'npl', pct: true },
+    { label: 'Cost to Income / CIR (%)', key: 'cir', pct: true },
+    { label: 'EPS (TSh)', key: 'eps' },
+    { label: 'Book Value/Share (TSh)', key: 'bvps' }
   ];
 
-  let tbody = rowDefs.map(rd => {
-    const latestKey = periodKeys[periodKeys.length - 1];
-    const latestVal = combinedReports[latestKey] ? combinedReports[latestKey][rd.key] : null;
-    const rating = (rd.mKey && typeof rateMetric === 'function') ? rateMetric(rd.mKey, latestVal, compType) : { text: '—', color: '#555' };
-
-    let tr = `<tr>
-      <td style="padding:7px;border-bottom:1px solid #1A1A28;font-weight:600;color:#AAA">${rd.label}</td>
-      <td style="padding:7px;border-bottom:1px solid #1A1A28;text-align:center"><span style="background:${rating.color}22;color:${rating.color};border:1px solid ${rating.color}44;padding:2px 6px;border-radius:4px;font-size:9px;font-weight:700">${rating.text}</span></td>`;
+  let tbody = metrics.map(m => {
+    let tr = `<tr><td style="padding:8px;border-bottom:1px solid #1A1A28;font-weight:600;color:#AAA">${m.label}</td>`;
     
     periodKeys.forEach(k => {
-      const r = combinedReports[k];
-      const val = r ? r[rd.key] : null;
-      tr += `<td style="padding:7px;border-bottom:1px solid #1A1A28;text-align:right">${rd.fmt(val)}</td>`;
+      const rep = combinedReports[k] || {};
+      let val = rep[m.key];
+      let formatted = '—';
+      
+      if (val !== undefined && val !== null && val !== '') {
+        let num = parseFloat(val);
+        if (!isNaN(num)) {
+          formatted = m.pct ? num.toFixed(1) + '%' : Math.round(num).toLocaleString();
+        } else {
+          formatted = val;
+        }
+      }
+      tr += `<td style="padding:8px;border-bottom:1px solid #1A1A28;text-align:right;color:#DDD">${formatted}</td>`;
     });
+    
     tr += `</tr>`;
     return tr;
   }).join('');
 
   container.innerHTML = `
-    <div style="overflow-x:auto">
+    <div style="overflow-x:auto;background:#11111A;padding:10px;border-radius:8px;border:1px solid #222230">
       <table style="width:100%;border-collapse:collapse;font-size:11px">
         <thead>
-          <tr style="color:#555;text-transform:uppercase;font-size:9px">
-            <th style="padding:7px;text-align:left;border-bottom:1px solid #2A2A3A">Metric</th>
-            <th style="padding:7px;text-align:center;border-bottom:1px solid #2A2A3A">Rating</th>
+          <tr style="color:#777;text-transform:uppercase;font-size:9px">
+            <th style="padding:8px;text-align:left;border-bottom:1px solid #2A2A3A">Metric</th>
             ${ths}
           </tr>
         </thead>
@@ -5663,7 +5667,6 @@ function updateComparisonTable() {
       </table>
     </div>`;
 }
-
 // Fetch all DSE tickers immediately on startup
 fetchDynamicTickers();
 
