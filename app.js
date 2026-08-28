@@ -1171,9 +1171,13 @@ function renderStocks() {
               <div style="font-size:14px;font-weight:800">${s.name}</div>
               <div class="mob-hide" style="font-size:10px;color:#888;margin-top:2px">
                 <span style="color:#555;font-style:italic">${s.sector||''}</span>
-                ${s.fundamentals && s.fundamentals.reportPeriod ? `<span style="color:#4A90E2;font-weight:bold;margin-left:6px;">[📋 ${s.fundamentals.reportPeriod}]</span>` : ''}
+                ${(()=>{
+                  const activePeriod = getLatestReportPeriod(s);
+                  return activePeriod ? `<span style="color:#4A90E2;font-weight:bold;margin-left:6px;">[📋 ${activePeriod}]</span>` : '';
+                })()}
               </div>
               <div class="mob-hide" style="font-size:10px;color:#888;margin-top:2px">${s.buyZone}${s.fairValue?' · Fair Value '+fT(s.fairValue):''}</div>
+
               <div class="mob-hide" style="margin-top:5px;display:flex;gap:6px;flex-wrap:wrap">
                 ${bdg(s.signal,sigC)}
                 ${s.currentPrice<=s.avoidAbove?bdg('✅ In Range','#00C896'):bdg('⚠️ Near Limit','#E05656')}
