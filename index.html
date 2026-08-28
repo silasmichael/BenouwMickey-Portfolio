@@ -586,9 +586,10 @@
     <div id="wl-r-fields"></div>
     <div id="wl-r-preview" style="background:#0A1A10;border:1px solid #1A2A1A;border-radius:7px;padding:10px 12px;min-height:20px;margin-bottom:12px;font-size:11px"></div>
     
-    <div style="display:flex;gap:8px">
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button onclick="saveWatchlistFundamentals()" style="background:#00C89622;border:1px solid #00C89644;color:var(--g)">Save Financials</button>
-      <button onclick="closeModal('modal-watchlist-fund')" style="background:#E0565622;border:1px solid #E0565644;color:var(--r)">Cancel</button>
+      <button id="wl-delete-period-btn" onclick="deleteWatchlistPeriod()" style="display:none;background:#E0565622;border:1px solid #E0565644;color:var(--r)">Delete Period</button>
+      <button onclick="closeModal('modal-watchlist-fund')" style="background:#1A1A24;border:1px solid #333;color:#888">Cancel</button>
     </div>
   </div>
 </div>
