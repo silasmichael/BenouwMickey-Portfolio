@@ -2923,18 +2923,20 @@ function saveFundMeta(){
 
 // ── EDIT FUNDAMENTALS
 function openEditFundamentals(stockId){
-  const s=stocks.find(x=>x.id===stockId);if(!s)return;
-  _efStockId=stockId;
-  const f=s.fundamentals||{},r=f.raw||{};
-  document.getElementById('ef-stockname').textContent=s.name+' ('+s.id+')';
-  document.getElementById('ef-curprice').value  =s.currentPrice||'';
-  document.getElementById('ef-signal').value    =s.signal||'';
-  pickStockSignal(s.signal||'HOLD');
-  document.getElementById('ef-fairvalue').value =s.fairValue||'';
-  document.getElementById('ef-zone').value      =s.buyZone||'';
-  document.getElementById('ef-avoidabove').value=s.avoidAbove||'';
+  const s = stocks.find(x => x.id === stockId);
+  if (!s) return;
+  _efStockId = stockId;
+  const f = s.fundamentals || {}, r = f.raw || {};
 
-  // --- Populate Year Options for ef-r-year and ns-r-year ---
+  document.getElementById('ef-stockname').textContent = s.name + ' (' + s.id + ')';
+  document.getElementById('ef-curprice').value  = s.currentPrice || '';
+  document.getElementById('ef-signal').value    = s.signal || '';
+  pickStockSignal(s.signal || 'HOLD');
+  document.getElementById('ef-fairvalue').value = s.fairValue || '';
+  document.getElementById('ef-zone').value      = s.buyZone || '';
+  document.getElementById('ef-avoidabove').value= s.avoidAbove || '';
+
+  // Populate Year options (2022 to 2100)
   const curYr = new Date().getFullYear();
   let yrOpts = '';
   for (let y = 2022; y <= 2100; y++) {
@@ -2942,10 +2944,12 @@ function openEditFundamentals(stockId){
   }
   const efYrEl = document.getElementById('ef-r-year');
   if (efYrEl) efYrEl.innerHTML = yrOpts;
-  const nsYrEl = document.getElementById('ns-r-year');
-  if (nsYrEl) nsYrEl.innerHTML = yrOpts;
 
-  // Prefill existing period if saved (e.g. reportPeriod = "2024 FY")
+  // Set existing company type
+  const typeEl = document.getElementById('ef-r-type');
+  if (typeEl) typeEl.value = s.type || 'bank';
+
+  // Prefill report period if set on the stock
   if (f.reportPeriod) {
     const parts = f.reportPeriod.split(' ');
     if (parts.length >= 2) {
@@ -2955,59 +2959,185 @@ function openEditFundamentals(stockId){
     }
   }
 
-  const typeEl=document.getElementById('ef-r-type');if(typeEl)typeEl.value=s.type||'bank';
-  if(Object.keys(r).some(k=>r[k]!=null)){
-    renderReportFields('ef-r-');
-    const set=(id,val)=>{const el=document.getElementById('ef-r-'+id);if(el&&val!=null)el.value=val;};
-    set('curprice',s.currentPrice);set('netprofit',r.netProfit||r.netprofit);
-    set('shares',r.sharesOut||r.shares);set('divpaid',r.divPaid||r.divpaid);
-    set('equity',r.equity);set('equityprior',r.equityPrior||r.equityprior);
-    set('assets',r.assets);set('assetsprior',r.assetsPrior||r.assetsprior);
-    set('nii',r.nii);set('avgea',r.avgea);set('niexp',r.niexp);set('niinc',r.niinc);
-    set('npl',r.nplAmt||r.npl);set('grossloans',r.grossLoans||r.grossloans);
-    set('ebitda',r.ebitda);set('totaldebt',r.totalDebt||r.totaldebt);set('ev',r.ev);
-    set('nav',r.navPerShare||f.navPerShare);set('launchnav',r.launchNav||f.launchNav);
-    previewReport('ef-r-');
+  efTab('manual'); 
+  openModal('modal-edit-fund');
+}
+
+// Render list of all saved period reports for current stock in Tab 3
+function renderStockReportHistory() {
+  const container = document.getElementById('ef-history-list');
+  if (!container || !_efStockId) return;
+
+  const s = stocks.find(x => x.id === _efStockId);
+  if (!s) return;
+
+  // Collect reports from stock and watchlist snapshots
+  const reports = {};
+  if (s.reports) Object.assign(reports, s.reports);
+  if (s.fundamentals && s.fundamentals.reportPeriod && s.fundamentals.raw) {
+    reports[s.fundamentals.reportPeriod] = s.fundamentals.raw;
   }
-  efTab('manual'); checkEfSave(); openModal('modal-edit-fund');
+  if (snapshots._watchlist && snapshots._watchlist[_efStockId] && snapshots._watchlist[_efStockId].reports) {
+    Object.assign(reports, snapshots._watchlist[_efStockId].reports);
+  }
+
+  const periodKeys = Object.keys(reports).sort();
+
+  if (periodKeys.length === 0) {
+    container.innerHTML = `<div style="text-align:center;color:#555;padding:20px;font-size:11px">No saved report periods yet for ${s.id}. Switch to "From Report" tab to add one.</div>`;
+    return;
+  }
+
+  const listHTML = periodKeys.map(k => {
+    const r = reports[k] || {};
+    const np = r.netProfit || r.netprofit ? `Net Profit: TSh ${Math.round(r.netProfit || r.netprofit).toLocaleString()}M` : '';
+    const eps = r.eps ? `EPS: TSh ${Math.round(r.eps)}` : '';
+    const roe = r.roe ? `ROE: ${r.roe.toFixed(1)}%` : '';
+
+    return `
+      <div style="display:flex;justify-content:space-between;align-items:center;background:#0D1F12;border:1px solid #1A3A22;padding:10px 12px;border-radius:8px;margin-bottom:8px">
+        <div>
+          <div style="font-size:12px;font-weight:800;color:var(--g)">📋 ${k}</div>
+          <div style="font-size:10px;color:#888;margin-top:2px">${[np, eps, roe].filter(Boolean).join(' · ')}</div>
+        </div>
+        <div style="display:flex;gap:6px">
+          <button onclick="loadPeriodForEditing('${k}')" style="background:#00C89622;border:1px solid #00C89644;color:var(--g);padding:4px 8px;font-size:10px;border-radius:5px;cursor:pointer">✏️ Edit / Load</button>
+          <button onclick="deleteReportPeriod('${_efStockId}', '${k}')" style="background:#E0565622;border:1px solid #E0565644;color:var(--r);padding:4px 8px;font-size:10px;border-radius:5px;cursor:pointer">🗑 Delete</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  container.innerHTML = listHTML;
+}
+
+// Load an existing historical period into the fields in Tab 2
+function loadPeriodForEditing(periodKey) {
+  const parts = periodKey.split(' ');
+  if (parts.length >= 2) {
+    const yrEl = document.getElementById('ef-r-year');
+    const pEl  = document.getElementById('ef-r-period');
+    if (yrEl) yrEl.value = parts[0];
+    if (pEl)  pEl.value  = parts[1];
+  }
+  efTab('report');
+}
+
+// Automatically prefill fields if selecting a year/period that already exists
+function loadExistingStockPeriodData() {
+  if (!_efStockId) return;
+  const s = stocks.find(x => x.id === _efStockId);
+  if (!s) return;
+
+  const yr = document.getElementById('ef-r-year')?.value || new Date().getFullYear();
+  const pd = document.getElementById('ef-r-period')?.value || 'FY';
+  const reportKey = `${yr} ${pd}`;
+  const delBtn = document.getElementById('ef-delete-period-btn');
+
+  let r = null;
+  if (s.reports && s.reports[reportKey]) r = s.reports[reportKey];
+  else if (s.fundamentals && s.fundamentals.reportPeriod === reportKey) r = s.fundamentals.raw;
+  else if (snapshots._watchlist && snapshots._watchlist[_efStockId] && snapshots._watchlist[_efStockId].reports) {
+    r = snapshots._watchlist[_efStockId].reports[reportKey];
+  }
+
+  if (r) {
+    const set = (id, val) => { const el = document.getElementById('ef-r-' + id); if (el && val != null) el.value = val; };
+    set('curprice', s.currentPrice);
+    set('netprofit', r.netProfit || r.netprofit);
+    set('shares', r.sharesOut || r.shares);
+    set('divpaid', r.divPaid || r.divpaid);
+    set('equity', r.equity); set('equityprior', r.equityPrior || r.equityprior);
+    set('assets', r.assets); set('assetsprior', r.assetsPrior || r.assetsprior);
+    set('nii', r.nii); set('avgea', r.avgea); set('niexp', r.niexp); set('niinc', r.niinc);
+    set('npl', r.nplAmt || r.npl); set('grossloans', r.grossLoans || r.grossloans);
+    set('ebitda', r.ebitda); set('totaldebt', r.totalDebt || r.totaldebt); set('ev', r.ev);
+    set('nav', r.navPerShare || s.fundamentals.navPerShare);
+    previewReport('ef-r-');
+    if (delBtn) delBtn.style.display = 'inline-block';
+  } else {
+    renderReportFields('ef-r-');
+    if (delBtn) delBtn.style.display = 'none';
+  }
+}
+
+// Delete the currently selected period from the "From Report" tab
+function deleteCurrentStockPeriod() {
+  if (!_efStockId) return;
+  const yr = document.getElementById('ef-r-year')?.value || new Date().getFullYear();
+  const pd = document.getElementById('ef-r-period')?.value || 'FY';
+  const reportKey = `${yr} ${pd}`;
+
+  confirmDelete(
+    `Delete ${reportKey} for ${_efStockId}?`,
+    `This will remove the saved ${reportKey} report.`,
+    () => {
+      deleteReportPeriod(_efStockId, reportKey);
+      renderReportFields('ef-r-');
+      const delBtn = document.getElementById('ef-delete-period-btn');
+      if (delBtn) delBtn.style.display = 'none';
+    }
+  );
 }
 
 function saveEditFundamentals(){
-  const s=stocks.find(x=>x.id===_efStockId);if(!s)return;
-  const usingReport=document.getElementById('ef-panel-report')?.style.display!=='none';
-  if(usingReport){
-    const typeEl=document.getElementById('ef-r-type');
-    const typ=typeEl?typeEl.value:(s.type||'bank');
-    const result=calcFromReport('ef-r-',typ);
-    if(result&&result.raw&&Object.keys(result.raw).some(k=>result.raw[k]!=null)){
-      applyReportToStock(s,result.raw,result.currentPrice);if(typ)s.type=typ;
+  const s = stocks.find(x => x.id === _efStockId);
+  if (!s) return;
 
-      // 1. Tag the financial period on the stock itself
+  const usingReport = document.getElementById('ef-panel-report')?.style.display !== 'none';
+
+  if (usingReport) {
+    const typeEl = document.getElementById('ef-r-type');
+    const typ = typeEl ? typeEl.value : (s.type || 'bank');
+    const result = calcFromReport('ef-r-', typ);
+
+    if (result && result.raw && Object.keys(result.raw).some(k => result.raw[k] != null)) {
+      applyReportToStock(s, result.raw, result.currentPrice);
+      if (typ) s.type = typ;
+
       const yr = document.getElementById('ef-r-year')?.value || new Date().getFullYear();
       const pd = document.getElementById('ef-r-period')?.value || 'FY';
-      s.fundamentals.reportPeriod = `${yr} ${pd}`;
+      const reportKey = `${yr} ${pd}`;
 
-      // 2. Automatically save this period into Watchlist so Multi-Year Comparison Table sees it!
+      // 1. Tag active period on stock
+      s.fundamentals.reportPeriod = reportKey;
+
+      // 2. Save into stock's own multi-period dictionary
+      if (!s.reports) s.reports = {};
+      s.reports[reportKey] = result.raw;
+
+      // 3. Mirror save to Watchlist store for Planner Comparison Table & Radar Engine
       if (!snapshots._watchlist) snapshots._watchlist = {};
       if (!snapshots._watchlist[s.id]) {
         snapshots._watchlist[s.id] = { ticker: s.id, name: s.name, type: s.type, reports: {} };
       }
-      snapshots._watchlist[s.id].reports[`${yr} ${pd}`] = result.raw;
+      if (!snapshots._watchlist[s.id].reports) snapshots._watchlist[s.id].reports = {};
+      snapshots._watchlist[s.id].reports[reportKey] = result.raw;
 
-    }else{showToast('Enter at least Shares Outstanding to calculate', true);return;}
-  }else{
-    const cur=parseFloat(document.getElementById('ef-curprice').value);
-    const fv=parseFloat(document.getElementById('ef-fairvalue').value);
-    const aa=parseFloat(document.getElementById('ef-avoidabove').value);
-    const sig=document.getElementById('ef-signal').value.trim();
-    const zone=document.getElementById('ef-zone').value.trim();
-    if(!isNaN(cur)&&cur>0)s.currentPrice=cur;
-    if(!isNaN(fv)&&fv>0)s.fairValue=fv;
-    if(!isNaN(aa)&&aa>0)s.avoidAbove=aa;
-    if(sig)s.signal=sig;if(zone)s.buyZone=zone;
+    } else {
+      showToast('Enter at least Shares Outstanding to calculate', true);
+      return;
+    }
+  } else {
+    const cur  = parseFloat(document.getElementById('ef-curprice').value);
+    const fv   = parseFloat(document.getElementById('ef-fairvalue').value);
+    const aa   = parseFloat(document.getElementById('ef-avoidabove').value);
+    const sig  = document.getElementById('ef-signal').value.trim();
+    const zone = document.getElementById('ef-zone').value.trim();
+
+    if (!isNaN(cur) && cur > 0) s.currentPrice = cur;
+    if (!isNaN(fv)  && fv > 0)  s.fairValue    = fv;
+    if (!isNaN(aa)  && aa > 0)  s.avoidAbove   = aa;
+    if (sig)  s.signal  = sig;
+    if (zone) s.buyZone = zone;
   }
-  const _oids=getOpenIds();
-  closeModal('modal-edit-fund');stampPriceUpdate();persist();renderAll();updateHeader();
+
+  const _oids = getOpenIds();
+  closeModal('modal-edit-fund');
+  stampPriceUpdate();
+  persist();
+  renderAll();
+  updateHeader();
   restoreOpenIds(_oids);
 }
 
