@@ -234,13 +234,18 @@
 
 <!-- MODAL: EDIT STOCK FUNDAMENTALS -->
 <div class="modal-bg" id="modal-edit-fund">
-  <div class="modal" style="max-height:90vh;overflow-y:auto;width:min(520px,calc(100vw - 32px))">
-    <div style="font-size:13px;font-weight:800;color:var(--g);margin-bottom:4px">Edit Fundamentals</div>
+  <div class="modal" style="max-height:90vh;overflow-y:auto;width:min(540px,calc(100vw - 32px))">
+    <div style="font-size:13px;font-weight:800;color:var(--g);margin-bottom:2px">Stock Fundamentals & Financial Reports</div>
     <div id="ef-stockname" style="font-size:10px;color:#555;margin-bottom:12px"></div>
+    
+    <!-- 3-TAB STRIP -->
     <div style="display:flex;gap:0;margin-bottom:12px;border:1px solid #1A2A1A;border-radius:7px;overflow:hidden">
-      <button id="ef-tab-manual" onclick="efTab('manual')" style="flex:1;padding:7px;font-size:10px;font-weight:700;background:#00C89622;color:var(--g);border:none;cursor:pointer;text-transform:uppercase;letter-spacing:.5px">Manual</button>
-      <button id="ef-tab-report" onclick="efTab('report')" style="flex:1;padding:7px;font-size:10px;font-weight:700;background:transparent;color:#444;border:none;cursor:pointer;text-transform:uppercase;letter-spacing:.5px">From Report</button>
+      <button id="ef-tab-manual" onclick="efTab('manual')" style="flex:1;padding:7px 4px;font-size:10px;font-weight:700;background:#00C89622;color:var(--g);border:none;cursor:pointer;text-transform:uppercase;letter-spacing:.5px">Manual</button>
+      <button id="ef-tab-report" onclick="efTab('report')" style="flex:1;padding:7px 4px;font-size:10px;font-weight:700;background:transparent;color:#444;border:none;cursor:pointer;text-transform:uppercase;letter-spacing:.5px">From Report</button>
+      <button id="ef-tab-history" onclick="efTab('history')" style="flex:1;padding:7px 4px;font-size:10px;font-weight:700;background:transparent;color:#444;border:none;cursor:pointer;text-transform:uppercase;letter-spacing:.5px">📁 Saved Periods</button>
     </div>
+
+    <!-- TAB 1: MANUAL -->
     <div id="ef-panel-manual">
       <div style="margin-bottom:10px">
         <div class="sec" style="margin-bottom:3px">Current Price (TSh)</div>
@@ -266,18 +271,19 @@
         <div><div class="sec" style="margin-bottom:3px">Avoid Above (TSh)</div><input id="ef-avoidabove" type="number" oninput="checkEfSave()"></div>
       </div>
     </div>
-        <div id="ef-panel-report" style="display:none">
-      <div style="font-size:9px;color:#555;margin-bottom:8px">TSh millions unless noted. Existing values pre-filled.</div>
+
+    <!-- TAB 2: FROM REPORT -->
+    <div id="ef-panel-report" style="display:none">
+      <div style="font-size:9px;color:#555;margin-bottom:8px">TSh millions unless noted. Selecting an existing year/period updates it.</div>
       
-      <!-- NEW: Financial Period Tag for Stock Card -->
       <div class="g2" style="margin-bottom:8px">
         <div>
           <div class="sec" style="margin-bottom:3px">Report Year</div>
-          <select id="ef-r-year" style="width:100%;background:#0D1F12;border:1px solid #1A2A1A;color:#F0EAD6;padding:7px 9px;border-radius:6px;font-size:12px"></select>
+          <select id="ef-r-year" onchange="loadExistingStockPeriodData()" style="width:100%;background:#0D1F12;border:1px solid #1A2A1A;color:#F0EAD6;padding:7px 9px;border-radius:6px;font-size:12px"></select>
         </div>
         <div>
           <div class="sec" style="margin-bottom:3px">Report Period</div>
-          <select id="ef-r-period" style="width:100%;background:#0D1F12;border:1px solid #1A2A1A;color:#F0EAD6;padding:7px 9px;border-radius:6px;font-size:12px">
+          <select id="ef-r-period" onchange="loadExistingStockPeriodData()" style="width:100%;background:#0D1F12;border:1px solid #1A2A1A;color:#F0EAD6;padding:7px 9px;border-radius:6px;font-size:12px">
             <option value="FY">FY (Full Year)</option>
             <option value="9M">9M (Q3)</option>
             <option value="H1">H1 (Half Year)</option>
@@ -301,12 +307,22 @@
       <div id="ef-r-fields"></div>
       <div id="ef-r-preview" style="background:#0A1A10;border:1px solid #1A2A1A;border-radius:7px;padding:10px 12px;min-height:20px;margin-bottom:12px;font-size:11px"></div>
     </div>
-    <div style="display:flex;gap:8px">
+
+    <!-- TAB 3: SAVED PERIODS HISTORY -->
+    <div id="ef-panel-history" style="display:none">
+      <div style="font-size:10px;color:#888;margin-bottom:10px">Manage or fix saved financial report periods for this company:</div>
+      <div id="ef-history-list"></div>
+    </div>
+
+    <!-- MODAL FOOTER BUTTONS -->
+    <div style="display:flex;gap:8px;margin-top:12px">
       <button id="ef-save-btn" onclick="saveEditFundamentals()" disabled style="background:#00C89622;border:1px solid #00C89644;color:var(--g);opacity:0.4;cursor:not-allowed">Save</button>
-      <button onclick="closeModal('modal-edit-fund')" style="background:#E0565622;border:1px solid #E0565644;color:var(--r)">Cancel</button>
+      <button id="ef-delete-period-btn" onclick="deleteCurrentStockPeriod()" style="display:none;background:#E0565622;border:1px solid #E0565644;color:var(--r)">Delete Selected Period</button>
+      <button onclick="closeModal('modal-edit-fund')" style="background:#1A1A24;border:1px solid #333;color:#888">Cancel</button>
     </div>
   </div>
 </div>
+
 
 <!-- MODAL: ADD FUND -->
 <div class="modal-bg" id="modal-fund">
