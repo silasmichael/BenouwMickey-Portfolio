@@ -5246,7 +5246,7 @@ function renderRadarTableOnly(fundScoreObj = null, userHolding = null) {
   `;
 }
 
-// 4. Fundamental Score Matrix (Reads Stock Tab Portfolio Properties)
+// 4. Fundamental Score Matrix (Weighted Architecture - Max 60 Points)
 function calculateFundamentalScore(stock, symbol) {
   if (!stock || Object.keys(stock).length === 0) {
     return { score: 0, hasData: false, sector: 'General' };
@@ -5266,84 +5266,155 @@ function calculateFundamentalScore(stock, symbol) {
   const divYield = parseFloat(stock.div_yield || 0);
   const navDisc = parseFloat(stock.nav_discount || 0);
   const pNav = parseFloat(stock.p_nav || 0);
+  const de = parseFloat(stock.de || 0);
 
+  // Core Scoring Logic (Max 60 Points total)
   if (isBank) {
-    if (pe > 0 && pe < 10) { score += 10; matchesFound++; } else if (pe <= 15 && pe > 0) { score += 5; matchesFound++; }
-    if (pb > 0 && pb < 1.5) { score += 10; matchesFound++; } else if (pb <= 3.0 && pb > 0) { score += 5; matchesFound++; }
-    if (roe >= 20) { score += 10; matchesFound++; } else if (roe >= 15) { score += 5; matchesFound++; }
-    if (divYield >= 5) { score += 10; matchesFound++; } else if (divYield >= 3) { score += 5; matchesFound++; }
-    if (stock.npl && stock.npl < 3) { score += 10; matchesFound++; } else if (stock.npl && stock.npl <= 5) { score += 5; matchesFound++; }
-    if (stock.cir && stock.cir < 40) { score += 10; matchesFound++; } else if (stock.cir && stock.cir <= 55) { score += 5; matchesFound++; }
+    // Valuation & Book (20 pts)
+    if (pe > 0 && pe < 8) { score += 10; matchesFound++; } else if (pe <= 12 && pe > 0) { score += 5; matchesFound++; }
+    if (pb > 0 && pb < 1.0) { score += 10; matchesFound++; } else if (pb <= 1.5 && pb > 0) { score += 5; matchesFound++; }
+    // Efficiency & Return (20 pts)
+    if (roe >= 20) { score += 15; matchesFound++; } else if (roe >= 15) { score += 10; matchesFound++; } else if (roe >= 10) { score += 5; matchesFound++; }
+    if (divYield >= 5) { score += 5; matchesFound++; } else if (divYield >= 3) { score += 3; matchesFound++; }
+    // Risk & Operations (20 pts)
+    if (stock.npl && stock.npl < 4) { score += 10; matchesFound++; } else if (stock.npl && stock.npl <= 5) { score += 5; matchesFound++; }
+    if (stock.cir && stock.cir < 45) { score += 10; matchesFound++; } else if (stock.cir && stock.cir <= 55) { score += 5; matchesFound++; }
   } else if (isHolding) {
-    if (pNav > 0 && pNav < 0.8) { score += 10; matchesFound++; } else if (pNav <= 1.0 && pNav > 0) { score += 5; matchesFound++; }
-    if (navDisc >= 25) { score += 10; matchesFound++; } else if (navDisc >= 10) { score += 5; matchesFound++; }
-    if (roe >= 15) { score += 10; matchesFound++; } else if (roe >= 10) { score += 5; matchesFound++; }
-    if (divYield >= 4) { score += 10; matchesFound++; } else if (divYield >= 2) { score += 5; matchesFound++; }
+    // Valuation (30 pts)
+    if (pNav > 0 && pNav < 0.7) { score += 15; matchesFound++; } else if (pNav <= 0.9 && pNav > 0) { score += 8; matchesFound++; }
+    if (navDisc >= 30) { score += 15; matchesFound++; } else if (navDisc >= 15) { score += 8; matchesFound++; }
+    // Return & Yield (20 pts)
+    if (roe >= 15) { score += 15; matchesFound++; } else if (roe >= 10) { score += 8; matchesFound++; }
+    if (divYield >= 4) { score += 5; matchesFound++; } else if (divYield >= 2) { score += 3; matchesFound++; }
+    // Risk (10 pts)
+    if (de >= 0 && de < 0.5) { score += 10; matchesFound++; } else if (de <= 1.0) { score += 5; matchesFound++; }
   } else {
-    if (pe > 0 && pe < 12) { score += 10; matchesFound++; } else if (pe <= 18 && pe > 0) { score += 5; matchesFound++; }
-    if (divYield >= 5) { score += 10; matchesFound++; } else if (divYield >= 3) { score += 5; matchesFound++; }
-    if (roe >= 12) { score += 10; matchesFound++; } else if (roe >= 8) { score += 5; matchesFound++; }
+    // General / Industrial
+    // Valuation (25 pts)
+    if (pe > 0 && pe < 10) { score += 15; matchesFound++; } else if (pe <= 15 && pe > 0) { score += 8; matchesFound++; }
+    if (pb > 0 && pb < 1.5) { score += 10; matchesFound++; } else if (pb <= 2.5 && pb > 0) { score += 5; matchesFound++; }
+    // Return & Yield (20 pts)
+    if (roe >= 15) { score += 15; matchesFound++; } else if (roe >= 10) { score += 8; matchesFound++; }
+    if (divYield >= 5) { score += 5; matchesFound++; } else if (divYield >= 3) { score += 3; matchesFound++; }
+    // Risk (15 pts)
+    if (de >= 0 && de < 0.5) { score += 15; matchesFound++; } else if (de <= 1.2) { score += 8; matchesFound++; }
   }
 
   if (symUpper === 'IEACLC' || sector.includes('etf')) {
-    score = 45;
+    score = 45; // Default solid baseline for ETFs
     matchesFound = 1;
   }
 
   const hasData = matchesFound > 0 || Boolean(pe || divYield || roe || stock.fairValue);
-
   return { score: Math.min(score, 60), hasData, sector: isBank ? 'Banking' : isHolding ? 'Holding' : 'Industrial' };
 }
 
-// 5. Signal Decision Engine
+
+// 5. Signal Decision Engine (Valuation & Trend Aware)
 function calculateQuantSignal(row, fundScoreObj, holding, symbol) {
   const closePx = row.close_price || 0;
   const bids = row.outstanding_bid || 0;
   const offers = row.outstanding_offer || 0;
   const totalDepth = bids + offers;
   
-  let depthScore = 20;
+  // 1. Order Depth Score (Max 15 points - demoted to avoid hype traps)
+  let depthScore = 7; 
   if (totalDepth > 0) {
-    depthScore = Math.round((bids / totalDepth) * 40);
+    depthScore = Math.round((bids / totalDepth) * 15);
   } else if (bids > 0 && offers === 0) {
-    depthScore = 40;
+    depthScore = 15;
   }
 
-  let compositeScore = fundScoreObj.hasData ? (fundScoreObj.score + depthScore) : Math.round((depthScore / 40) * 100);
+  // 2. Valuation Margin Score (Max 25 points)
+  let valScore = 10; // Default fair
+  let isOvervalued = false;
+  
+  if (holding && holding.fairValue) {
+    const fv = holding.fairValue;
+    const avoid = holding.avoidAbove || (fv * 1.1);
+    const buyLow = fv * 0.6; // approx buy zone
+    const buyHigh = fv * 0.8;
 
+    if (closePx <= buyHigh) valScore = 25;
+    else if (closePx <= fv) valScore = 15;
+    else if (closePx >= avoid) { valScore = -15; isOvervalued = true; } // Penalty for being way too high!
+    else { valScore = 0; isOvervalued = (closePx > fv); } // Slightly over FV
+  } else {
+    valScore = 15; // Baseline if no fair value is calculated
+  }
+
+  // 3. Price Trend (14-day momentum check)
+  let trendPenalty = 0;
+  let trendStr = "";
+  if (typeof currentRadarData !== 'undefined' && currentRadarData.length > 0) {
+    const currentIndex = currentRadarData.findIndex(d => d === row);
+    if (currentIndex !== -1) {
+      // Look back ~14 trading sessions
+      let lookbackIdx = currentIndex + 14;
+      if (lookbackIdx >= currentRadarData.length) lookbackIdx = currentRadarData.length - 1;
+      
+      if (lookbackIdx > currentIndex + 4) { // Only calculate if we have at least 5 days of history
+        const historicalPx = currentRadarData[lookbackIdx].close_price;
+        if (historicalPx > 0) {
+          const pctChange = ((closePx - historicalPx) / historicalPx) * 100;
+          trendStr = `14d trend: ${(pctChange>=0?'+':'')}${pctChange.toFixed(1)}%. `;
+          
+          // If price surged > 10% in 14 days AND it's overvalued -> massive penalty
+          if (pctChange > 10 && isOvervalued) {
+            trendPenalty = 20; 
+          } else if (pctChange > 15) { // Surged incredibly fast even if not overvalued yet
+            trendPenalty = 10;
+          }
+        }
+      }
+    }
+  }
+
+  // 4. Calculate Master Composite Score (Max 100)
+  let baseComposite = fundScoreObj.hasData ? (fundScoreObj.score + depthScore + valScore) : Math.round(((depthScore + valScore) / 40) * 100);
+  let compositeScore = Math.max(0, Math.min(100, baseComposite - trendPenalty));
+
+  // 5. Hard Safeguard Overrides
   if (holding && holding.buy_price && holding.buy_price > 0) {
     const profitPct = ((closePx - holding.buy_price) / holding.buy_price) * 100;
     if (profitPct >= 50) {
-      return { 
-        compositeScore,
-        depthScore,
-        signal: 'SELL (50%+ Target)', 
-        color: '#E05656', 
-        comment: `🔴 Target reached! +${profitPct.toFixed(1)}% profit vs buy price (${holding.buy_price.toLocaleString()} TZS).` 
-      };
+      return { compositeScore, depthScore, valScore, signal: 'SELL (50%+ Target)', color: '#E05656', comment: `🔴 Target reached! +${profitPct.toFixed(1)}% profit vs buy price. ${trendStr}` };
     }
   }
 
   if (offers > (bids * 3) && offers > 50000) {
+    return { compositeScore, depthScore, valScore, signal: 'WAIT / SELL', color: '#E05656', comment: `🔴 Heavy supply overhang. ${trendStr}` };
+  }
+
+  if (isOvervalued && compositeScore >= 60) {
+    // Overrides a "BUY" if the stock is trading above Fair Value / Avoid Above limit
     return {
-      compositeScore,
-      depthScore,
-      signal: 'WAIT / SELL',
-      color: '#E05656',
-      comment: `🔴 Heavy supply overhang (Offers ${offers.toLocaleString()} vs Bids ${bids.toLocaleString()}).`
+      compositeScore: Math.min(compositeScore, 65), depthScore, valScore,
+      signal: 'HOLD (Overvalued)', color: '#F4A623',
+      comment: `🟡 Price exceeds Fair Value. Do not chase despite demand. ${trendStr}`
+    };
+  }
+  
+  if (trendPenalty > 0) {
+     return {
+      compositeScore, depthScore, valScore,
+      signal: 'WAIT (Overbought)', color: '#E056A0',
+      comment: `🔴 Price surged too fast. High pullback risk. ${trendStr}`
     };
   }
 
+  // Standard Signal Output
   if (compositeScore >= 75) {
-    return { compositeScore, depthScore, signal: 'BUY NOW', color: '#00C896', comment: `🟢 Strong score (${compositeScore}/100). High buy interest.` };
+    return { compositeScore, depthScore, valScore, signal: 'BUY NOW', color: '#00C896', comment: `🟢 Strong score (${compositeScore}/100). Undervalued & good demand. ${trendStr}` };
   } else if (compositeScore >= 55) {
-    return { compositeScore, depthScore, signal: 'HOLD / ACCUMULATE', color: '#4A90E2', comment: `🔵 Solid score (${compositeScore}/100). Fair valuation.` };
+    return { compositeScore, depthScore, valScore, signal: 'HOLD / ACCUMULATE', color: '#4A90E2', comment: `🔵 Solid score (${compositeScore}/100). Fair valuation. ${trendStr}` };
   } else if (compositeScore >= 35) {
-    return { compositeScore, depthScore, signal: 'WAIT', color: '#F4A623', comment: `🟡 Fair score (${compositeScore}/100). Moderate liquidity.` };
+    return { compositeScore, depthScore, valScore, signal: 'WAIT', color: '#F4A623', comment: `🟡 Fair score (${compositeScore}/100). ${trendStr}` };
   } else {
-    return { compositeScore, depthScore, signal: 'AVOID', color: '#E05656', comment: `🔴 Low score (${compositeScore}/100). Weak demand queue.` };
+    return { compositeScore, depthScore, valScore, signal: 'AVOID', color: '#E05656', comment: `🔴 Low score (${compositeScore}/100). Weak fundamentals or supply. ${trendStr}` };
   }
 }
+
 
 // 6. Chart Image Embed Helper
 function addChartToPdf(doc, canvasId, x, y, maxWidth, maxHeight) {
