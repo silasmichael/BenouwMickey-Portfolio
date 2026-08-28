@@ -5190,7 +5190,7 @@ function renderRadarTableOnly(fundScoreObj = null, userHolding = null) {
     fundScoreObj = { score: 0, hasData: false, sector: 'General' };
   }
 
-  let rowsHTML = displayRows.map(row => {
+    let rowsHTML = displayRows.map(row => {
     const analysis = calculateQuantSignal(row, fundScoreObj, userHolding, currentRadarTicker);
     const dateStr = row.snapshot_date || (row.created_at ? row.created_at.split('T')[0] : 'N/A');
     const closePx = row.close_price || 0;
@@ -5210,7 +5210,7 @@ function renderRadarTableOnly(fundScoreObj = null, userHolding = null) {
         <td style="padding: 10px; font-size: 11px; font-weight: bold; color: ${analysis.color};">
           <div style="display:flex; align-items:center; gap:6px;">
             <span>${analysis.compositeScore}/100</span>
-            <span style="font-size:9px; color:#666;">(${fundScoreLabel} + D:${analysis.depthScore})</span>
+            <span style="font-size:9px; color:#666;" title="Fund (60) + Value (25) + Depth (15)">(${fundScoreLabel} V:${analysis.valScore} D:${analysis.depthScore})</span>
           </div>
         </td>
         <td style="padding: 10px; font-size: 11px;">
