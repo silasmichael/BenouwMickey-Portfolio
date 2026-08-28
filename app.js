@@ -5798,8 +5798,12 @@ function updateComparisonTable() {
 
   periodKeys.sort();
 
-  // Header columns
-  let ths = periodKeys.map(k => `<th style="padding:8px 12px;text-align:right;border-bottom:1px solid #2A2A3A;color:#F0EAD6;font-size:11px">${k}</th>`).join('');
+    // Header columns with quick-delete buttons for mis-entered periods
+  let ths = periodKeys.map(k => `
+    <th style="padding:8px 12px;text-align:right;border-bottom:1px solid #2A2A3A;color:#F0EAD6;font-size:11px">
+      ${k}
+      <button onclick="deleteReportPeriod('${ticker}', '${k}')" title="Delete this period" style="background:#E0565620;border:1px solid #E0565640;color:#E05656;border-radius:4px;padding:1px 5px;font-size:9px;margin-left:4px;cursor:pointer">🗑</button>
+    </th>`).join('');
 
   // Comprehensive Metrics List
   const metrics = [
