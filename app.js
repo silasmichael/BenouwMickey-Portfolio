@@ -5539,11 +5539,12 @@ function openWatchlistModal(prefillTicker) {
 }
 
 function checkWatchlistData() {
-  if (!snapshots._watchlist) return;
+  if (!snapshots._watchlist) snapshots._watchlist = {};
   const ticker = (document.getElementById('wl-ticker')?.value || '').toUpperCase().trim();
   const year = document.getElementById('wl-year')?.value || new Date().getFullYear() - 1;
   const period = document.getElementById('wl-period')?.value || 'FY';
   const reportKey = `${year} ${period}`;
+  const delBtn = document.getElementById('wl-delete-period-btn');
   
   // First check if stock exists in owned stocks to prefill company name & type
   const owned = stocks.find(s => s.id === ticker);
@@ -5555,6 +5556,8 @@ function checkWatchlistData() {
     }
   }
 
+  let existingReport = null;
+
   if (snapshots._watchlist[ticker]) {
     const wl = snapshots._watchlist[ticker];
     if (wl.name) document.getElementById('wl-name').value = wl.name;
@@ -5562,27 +5565,39 @@ function checkWatchlistData() {
       document.getElementById('wl-r-type').value = wl.type;
       renderReportFields('wl-r-');
     }
-    
-    const r = wl.reports ? wl.reports[reportKey] : null;
-    if (r) {
-      const set = (id, val) => { const el = document.getElementById('wl-r-'+id); if(el && val!=null) el.value = val; };
-      set('curprice', wl.currentPrice || (owned ? owned.currentPrice : ''));
-      set('netprofit', r.netProfit || r.netprofit);
-      set('shares', r.sharesOut || r.shares);
-      set('divpaid', r.divPaid || r.divpaid);
-      set('equity', r.equity); set('equityprior', r.equityPrior || r.equityprior);
-      set('assets', r.assets); set('assetsprior', r.assetsPrior || r.assetsprior);
-      set('nii', r.nii); set('avgea', r.avgea);
-      set('niexp', r.niexp); set('niinc', r.niinc);
-      set('npl', r.nplAmt || r.npl); set('grossloans', r.grossLoans || r.grossloans);
-      set('ebitda', r.ebitda); set('totaldebt', r.totalDebt || r.totaldebt);
-      set('ev', r.ev); set('nav', r.navPerShare); 
-      previewReport('wl-r-');
-    } else {
-      renderReportFields('wl-r-'); 
+    if (wl.reports && wl.reports[reportKey]) existingReport = wl.reports[reportKey];
+  }
+
+  // Also check owned stock reports
+  if (!existingReport && owned) {
+    if (owned.reports && owned.reports[reportKey]) existingReport = owned.reports[reportKey];
+    else if (owned.fundamentals && owned.fundamentals.reportPeriod === reportKey) {
+      existingReport = owned.fundamentals.raw;
     }
   }
+
+  if (existingReport) {
+    const r = existingReport;
+    const set = (id, val) => { const el = document.getElementById('wl-r-'+id); if(el && val!=null) el.value = val; };
+    set('curprice', (owned ? owned.currentPrice : '') || snapshots._watchlist[ticker]?.currentPrice || '');
+    set('netprofit', r.netProfit || r.netprofit);
+    set('shares', r.sharesOut || r.shares);
+    set('divpaid', r.divPaid || r.divpaid);
+    set('equity', r.equity); set('equityprior', r.equityPrior || r.equityprior);
+    set('assets', r.assets); set('assetsprior', r.assetsPrior || r.assetsprior);
+    set('nii', r.nii); set('avgea', r.avgea);
+    set('niexp', r.niexp); set('niinc', r.niinc);
+    set('npl', r.nplAmt || r.npl); set('grossloans', r.grossLoans || r.grossloans);
+    set('ebitda', r.ebitda); set('totaldebt', r.totalDebt || r.totaldebt);
+    set('ev', r.ev); set('nav', r.navPerShare); 
+    previewReport('wl-r-');
+    if (delBtn) delBtn.style.display = 'inline-block';
+  } else {
+    renderReportFields('wl-r-');
+    if (delBtn) delBtn.style.display = 'none';
+  }
 }
+
 
 function saveWatchlistFundamentals() {
   const ticker = (document.getElementById('wl-ticker')?.value || '').toUpperCase().trim();
@@ -5617,6 +5632,56 @@ function saveWatchlistFundamentals() {
   if (currentRadarTicker === ticker) loadRadarData();
   const compSelect = document.getElementById('compare-stock-select');
   if (compSelect && compSelect.value === ticker) updateComparisonTable();
+}
+// Delete a financial period report from the Watchlist modal
+function deleteWatchlistPeriod() {
+  const ticker = (document.getElementById('wl-ticker')?.value || '').toUpperCase().trim();
+  const year = document.getElementById('wl-year')?.value || new Date().getFullYear();
+  const period = document.getElementById('wl-period')?.value || 'FY';
+  const reportKey = `${year} ${period}`;
+
+  if (!ticker || !reportKey) return;
+
+  confirmDelete(
+    `Delete ${reportKey} for ${ticker}?`,
+    `This will remove the saved ${reportKey} financial report.`,
+    () => {
+      deleteReportPeriod(ticker, reportKey);
+      renderReportFields('wl-r-');
+      const delBtn = document.getElementById('wl-delete-period-btn');
+      if (delBtn) delBtn.style.display = 'none';
+    }
+  );
+}
+
+// Master function to purge a report period across Watchlist and Stocks
+function deleteReportPeriod(ticker, reportKey) {
+  const cleanTicker = ticker.toUpperCase().trim();
+
+  // 1. Remove from Watchlist snapshots
+  if (snapshots._watchlist && snapshots._watchlist[cleanTicker] && snapshots._watchlist[cleanTicker].reports) {
+    delete snapshots._watchlist[cleanTicker].reports[reportKey];
+  }
+
+  // 2. Remove from Owned Stocks
+  if (typeof stocks !== 'undefined' && Array.isArray(stocks)) {
+    const owned = stocks.find(s => s.id === cleanTicker || s.symbol === cleanTicker);
+    if (owned) {
+      if (owned.reports) delete owned.reports[reportKey];
+      if (owned.fundamentals && owned.fundamentals.reportPeriod === reportKey) {
+        owned.fundamentals.reportPeriod = null;
+        owned.fundamentals.raw = {};
+      }
+    }
+  }
+
+  persist();
+  showToast(`Deleted ${reportKey} report for ${cleanTicker}`);
+
+  // Refresh active views
+  if (typeof updateComparisonTable === 'function') updateComparisonTable();
+  if (typeof onCompareStockChange === 'function') onCompareStockChange();
+  if (typeof loadRadarData === 'function' && currentRadarTicker === cleanTicker) loadRadarData();
 }
 
 
