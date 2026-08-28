@@ -433,6 +433,39 @@ function computeMetrics(s){
   if(f.coverage)       m['Coverage']=f.coverage;
   return m;
 }
+// Smart helper to get & auto-sync the active report period badge on Stock Cards
+function getLatestReportPeriod(s) {
+  if (!s) return null;
+  
+  // Collect all known report keys for this stock
+  const reports = {};
+  if (s.reports) Object.assign(reports, s.reports);
+  if (snapshots._watchlist && snapshots._watchlist[s.id] && snapshots._watchlist[s.id].reports) {
+    Object.assign(reports, snapshots._watchlist[s.id].reports);
+  }
+
+  const keys = Object.keys(reports).sort();
+
+  if (keys.length === 0) {
+    return s.fundamentals ? s.fundamentals.reportPeriod : null;
+  }
+
+  // If the current saved reportPeriod still exists in reports, use it
+  if (s.fundamentals && s.fundamentals.reportPeriod && reports[s.fundamentals.reportPeriod]) {
+    return s.fundamentals.reportPeriod;
+  }
+
+  // Otherwise (if edited/renamed/deleted in Supabase), auto-sync to the latest available period key!
+  const latestKey = keys[keys.length - 1];
+  if (!s.fundamentals) s.fundamentals = {};
+  s.fundamentals.reportPeriod = latestKey;
+  if (reports[latestKey]) {
+    s.fundamentals.raw = reports[latestKey];
+  }
+
+  return latestKey;
+}
+
 
 const fm = v => { if(v==null||isNaN(v)) return '—'; const a=Math.abs(v); if(a>=1e9) return (v/1e9).toFixed(3)+'B'; if(a>=1e6) return (v/1e6).toFixed(3)+'M'; return Math.round(v).toLocaleString(); };
 const fT = v => 'TSh ' + fm(v);
