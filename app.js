@@ -2640,11 +2640,33 @@ function nsTab(tab){
   if(tab==='report')renderReportFields('ns-r-');
 }
 function efTab(tab){
-  document.getElementById('ef-panel-manual').style.display=tab==='manual'?'':'none';
-  document.getElementById('ef-panel-report').style.display=tab==='report'?'':'none';
-  ['manual','report'].forEach(t=>{const b=document.getElementById('ef-tab-'+t);if(!b)return;b.style.background=t===tab?'#00C89622':'transparent';b.style.color=t===tab?'var(--g)':'#444';});
-  if(tab==='report')renderReportFields('ef-r-');
+  document.getElementById('ef-panel-manual').style.display  = tab==='manual'?'':'none';
+  document.getElementById('ef-panel-report').style.display  = tab==='report'?'':'none';
+  document.getElementById('ef-panel-history').style.display = tab==='history'?'':'none';
+
+  ['manual','report','history'].forEach(t => {
+    const b = document.getElementById('ef-tab-' + t);
+    if (!b) return;
+    b.style.background = t === tab ? '#00C89622' : 'transparent';
+    b.style.color      = t === tab ? 'var(--g)' : '#444';
+  });
+
+  const delBtn  = document.getElementById('ef-delete-period-btn');
+  const saveBtn = document.getElementById('ef-save-btn');
+
+  if (tab === 'report') {
+    renderReportFields('ef-r-');
+    loadExistingStockPeriodData();
+  } else if (tab === 'history') {
+    if (delBtn) delBtn.style.display = 'none';
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.style.opacity = '0.4'; }
+    renderStockReportHistory();
+  } else {
+    if (delBtn) delBtn.style.display = 'none';
+    checkEfSave();
+  }
 }
+
 function renderReportFields(prefix){
   const typeEl=document.getElementById(prefix+'type');
   const typ=typeEl?typeEl.value:'bank';
