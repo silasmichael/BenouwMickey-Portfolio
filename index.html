@@ -32,8 +32,11 @@
 
 <!-- MOBILE BUTTON STRIP (hidden on desktop/iPad via CSS) -->
 <div id="hdr-mobile-btns" style="display:none;gap:6px;padding:7px 14px;background:#0D1117;border-bottom:1px solid #1A2230">
-  <button id="sync-btn-mob" onclick="syncLivePrices()" class="hdr-btn" style="flex:1;background:transparent;border:1px solid #333;color:#555;padding:5px 8px;font-size:9px;border-radius:5px;display:flex;align-items:center;justify-content:center;gap:4px;transition:background .3s,color .3s,border-color .3s">
+  <button id="sync-btn-mob" onclick="syncLivePrices()" class="hdr-btn" style="flex:1;background:transparent;border:1px solid #333;color:#555;padding:5px 8px;font-size:9px;border-radius:5px;display:flex;align-items:center;justify-content:center;gap:4px">
     <span id="sync-icon-mob"></span> Update Prices
+  </button>
+  <button onclick="openAlertModal()" id="alert-bell-mob" class="hdr-btn" style="background:#1E2A3A;border:1px solid #2A3A4A;color:#F0EAD6;padding:5px 10px;font-size:10px;border-radius:5px;position:relative">
+    🔔 <span id="alert-badge-mob" style="display:none;position:absolute;top:-4px;right:-4px;background:#E05656;color:#FFF;font-size:8px;font-weight:900;padding:1px 4px;border-radius:10px">0</span>
   </button>
   <button onclick="openModal('modal-statement')" class="hdr-btn" style="flex:1;background:#F4A62310;border:1px solid #F4A62328;color:#F4A623;padding:5px 8px;font-size:9px;border-radius:5px">Statement</button>
   <button onclick="signOut()" class="hdr-btn" style="flex:1;background:#E0565610;border:1px solid #E0565628;color:#E05656;padding:5px 8px;font-size:9px;border-radius:5px">Sign Out</button>
@@ -49,8 +52,11 @@
     </div>
     <div id="hdr-right" style="text-align:right">
       <div id="hdr-btns" style="display:flex;gap:6px;justify-content:flex-end;margin-bottom:8px">
-  			<button id="sync-btn" onclick="syncLivePrices()" class="hdr-btn" style="background:transparent;border:1px solid #333;color:#555;padding:4px 11px;font-size:10px;border-radius:6px;letter-spacing:.5px;display:flex;align-items:center;gap:5px;transition:background .3s,color .3s,border-color .3s">
+  			<button id="sync-btn" onclick="syncLivePrices()" class="hdr-btn" style="background:transparent;border:1px solid #333;color:#555;padding:4px 11px;font-size:10px;border-radius:6px;letter-spacing:.5px;display:flex;align-items:center;gap:5px">
     			<span id="sync-icon"></span> Update Prices
+  			</button>
+  			<button onclick="openAlertModal()" id="alert-bell-desk" class="hdr-btn" style="background:#1E2A3A;border:1px solid #2A3A4A;color:#F0EAD6;padding:4px 10px;font-size:11px;border-radius:6px;position:relative" title="Smart Alerts Hub">
+    			🔔 <span id="alert-badge-desk" style="display:none;position:absolute;top:-5px;right:-5px;background:#E05656;color:#FFF;font-size:8px;font-weight:900;padding:1px 4px;border-radius:10px">0</span>
   			</button>
   			<button onclick="openModal('modal-statement')" class="hdr-btn" style="background:#F4A62310;border:1px solid #F4A62328;color:#F4A623;padding:4px 11px;font-size:10px;border-radius:6px;letter-spacing:.5px">Statement</button>
   			<button onclick="signOut()" class="hdr-btn" style="background:#E0565610;border:1px solid #E0565628;color:#E05656;padding:4px 11px;font-size:10px;border-radius:6px;letter-spacing:.5px">Sign Out</button>
@@ -606,6 +612,22 @@
       <button onclick="saveWatchlistFundamentals()" style="background:#00C89622;border:1px solid #00C89644;color:var(--g)">Save Financials</button>
       <button id="wl-delete-period-btn" onclick="deleteWatchlistPeriod()" style="display:none;background:#E0565622;border:1px solid #E0565644;color:var(--r)">Delete Period</button>
       <button onclick="closeModal('modal-watchlist-fund')" style="background:#1A1A24;border:1px solid #333;color:#888">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: SMART ALERTS HUB -->
+<div class="modal-bg" id="modal-alerts">
+  <div class="modal" style="width:min(440px, calc(100vw - 32px))">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <div style="font-size:14px;font-weight:800;color:var(--g)">🚨 Smart Action Hub & Alerts</div>
+      <button onclick="dismissAllAlerts()" style="background:#1A1A28;border:1px solid #333;color:#888;font-size:10px;padding:3px 8px;border-radius:4px;cursor:pointer">Dismiss All</button>
+    </div>
+    <div id="alerts-container" style="max-height:60vh;overflow-y:auto;margin-bottom:14px">
+      <!-- Populated dynamically -->
+    </div>
+    <div style="display:flex;justify-content:flex-end">
+      <button onclick="closeModal('modal-alerts')" style="background:#00C89622;border:1px solid #00C89644;color:var(--g);padding:6px 14px;font-size:11px">Close</button>
     </div>
   </div>
 </div>
