@@ -6169,4 +6169,129 @@ function updateComparisonTable() {
 
 // Fetch all DSE tickers immediately on startup
 fetchDynamicTickers();
+// ── SMART ACTION HUB & ALERTS ENGINE ────────────────────────────────────────
+let activeAlerts = [];
+let hasUnreadAlerts = false;
+
+function generatePortfolioAlerts() {
+  const alerts = [];
+
+  // 1. Check stock buy zones & profit targets
+  if (Array.isArray(stocks)) {
+    stocks.forEach(s => {
+      const t = cS(s);
+      if (t.shares > 0) {
+        // Profit target (+50%)
+        const profitPct = t.invested > 0 ? (t.gain / t.invested) * 100 : 0;
+        if (profitPct >= 50) {
+          alerts.push({
+            type: 'profit',
+            color: '#E05656',
+            title: `🎯 Profit Target Hit: ${s.id}`,
+            msg: `${s.name} is up +${profitPct.toFixed(1)}% (${fT(Math.round(t.gain))}). Consider taking partial profits.`
+          });
+        }
+        // Buy Zone check
+        if (inBuyZone(s)) {
+          alerts.push({
+            type: 'buy',
+            color: '#00C896',
+            title: `🟢 Buy Zone Entry: ${s.id}`,
+            msg: `${s.name} is currently trading at ${fT(s.currentPrice)}, which is inside your target buy zone (${s.buyZone}).`
+          });
+        }
+        // Avoid Above warning
+        if (s.avoidAbove && s.currentPrice >= s.avoidAbove) {
+          alerts.push({
+            type: 'warning',
+            color: '#F4A623',
+            title: `⚠️ Overvaluation Alert: ${s.id}`,
+            msg: `${s.name} (TZS ${s.currentPrice.toLocaleString()}) has crossed your avoid-above limit (${fT(s.avoidAbove)}). Avoid adding new capital.`
+          });
+        }
+      }
+    });
+  }
+
+  // 2. Sector Concentration Risk Check
+  const { gt } = totals();
+  if (gt > 0 && Array.isArray(stocks)) {
+    let bankVal = 0;
+    stocks.forEach(s => {
+      const sector = (s.sector || s.type || '').toLowerCase();
+      if (sector.includes('bank') || sector.includes('commercial')) {
+        bankVal += cS(s).value;
+      }
+    });
+    const bankPct = (bankVal / gt) * 100;
+    if (bankPct > 65) {
+      alerts.push({
+        type: 'risk',
+        color: '#F4A623',
+        title: `⚠️ High Sector Concentration`,
+        msg: `Banking sector accounts for ${bankPct.toFixed(1)}% of your total portfolio. Consider diversifying into industrials or funds.`
+      });
+    }
+  }
+
+  activeAlerts = alerts;
+  hasUnreadAlerts = alerts.length > 0;
+  updateAlertBadge();
+}
+
+function updateAlertBadge() {
+  const deskBadge = document.getElementById('alert-badge-desk');
+  const mobBadge  = document.getElementById('alert-badge-mob');
+  const count     = activeAlerts.length;
+
+  if (deskBadge) {
+    deskBadge.textContent = count;
+    deskBadge.style.display = (hasUnreadAlerts && count > 0) ? 'inline-block' : 'none';
+  }
+  if (mobBadge) {
+    mobBadge.textContent = count;
+    mobBadge.style.display = (hasUnreadAlerts && count > 0) ? 'inline-block' : 'none';
+  }
+}
+
+function openAlertModal() {
+  const container = document.getElementById('alerts-container');
+  if (!container) return;
+
+  if (activeAlerts.length === 0) {
+    container.innerHTML = `<div style="text-align:center;color:#555;padding:30px;font-size:11px">🎉 No active alerts. All positions are operating within normal parameters.</div>`;
+  } else {
+    container.innerHTML = activeAlerts.map((a, i) => `
+      <div style="background:#111118;border-left:3px solid ${a.color};border:1px solid #1E2A3A;border-radius:8px;padding:10px 12px;margin-bottom:8px">
+        <div style="font-size:12px;font-weight:800;color:${a.color};margin-bottom:3px">${a.title}</div>
+        <div style="font-size:11px;color:#AAA;line-height:1.4">${a.msg}</div>
+        <div style="text-align:right;margin-top:6px">
+          <button onclick="dismissAlert(${i})" style="background:transparent;border:none;color:#555;font-size:9px;cursor:pointer">Dismiss</button>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  // Mark as read when opened
+  hasUnreadAlerts = false;
+  updateAlertBadge();
+  openModal('modal-alerts');
+}
+
+function dismissAlert(idx) {
+  activeAlerts.splice(idx, 1);
+  updateAlertBadge();
+  openAlertModal();
+}
+
+function dismissAllAlerts() {
+  activeAlerts = [];
+  hasUnreadAlerts = false;
+  updateAlertBadge();
+  closeModal('modal-alerts');
+}
+
+// Hook into syncLivePrices so alerts generate automatically after new prices load
+const originalSyncLivePrices = window.syncLivePrices;
+// We append generatePortfolioAlerts right after price update completes inside syncLivePrices or call it here:
 
