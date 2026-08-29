@@ -869,6 +869,14 @@ function renderOverview() {
     </div>`;
   }).join('');
 
+  // ── ALPHA & BENCHMARK CALCULATION ──────────────────────────────────────────
+  const xirrObj = computeXIRR();
+  const portfolioXIRR = xirrObj ? xirrObj.rate : 0;
+  const benchmarkRate = TZ_BOND_YIELD; // 10.54% 5yr T-Bond baseline
+  const alpha = portfolioXIRR - benchmarkRate;
+  const alphaColor = alpha >= 0 ? 'var(--g)' : 'var(--r)';
+
+
   document.getElementById('pane-overview').innerHTML = `
   <div style="display:grid;gap:14px;min-width:0;max-width:100%">
 
@@ -922,7 +930,7 @@ function renderOverview() {
         </div>
       </div>
     </div>
-
+    
     <!-- P&L & Reserves -->
     <div style="background:linear-gradient(135deg,#0A1A12,#080810);border:1px solid #00C89630;border-radius:12px;padding:16px 20px">
       <div style="font-size:9px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px">P&L & Reserves</div>
@@ -952,6 +960,24 @@ function renderOverview() {
           <div style="font-size:9px;color:#444;margin-top:4px">XIRR · ${x.flows} cash flows</div>
         </div>`:'';})()}
 
+        <!-- ALPHA VS BENCHMARK CARD -->
+        <div style="background:linear-gradient(135deg,#0E1626,#0A0D14);border:1px solid #4A90E233;border-radius:12px;padding:16px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+          <div>
+            <div style="font-size:9px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Market Outperformance (Alpha)</div>
+            <div style="font-size:20px;font-weight:900;color:${alphaColor}">
+              ${xirrObj ? (alpha >= 0 ? '+' : '') + alpha.toFixed(2) + '%' : '—'}
+            </div>
+            <div style="font-size:10px;color:#777;margin-top:2px">
+              Portfolio XIRR (${xirrObj ? portfolioXIRR.toFixed(1) + '%' : '—'}) vs. 5yr T-Bond Benchmark (${TZ_BOND_YIELD}%)
+            </div>
+          </div>
+          <div style="background:#1A2A3A44;border:1px solid #4A90E244;border-radius:8px;padding:10px 14px;text-align:right">
+            <div style="font-size:9px;color:#4A90E2;text-transform:uppercase;letter-spacing:1px;margin-bottom:2px">Benchmark Asset</div>
+            <div style="font-size:13px;font-weight:800;color:#F0EAD6">Tanzania 5yr Treasury Bond</div>
+            <div style="font-size:10px;color:#888;margin-top:1px">Risk-Free Rate Baseline</div>
+          </div>
+        </div>
+        
         ${reserves.length>0?`<div style="background:#1A130A;border:1px solid #2A1E0A;border-radius:8px;padding:10px 14px;flex:1;min-width:100px">
           <div style="font-size:9px;color:#555;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Reserves</div>
           <div style="font-size:15px;font-weight:800;color:#F59E0B">${fT(Math.round(rv))}</div>
@@ -6169,51 +6195,86 @@ function updateComparisonTable() {
 
 // Fetch all DSE tickers immediately on startup
 fetchDynamicTickers();
-// ── SMART ACTION HUB & ALERTS ENGINE ────────────────────────────────────────
+
+// ── SMART ACTION HUB & ALERTS ENGINE (V2: QUANT & COST AWARE) ──────────────────────
 let activeAlerts = [];
 let hasUnreadAlerts = false;
 
 function generatePortfolioAlerts() {
   const alerts = [];
 
-  // 1. Check stock buy zones & profit targets
   if (Array.isArray(stocks)) {
     stocks.forEach(s => {
-      const t = cS(s);
+      const t = cS(s); // Your portfolio math function (shares, invested, gain)
+      
+      // 1. Fetch live market data and compute Quant Score for the stock
+      let row = { close_price: s.currentPrice, outstanding_bid: 0, outstanding_offer: 0 };
+      if (typeof currentRadarData !== 'undefined') {
+        const found = currentRadarData.find(r => r.ticker === s.id || r.symbol === s.id);
+        if (found) row = found;
+      }
+      
+      const fundScoreObj = typeof calculateFundamentalScore === 'function' 
+        ? calculateFundamentalScore(s, s.id) 
+        : { score: 0, hasData: false };
+        
+      const analysis = typeof calculateQuantSignal === 'function'
+        ? calculateQuantSignal(row, fundScoreObj, s, s.id)
+        : { compositeScore: 0, signal: 'N/A' };
+
+      // 2. Checks for CURRENTLY HELD stocks
       if (t.shares > 0) {
-        // Profit target (+50%)
+        const avgPrice = t.invested / t.shares;
         const profitPct = t.invested > 0 ? (t.gain / t.invested) * 100 : 0;
+        
+        // Calculate how close current price is to your average buy price
+        const priceVsAvgPct = ((s.currentPrice - avgPrice) / avgPrice) * 100;
+
+        // A. Profit Target (+50%)
         if (profitPct >= 50) {
           alerts.push({
-            type: 'profit',
-            color: '#E05656',
-            title: `🎯 Profit Target Hit: ${s.id}`,
-            msg: `${s.name} is up +${profitPct.toFixed(1)}% (${fT(Math.round(t.gain))}). Consider taking partial profits.`
+            type: 'profit', color: '#E05656', title: `🎯 Profit Target Hit: ${s.id}`,
+            msg: `${s.name} is up +${profitPct.toFixed(1)}%. Consider taking partial profits.`
           });
         }
-        // Buy Zone check
-        if (inBuyZone(s)) {
-          alerts.push({
-            type: 'buy',
-            color: '#00C896',
-            title: `🟢 Buy Zone Entry: ${s.id}`,
-            msg: `${s.name} is currently trading at ${fT(s.currentPrice)}, which is inside your target buy zone (${s.buyZone}).`
-          });
+
+        // B. Cost Basis Proximity & DCA Logic (The New Feature)
+        if (priceVsAvgPct <= 5) { 
+          // Price is below, or very close (within 5%) to your average cost
+          if (analysis.compositeScore >= 60) {
+            alerts.push({
+              type: 'buy', color: '#00C896', title: `🟢 Accumulate / DCA: ${s.id}`,
+              msg: `Price (${s.currentPrice}) is near your average cost (${Math.round(avgPrice)}). Quant score is strong (${analysis.compositeScore}/100). Great time to average down or add.`
+            });
+          } else if (priceVsAvgPct < 0 && analysis.compositeScore < 45) {
+            alerts.push({
+              type: 'warning', color: '#F4A623', title: `🟡 Caution on Dip: ${s.id}`,
+              msg: `You are down on this position, but DO NOT average down yet. The Quant score is weak (${analysis.compositeScore}/100). Wait for better market depth or valuation signals.`
+            });
+          }
         }
-        // Avoid Above warning
+
+        // C. Overvaluation Guardrail
         if (s.avoidAbove && s.currentPrice >= s.avoidAbove) {
           alerts.push({
-            type: 'warning',
-            color: '#F4A623',
-            title: `⚠️ Overvaluation Alert: ${s.id}`,
-            msg: `${s.name} (TZS ${s.currentPrice.toLocaleString()}) has crossed your avoid-above limit (${fT(s.avoidAbove)}). Avoid adding new capital.`
+            type: 'warning', color: '#E056A0', title: `⚠️ Overvalued: ${s.id}`,
+            msg: `${s.name} has crossed your avoid-above limit (${s.avoidAbove}). Do not add capital here regardless of demand.`
+          });
+        }
+      } 
+      // 3. Checks for WATCHLIST stocks (Not yet owned)
+      else {
+        if (analysis.compositeScore >= 75) {
+          alerts.push({
+             type: 'buy', color: '#4A90E2', title: `🚀 Strong Buy Signal: ${s.id}`,
+             msg: `${s.id} triggered a STRONG BUY (Score: ${analysis.compositeScore}/100) based on fundamentals and market depth. Current Price: ${s.currentPrice}.`
           });
         }
       }
     });
   }
 
-  // 2. Sector Concentration Risk Check
+  // 4. Sector Concentration Risk
   const { gt } = totals();
   if (gt > 0 && Array.isArray(stocks)) {
     let bankVal = 0;
@@ -6226,18 +6287,17 @@ function generatePortfolioAlerts() {
     const bankPct = (bankVal / gt) * 100;
     if (bankPct > 65) {
       alerts.push({
-        type: 'risk',
-        color: '#F4A623',
-        title: `⚠️ High Sector Concentration`,
-        msg: `Banking sector accounts for ${bankPct.toFixed(1)}% of your total portfolio. Consider diversifying into industrials or funds.`
+        type: 'risk', color: '#F4A623', title: `⚠️ Sector Risk`,
+        msg: `Banks make up ${bankPct.toFixed(1)}% of your portfolio. Consider diversifying.`
       });
     }
   }
 
   activeAlerts = alerts;
   hasUnreadAlerts = alerts.length > 0;
-  updateAlertBadge();
+  if (typeof updateAlertBadge === 'function') updateAlertBadge();
 }
+
 
 function updateAlertBadge() {
   const deskBadge = document.getElementById('alert-badge-desk');
