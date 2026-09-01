@@ -2774,6 +2774,16 @@ function renderReportFields(prefix){
   }
   const prev=document.getElementById(prefix+'preview');if(prev)prev.innerHTML='';
 }
+
+function getPeriodAnnFactor(periodStr) {
+  if (!periodStr) return 1.0;
+  const p = periodStr.toUpperCase();
+  if (p.includes('Q1')) return 4.0;
+  if (p.includes('H1')) return 2.0;
+  if (p.includes('9M') || p.includes('Q3')) return 4.0 / 3.0;
+  return 1.0;
+}
+
 function calcFromReport(prefix,type){
   const g=id=>{const el=document.getElementById(prefix+id);return el?parseFloat(el.value)||null:null;};
   const typ=type||document.getElementById(prefix+'type')?.value||'bank';
