@@ -3177,14 +3177,19 @@ function saveEditFundamentals(){
       const pd = document.getElementById('ef-r-period')?.value || 'FY';
       const reportKey = `${yr} ${pd}`;
 
-      // 1. Tag active period on stock
+      // Clean up old period key if year/period was changed
+      if (_editingEfPeriodKey && _editingEfPeriodKey !== reportKey) {
+        if (s.reports) delete s.reports[_editingEfPeriodKey];
+        if (snapshots._watchlist && snapshots._watchlist[s.id] && snapshots._watchlist[s.id].reports) {
+          delete snapshots._watchlist[s.id].reports[_editingEfPeriodKey];
+        }
+      }
+
       s.fundamentals.reportPeriod = reportKey;
 
-      // 2. Save into stock's own multi-period dictionary
       if (!s.reports) s.reports = {};
       s.reports[reportKey] = result.raw;
 
-      // 3. Mirror save to Watchlist store for Planner Comparison Table & Radar Engine
       if (!snapshots._watchlist) snapshots._watchlist = {};
       if (!snapshots._watchlist[s.id]) {
         snapshots._watchlist[s.id] = { ticker: s.id, name: s.name, type: s.type, reports: {} };
@@ -3210,6 +3215,7 @@ function saveEditFundamentals(){
     if (zone) s.buyZone = zone;
   }
 
+  _editingEfPeriodKey = null;
   const _oids = getOpenIds();
   closeModal('modal-edit-fund');
   stampPriceUpdate();
