@@ -6203,7 +6203,6 @@ function updateComparisonTable() {
   let companyType = 'bank';
   let currentPrice = 0;
 
-  // 1. Check in owned stocks (Portfolio)
   if (typeof stocks !== 'undefined' && Array.isArray(stocks)) {
     const owned = stocks.find(s => s.id === ticker || s.symbol === ticker);
     if (owned) {
@@ -6217,7 +6216,6 @@ function updateComparisonTable() {
     }
   }
 
-  // 2. Check in Watchlist snapshots
   if (typeof snapshots !== 'undefined' && snapshots && snapshots._watchlist && snapshots._watchlist[ticker]) {
     const wl = snapshots._watchlist[ticker];
     if (wl.type) companyType = wl.type;
@@ -6238,7 +6236,6 @@ function updateComparisonTable() {
     return;
   }
 
-  // Filter based on Period 1 & Period 2 dropdown selections
   const p1 = document.getElementById('compare-period-1')?.value || 'ALL';
   const p2 = document.getElementById('compare-period-2')?.value || 'ALL';
 
@@ -6251,24 +6248,22 @@ function updateComparisonTable() {
 
   periodKeys.sort();
 
-    // Header columns with quick-delete buttons for mis-entered periods
   let ths = periodKeys.map(k => `
     <th style="padding:8px 12px;text-align:right;border-bottom:1px solid #2A2A3A;color:#F0EAD6;font-size:11px">
       ${k}
       <button onclick="deleteReportPeriod('${ticker}', '${k}')" title="Delete this period" style="background:#E0565620;border:1px solid #E0565640;color:#E05656;border-radius:4px;padding:1px 5px;font-size:9px;margin-left:4px;cursor:pointer">🗑</button>
     </th>`).join('');
 
-  // Comprehensive Metrics List
   const metrics = [
     { label: 'Net Profit (TSh M)', key: 'netProfit' },
-    { label: 'EPS (TSh)', key: 'eps', evalKey: 'eps' },
-    { label: 'ROE (%)', key: 'roe', pct: true, evalKey: 'roe' },
-    { label: 'ROA (%)', key: 'roa', pct: true, evalKey: 'roa' },
+    { label: 'EPS (TSh, Annualized)', key: 'eps', evalKey: 'eps' },
+    { label: 'ROE (% p.a.)', key: 'roe', pct: true, evalKey: 'roe' },
+    { label: 'ROA (% p.a.)', key: 'roa', pct: true, evalKey: 'roa' },
     { label: 'NIM (%)', key: 'nim', pct: true, evalKey: 'nim' },
     { label: 'NPL Ratio (%)', key: 'npl', pct: true, evalKey: 'npl' },
     { label: 'Cost to Income / CIR (%)', key: 'cir', pct: true, evalKey: 'cir' },
     { label: 'P/E Ratio', key: 'pe', evalKey: 'pe', isMultiple: true },
-    { label: 'P/B Ratio', key: 'pb', evalKey: 'pb', isMultiple: true }, // Fixed mapping from bvps to pb
+    { label: 'P/B Ratio', key: 'pb', evalKey: 'pb', isMultiple: true },
     { label: 'D/E Ratio', key: 'de', evalKey: 'de', isMultiple: true },
     { label: 'Book Value/Share (TSh)', key: 'bvps' },
     { label: 'Fair Value (TSh)', key: 'fairValue' }
@@ -6280,43 +6275,44 @@ function updateComparisonTable() {
 
     periodKeys.forEach(k => {
       const rep = combinedReports[k] || {};
+      const annFactor = rep.periodFactor || getPeriodAnnFactor(k);
 
-      // 1. Get exact saved value
       let val = rep[m.key];
 
-      // 2. Dynamically calculate missing fundamentals if the raw inputs exist
-      if (val === undefined || val === null) {
-        if (m.key === 'roe' && rep.netProfit && rep.equity) val = (rep.netProfit / rep.equity) * 100;
-        if (m.key === 'roa' && rep.netProfit && rep.assets) val = (rep.netProfit / rep.assets) * 100;
-        if (m.key === 'eps' && rep.netProfit && rep.sharesOut) val = rep.netProfit / rep.sharesOut;
-        if (m.key === 'bvps' && rep.equity && rep.sharesOut) val = rep.equity / rep.sharesOut;
-        
-        // P/E and P/B dynamically require the current stock price
-        if (m.key === 'pe' && currentPrice > 0) {
-          let eps = rep.eps || (rep.netProfit && rep.sharesOut ? rep.netProfit / rep.sharesOut : null);
-          if (eps > 0) val = currentPrice / eps;
-        }
-        if (m.key === 'pb' && currentPrice > 0) {
-          let bvps = rep.bvps || (rep.equity && rep.sharesOut ? rep.equity / rep.sharesOut : null);
-          if (bvps > 0) val = currentPrice / bvps;
-        }
+      // Annualize EPS, ROE, ROA for interim reports (Q1, H1, 9M)
+      if (m.key === 'eps' && rep.netProfit && rep.sharesOut) {
+        val = (rep.netProfit * annFactor) / rep.sharesOut;
+      }
+      if (m.key === 'roe' && rep.netProfit && rep.equity) {
+        val = ((rep.netProfit * annFactor) / rep.equity) * 100;
+      }
+      if (m.key === 'roa' && rep.netProfit && rep.assets) {
+        val = ((rep.netProfit * annFactor) / rep.assets) * 100;
+      }
+      if (m.key === 'bvps' && rep.equity && rep.sharesOut) {
+        val = rep.equity / rep.sharesOut;
+      }
+      if (m.key === 'pe' && currentPrice > 0) {
+        let epsVal = rep.eps ? (rep.eps * annFactor) : (rep.netProfit && rep.sharesOut ? (rep.netProfit * annFactor) / rep.sharesOut : null);
+        if (epsVal > 0) val = currentPrice / epsVal;
+      }
+      if (m.key === 'pb' && currentPrice > 0) {
+        let bvpsVal = rep.bvps || (rep.equity && rep.sharesOut ? rep.equity / rep.sharesOut : null);
+        if (bvpsVal > 0) val = currentPrice / bvpsVal;
       }
 
       let formatted = '—';
       let ratingBadge = '';
 
       if (val !== undefined && val !== null && val !== '') {
-        // Strip out existing letters (like 'x' or '%') if stored as string, so we can rate it
         let num = typeof val === 'string' ? parseFloat(val.replace(/[^0-9.-]/g, '')) : parseFloat(val);
         
         if (!isNaN(num)) {
           hasDataInRow = true;
-          // Apply correct formatting
           if (m.pct) formatted = num.toFixed(1) + '%';
           else if (m.isMultiple) formatted = num.toFixed(2) + 'x';
           else formatted = Math.round(num).toLocaleString();
 
-          // Evaluate fundamental rating badge
           if (m.evalKey) {
             const rating = rateMetric(m.evalKey, num, companyType);
             if (rating && rating.text !== '—') {
@@ -6324,7 +6320,6 @@ function updateComparisonTable() {
             }
           }
         } else {
-          // Fallback if data is non-numeric text
           formatted = val;
           hasDataInRow = true;
         }
@@ -6336,7 +6331,7 @@ function updateComparisonTable() {
         </td>`;
     });
 
-    if (!hasDataInRow) return ''; // Hides rows entirely if no data exists across selected periods
+    if (!hasDataInRow) return '';
 
     return `<tr>
       <td style="padding:8px 12px;border-bottom:1px solid #1A1A28;font-weight:600;color:#AAA">${m.label}</td>
@@ -6359,6 +6354,7 @@ function updateComparisonTable() {
       </table>
     </div>`;
 }
+
 
 // Fetch all DSE tickers immediately on startup
 fetchDynamicTickers();
