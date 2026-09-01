@@ -16,7 +16,8 @@ const sb = createClient(SB_URL, SB_KEY);
 
 // ── APP STATE
 let currentToken = null; // stored on login, used by every sync
-
+let _editingWlPeriodKey = null;
+let _editingEfPeriodKey = null;
 let stocks    = JSON.parse(JSON.stringify(SEED_STOCKS.map(s=>({...s,tranches:[]}))));
 let funds     = JSON.parse(JSON.stringify(SEED_FUNDS));
 let snapshots = {}; // { "Dec 2025": 14506000, "Dec 2026": ... } — year carry-overs
