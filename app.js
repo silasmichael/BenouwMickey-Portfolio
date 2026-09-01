@@ -5940,6 +5940,93 @@ function deleteWatchlistPeriod() {
   );
 }
 
+//Tab Switcher Helper for Watchlist Modal
+function wlTab(tab) {
+  const panelReport  = document.getElementById('wl-panel-report');
+  const panelHistory = document.getElementById('wl-panel-history');
+  if (panelReport)  panelReport.style.display  = tab === 'report' ? '' : 'none';
+  if (panelHistory) panelHistory.style.display = tab === 'history' ? '' : 'none';
+
+  ['report', 'history'].forEach(t => {
+    const b = document.getElementById('wl-tab-' + t);
+    if (!b) return;
+    b.style.background = t === tab ? '#00C89622' : 'transparent';
+    b.style.color      = t === tab ? 'var(--g)' : '#444';
+  });
+
+  const delBtn  = document.getElementById('wl-delete-period-btn');
+  const saveBtn = document.getElementById('wl-save-btn');
+
+  if (tab === 'history') {
+    if (delBtn) delBtn.style.display = 'none';
+    if (saveBtn) saveBtn.style.display = 'none';
+    renderWatchlistReportHistory();
+  } else {
+    if (saveBtn) saveBtn.style.display = 'inline-block';
+    checkWatchlistData();
+  }
+}
+
+function renderWatchlistReportHistory() {
+  const container = document.getElementById('wl-history-list');
+  const ticker = (document.getElementById('wl-ticker')?.value || '').toUpperCase().trim();
+  if (!container || !ticker) return;
+
+  const reports = {};
+  
+  // Collect from Watchlist store
+  if (snapshots._watchlist && snapshots._watchlist[ticker] && snapshots._watchlist[ticker].reports) {
+    Object.assign(reports, snapshots._watchlist[ticker].reports);
+  }
+
+  // Collect from owned stock store
+  const owned = stocks.find(s => s.id === ticker);
+  if (owned && owned.reports) {
+    Object.assign(reports, owned.reports);
+  }
+
+  const periodKeys = Object.keys(reports).sort();
+
+  if (periodKeys.length === 0) {
+    container.innerHTML = `<div style="text-align:center;color:#555;padding:20px;font-size:11px">No saved report periods yet for ${ticker}.</div>`;
+    return;
+  }
+
+  const listHTML = periodKeys.map(k => {
+    const r = reports[k] || {};
+    const np = (r.netProfit || r.netprofit) ? `Net Profit: TSh ${Math.round(r.netProfit || r.netprofit).toLocaleString()}M` : '';
+    const eps = r.eps ? `EPS: TSh ${Math.round(r.eps)}` : '';
+    const roe = r.roe ? `ROE: ${typeof r.roe === 'number' ? r.roe.toFixed(1) : r.roe}%` : '';
+
+    return `
+      <div style="display:flex;justify-content:space-between;align-items:center;background:#0D1F12;border:1px solid #1A3A22;padding:10px 12px;border-radius:8px;margin-bottom:8px">
+        <div>
+          <div style="font-size:12px;font-weight:800;color:var(--g)">📋 ${k}</div>
+          <div style="font-size:10px;color:#888;margin-top:2px">${[np, eps, roe].filter(Boolean).join(' · ')}</div>
+        </div>
+        <div style="display:flex;gap:6px">
+          <button onclick="loadWlPeriodForEditing('${k}')" style="background:#00C89622;border:1px solid #00C89644;color:var(--g);padding:4px 8px;font-size:10px;border-radius:5px;cursor:pointer">✏️ Edit / Load</button>
+          <button onclick="deleteReportPeriod('${ticker}', '${k}')" style="background:#E0565622;border:1px solid #E0565644;color:var(--r);padding:4px 8px;font-size:10px;border-radius:5px;cursor:pointer">🗑 Delete</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  container.innerHTML = listHTML;
+}
+
+function loadWlPeriodForEditing(periodKey) {
+  const parts = periodKey.split(' ');
+  if (parts.length >= 2) {
+    const yrEl = document.getElementById('wl-year');
+    const pEl  = document.getElementById('wl-period');
+    if (yrEl) yrEl.value = parts[0];
+    if (pEl)  pEl.value  = parts[1];
+  }
+  wlTab('report');
+}
+
+
 // Master function to purge a report period across Watchlist and Stocks
 function deleteReportPeriod(ticker, reportKey) {
   const cleanTicker = ticker.toUpperCase().trim();
