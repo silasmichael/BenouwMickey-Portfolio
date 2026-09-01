@@ -3087,6 +3087,7 @@ function renderStockReportHistory() {
 
 // Load an existing historical period into the fields in Tab 2
 function loadPeriodForEditing(periodKey) {
+  _editingEfPeriodKey = periodKey; // Track original period
   const parts = periodKey.split(' ');
   if (parts.length >= 2) {
     const yrEl = document.getElementById('ef-r-year');
@@ -3096,6 +3097,9 @@ function loadPeriodForEditing(periodKey) {
   }
   efTab('report');
 }
+
+
+
 
 // Automatically prefill fields if selecting a year/period that already exists
 function loadExistingStockPeriodData() {
