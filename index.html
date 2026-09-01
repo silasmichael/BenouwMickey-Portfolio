@@ -558,7 +558,8 @@
     </div>
   </div>
 </div>
-<!-- MODAL: ADD WATCHLIST COMPANY -->
+	
+<!-- MODAL: ADD WATCHLIST COMPANY & FINANCIAL REPORTS -->
 <div class="modal-bg" id="modal-watchlist-fund">
   <div class="modal" style="max-height:90vh;overflow-y:auto;width:min(520px,calc(100vw - 32px))">
     <div style="font-size:13px;font-weight:800;color:var(--g);margin-bottom:12px">Company Financial Report Entry</div>
@@ -572,45 +573,59 @@
       </div>
       <div>
         <div class="sec" style="margin-bottom:3px">Company Name</div>
-        <input id="wl-name" placeholder="CRDB Bank Plc">
+        <input id="wl-name" placeholder="e.g. CRDB Bank Plc">
       </div>
     </div>
 
+    <!-- 2-TAB STRIP FOR WATCHLIST MODAL -->
+    <div style="display:flex;gap:0;margin-bottom:12px;border:1px solid #1A2A1A;border-radius:7px;overflow:hidden">
+      <button id="wl-tab-report" onclick="wlTab('report')" style="flex:1;padding:7px 4px;font-size:10px;font-weight:700;background:#00C89622;color:var(--g);border:none;cursor:pointer;text-transform:uppercase;letter-spacing:.5px">Entry Form</button>
+      <button id="wl-tab-history" onclick="wlTab('history')" style="flex:1;padding:7px 4px;font-size:10px;font-weight:700;background:transparent;color:#444;border:none;cursor:pointer;text-transform:uppercase;letter-spacing:.5px">📁 Saved Periods</button>
+    </div>
 
-    <div class="g2" style="margin-bottom:12px">
-      <div>
-        <div class="sec" style="margin-bottom:3px">Company Type</div>
-        <select id="wl-r-type" onchange="renderReportFields('wl-r-')" style="width:100%;background:#0D1F12;border:1px solid #1A2A1A;color:#F0EAD6;padding:7px 9px;border-radius:6px;font-size:12px">
-          <option value="bank">Bank</option>
-          <option value="holding">Holding Company</option>
-          <option value="aviation">Aviation / Services</option>
-          <option value="industrial">Industrial / General</option>
-          <option value="insurance">Insurance</option>
-          <option value="etf">ETF / Unit Trust</option>
-          <option value="general">Other</option>
-        </select>
-      </div>
-      <div>
-        <div class="sec" style="margin-bottom:3px">Financial Period</div>
-        <div style="display:flex; gap:4px;">
-          <select id="wl-year" onchange="checkWatchlistData()" style="flex:3;background:#1A1A28;border:1px solid #2A2A3A;color:#F0EAD6;padding:7px;border-radius:6px;font-size:12px;outline:none"></select>
-          <select id="wl-period" onchange="checkWatchlistData()" style="flex:2;background:#1A1A28;border:1px solid #2A2A3A;color:#F0EAD6;padding:7px;border-radius:6px;font-size:12px;outline:none">
-            <option value="FY">FY (Full)</option>
-            <option value="9M">9M (Q3)</option>
-            <option value="H1">H1 (Half)</option>
-            <option value="Q1">Q1</option>
+    <!-- TAB 1: ENTRY FORM -->
+    <div id="wl-panel-report">
+      <div class="g2" style="margin-bottom:12px">
+        <div>
+          <div class="sec" style="margin-bottom:3px">Company Type</div>
+          <select id="wl-r-type" onchange="renderReportFields('wl-r-')" style="width:100%;background:#0D1F12;border:1px solid #1A2A1A;color:#F0EAD6;padding:7px 9px;border-radius:6px;font-size:12px">
+            <option value="bank">Bank</option>
+            <option value="holding">Holding Company</option>
+            <option value="aviation">Aviation / Services</option>
+            <option value="industrial">Industrial / General</option>
+            <option value="insurance">Insurance</option>
+            <option value="etf">ETF / Unit Trust</option>
+            <option value="general">Other</option>
           </select>
         </div>
+        <div>
+          <div class="sec" style="margin-bottom:3px">Financial Period</div>
+          <div style="display:flex; gap:4px;">
+            <select id="wl-year" onchange="checkWatchlistData()" style="flex:3;background:#1A1A28;border:1px solid #2A2A3A;color:#F0EAD6;padding:7px;border-radius:6px;font-size:12px;outline:none"></select>
+            <select id="wl-period" onchange="checkWatchlistData()" style="flex:2;background:#1A1A28;border:1px solid #2A2A3A;color:#F0EAD6;padding:7px;border-radius:6px;font-size:12px;outline:none">
+              <option value="FY">FY (Full)</option>
+              <option value="9M">9M (Q3)</option>
+              <option value="H1">H1 (Half)</option>
+              <option value="Q1">Q1</option>
+            </select>
+          </div>
+        </div>
       </div>
+
+      <div style="font-size:9px;color:#555;margin-bottom:10px">TSh millions unless noted. Entering data calculates scores automatically.</div>
+      <div id="wl-r-fields"></div>
+      <div id="wl-r-preview" style="background:#0A1A10;border:1px solid #1A2A1A;border-radius:7px;padding:10px 12px;min-height:20px;margin-bottom:12px;font-size:11px"></div>
     </div>
 
-    <div style="font-size:9px;color:#555;margin-bottom:10px">TSh millions unless noted. Entering data calculates scores automatically.</div>
-    <div id="wl-r-fields"></div>
-    <div id="wl-r-preview" style="background:#0A1A10;border:1px solid #1A2A1A;border-radius:7px;padding:10px 12px;min-height:20px;margin-bottom:12px;font-size:11px"></div>
+    <!-- TAB 2: SAVED PERIODS HISTORY -->
+    <div id="wl-panel-history" style="display:none">
+      <div style="font-size:10px;color:#888;margin-bottom:10px">Manage or fix saved financial report periods for this watchlist company:</div>
+      <div id="wl-history-list"></div>
+    </div>
     
-    <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button onclick="saveWatchlistFundamentals()" style="background:#00C89622;border:1px solid #00C89644;color:var(--g)">Save Financials</button>
-      <button id="wl-delete-period-btn" onclick="deleteWatchlistPeriod()" style="display:none;background:#E0565622;border:1px solid #E0565644;color:var(--r)">Delete Period</button>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+      <button id="wl-save-btn" onclick="saveWatchlistFundamentals()" style="background:#00C89622;border:1px solid #00C89644;color:var(--g)">Save Financials</button>
+      <button id="wl-delete-period-btn" onclick="deleteWatchlistPeriod()" style="display:none;background:#E0565622;border:1px solid #E0565644;color:var(--r)">Delete Selected Period</button>
       <button onclick="closeModal('modal-watchlist-fund')" style="background:#1A1A24;border:1px solid #333;color:#888">Cancel</button>
     </div>
   </div>
