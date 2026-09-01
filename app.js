@@ -6168,6 +6168,32 @@ function loadWlPeriodForEditing(periodKey) {
 
 
 // Master function to purge a report period across Watchlist and Stocks
+function deleteWatchlistPeriod() {
+  const ticker = (document.getElementById('wl-ticker')?.value || '').toUpperCase().trim();
+  const year = document.getElementById('wl-year')?.value || new Date().getFullYear();
+  const period = document.getElementById('wl-period')?.value || 'FY';
+  const reportKey = `${year} ${period}`;
+
+  if (!ticker) {
+    showToast('Select a ticker first', true);
+    return;
+  }
+
+  confirmDelete(
+    `Delete ${reportKey} for ${ticker}?`,
+    `This will remove the saved ${reportKey} report from Watchlist.`,
+    () => {
+      deleteReportPeriod(ticker, reportKey);
+      renderReportFields('wl-r-');
+      const delBtn = document.getElementById('wl-delete-period-btn');
+      if (delBtn) delBtn.style.display = 'none';
+      if (_editingWlPeriodKey === reportKey) _editingWlPeriodKey = null;
+    }
+  );
+}
+
+
+
 function deleteReportPeriod(ticker, reportKey) {
   const cleanTicker = ticker.toUpperCase().trim();
 
