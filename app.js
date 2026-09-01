@@ -6108,18 +6108,6 @@ function loadWlPeriodForEditing(periodKey) {
   wlTab('report');
 }
 
-function loadWlPeriodForEditing(periodKey) {
-  const parts = periodKey.split(' ');
-  if (parts.length >= 2) {
-    const yrEl = document.getElementById('wl-year');
-    const pEl  = document.getElementById('wl-period');
-    if (yrEl) yrEl.value = parts[0];
-    if (pEl)  pEl.value  = parts[1];
-  }
-  wlTab('report');
-}
-
-
 // Master function to purge a report period across Watchlist and Stocks
 function deleteWatchlistPeriod() {
   const ticker = (document.getElementById('wl-ticker')?.value || '').toUpperCase().trim();
