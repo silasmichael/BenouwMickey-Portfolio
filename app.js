@@ -5875,9 +5875,9 @@ function populateCompareDropdown() {
 
 // ── WATCHLIST ENGINE ──────────────────────────────────────────────────────────
 function openWatchlistModal(prefillTicker) {
+  _editingWlPeriodKey = null; // Reset edit state when opening modal
   if (!snapshots._watchlist) snapshots._watchlist = {};
   
-  // 1. Populate dynamic Ticker dropdown using all DSE companies
   const tickerSelect = document.getElementById('wl-ticker');
   if (tickerSelect) {
     const tickers = getFullMarketTickers();
@@ -5892,7 +5892,6 @@ function openWatchlistModal(prefillTicker) {
     }
   }
 
-  // 2. Populate Years 2022 to 2100
   let yrOpts = '';
   const curYr = new Date().getFullYear();
   for (let y = 2022; y <= 2100; y++) {
@@ -5904,10 +5903,11 @@ function openWatchlistModal(prefillTicker) {
   document.getElementById('wl-name').value = '';
   document.getElementById('wl-r-type').value = 'bank';
   
-  renderReportFields('wl-r-');
+  wlTab('report');
   if (prefillTicker) checkWatchlistData();
   openModal('modal-watchlist-fund');
 }
+
 
 function checkWatchlistData() {
   if (!snapshots._watchlist) snapshots._watchlist = {};
@@ -5917,14 +5917,20 @@ function checkWatchlistData() {
   const reportKey = `${year} ${period}`;
   const delBtn = document.getElementById('wl-delete-period-btn');
   
-  // First check if stock exists in owned stocks to prefill company name & type
   const owned = stocks.find(s => s.id === ticker);
   if (owned) {
     document.getElementById('wl-name').value = owned.name || '';
     if (owned.type) {
       document.getElementById('wl-r-type').value = owned.type;
-      renderReportFields('wl-r-');
     }
+  }
+
+  // If the user is currently editing a loaded report and just changed the year/period dropdown,
+  // do NOT wipe the form fields!
+  if (_editingWlPeriodKey && _editingWlPeriodKey !== reportKey) {
+    if (delBtn) delBtn.style.display = 'inline-block';
+    previewReport('wl-r-');
+    return;
   }
 
   let existingReport = null;
@@ -5934,12 +5940,10 @@ function checkWatchlistData() {
     if (wl.name) document.getElementById('wl-name').value = wl.name;
     if (wl.type) {
       document.getElementById('wl-r-type').value = wl.type;
-      renderReportFields('wl-r-');
     }
     if (wl.reports && wl.reports[reportKey]) existingReport = wl.reports[reportKey];
   }
 
-  // Also check owned stock reports
   if (!existingReport && owned) {
     if (owned.reports && owned.reports[reportKey]) existingReport = owned.reports[reportKey];
     else if (owned.fundamentals && owned.fundamentals.reportPeriod === reportKey) {
@@ -5948,6 +5952,7 @@ function checkWatchlistData() {
   }
 
   if (existingReport) {
+    _editingWlPeriodKey = reportKey;
     const r = existingReport;
     const set = (id, val) => { const el = document.getElementById('wl-r-'+id); if(el && val!=null) el.value = val; };
     set('curprice', (owned ? owned.currentPrice : '') || snapshots._watchlist[ticker]?.currentPrice || '');
@@ -5968,7 +5973,6 @@ function checkWatchlistData() {
     if (delBtn) delBtn.style.display = 'none';
   }
 }
-
 
 function saveWatchlistFundamentals() {
   const ticker = (document.getElementById('wl-ticker')?.value || '').toUpperCase().trim();
@@ -5994,6 +5998,17 @@ function saveWatchlistFundamentals() {
     snapshots._watchlist[ticker].type = type;
   }
   
+  // If year or period was changed during edit, clean up the old period key
+  if (_editingWlPeriodKey && _editingWlPeriodKey !== reportKey) {
+    if (snapshots._watchlist[ticker].reports) {
+      delete snapshots._watchlist[ticker].reports[_editingWlPeriodKey];
+    }
+    const owned = stocks.find(s => s.id === ticker);
+    if (owned && owned.reports) {
+      delete owned.reports[_editingWlPeriodKey];
+    }
+  }
+
   if (!snapshots._watchlist[ticker].reports) snapshots._watchlist[ticker].reports = {};
   snapshots._watchlist[ticker].reports[reportKey] = result.raw;
 
@@ -6011,42 +6026,17 @@ function saveWatchlistFundamentals() {
     owned.fundamentals.raw = result.raw;
   }
 
+  _editingWlPeriodKey = null; // Reset edit state
   closeModal('modal-watchlist-fund');
   persist(); 
   showToast(`Saved ${reportKey} financials for ${ticker}`);
   
-  // Immediate UI refresh
+  // Refresh views
   if (typeof updateComparisonTable === 'function') updateComparisonTable();
   if (typeof onCompareStockChange === 'function') onCompareStockChange();
   if (typeof loadRadarData === 'function' && currentRadarTicker === ticker) loadRadarData();
 }
 
-//Tab Switcher Helper for Watchlist Modal
-function wlTab(tab) {
-  const panelReport  = document.getElementById('wl-panel-report');
-  const panelHistory = document.getElementById('wl-panel-history');
-  if (panelReport)  panelReport.style.display  = tab === 'report' ? '' : 'none';
-  if (panelHistory) panelHistory.style.display = tab === 'history' ? '' : 'none';
-
-  ['report', 'history'].forEach(t => {
-    const b = document.getElementById('wl-tab-' + t);
-    if (!b) return;
-    b.style.background = t === tab ? '#00C89622' : 'transparent';
-    b.style.color      = t === tab ? 'var(--g)' : '#444';
-  });
-
-  const delBtn  = document.getElementById('wl-delete-period-btn');
-  const saveBtn = document.getElementById('wl-save-btn');
-
-  if (tab === 'history') {
-    if (delBtn) delBtn.style.display = 'none';
-    if (saveBtn) saveBtn.style.display = 'none';
-    renderWatchlistReportHistory();
-  } else {
-    if (saveBtn) saveBtn.style.display = 'inline-block';
-    checkWatchlistData();
-  }
-}
 
 function renderWatchlistReportHistory() {
   const container = document.getElementById('wl-history-list');
@@ -6095,6 +6085,7 @@ function renderWatchlistReportHistory() {
 }
 
 function loadWlPeriodForEditing(periodKey) {
+  _editingWlPeriodKey = periodKey; // Track the original period being edited (e.g. "2025 FY")
   const parts = periodKey.split(' ');
   if (parts.length >= 2) {
     const yrEl = document.getElementById('wl-year');
