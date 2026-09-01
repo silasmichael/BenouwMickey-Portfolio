@@ -5076,7 +5076,6 @@ function getCompanyMetricsForRadar(ticker) {
   if (!ticker) return null;
   const cleanTicker = ticker.trim().toUpperCase();
   
-  // 1. Check in owned stocks
   let s = Array.isArray(stocks) ? stocks.find(st => 
     (st.id && st.id.toUpperCase() === cleanTicker) ||
     (st.ticker && st.ticker.toUpperCase() === cleanTicker)
@@ -5084,20 +5083,22 @@ function getCompanyMetricsForRadar(ticker) {
 
   let raw = {};
   let computed = {};
+  let periodKey = 'FY';
 
   if (s) {
     raw = (s.fundamentals && s.fundamentals.raw) ? s.fundamentals.raw : {};
+    periodKey = s.fundamentals?.reportPeriod || 'FY';
     computed = typeof computeMetrics === 'function' ? computeMetrics(s) : {};
   }
 
-  // 2. Check Watchlist if stock not owned or fundamentals missing
   if (snapshots && snapshots._watchlist && snapshots._watchlist[cleanTicker]) {
     const wl = snapshots._watchlist[cleanTicker];
     const reports = wl.reports || {};
     const keys = Object.keys(reports).sort();
     
     if (keys.length > 0) {
-      const latestRaw = reports[keys[keys.length - 1]];
+      periodKey = keys[keys.length - 1];
+      const latestRaw = reports[periodKey];
       raw = Object.assign({}, latestRaw, raw);
     }
 
@@ -5122,9 +5123,21 @@ function getCompanyMetricsForRadar(ticker) {
   };
 
   const curPx = parseNum(s ? s.currentPrice : 0) || 0;
-  const eps = parseNum(raw.eps);
+  const annFactor = raw.periodFactor || getPeriodAnnFactor(periodKey);
+
+  // Apply annualization if needed
+  let eps = parseNum(raw.eps);
+  if (eps && raw.netProfit && !raw.epsAnn) eps = eps * annFactor;
+
+  let divPs = parseNum(raw.divPerShare);
+  if (divPs && raw.divPaid && !raw.divAnn) divPs = divPs * annFactor;
+
   const bvps = parseNum(raw.bvps);
-  const divPs = parseNum(raw.divPerShare);
+
+  let roe = parseNum(raw.roe || computed['ROE']);
+  if (roe && annFactor > 1 && raw.netProfit && raw.equity) {
+    roe = ((raw.netProfit * annFactor) / raw.equity) * 100;
+  }
 
   return {
     ...s,
@@ -5132,7 +5145,7 @@ function getCompanyMetricsForRadar(ticker) {
     currentPrice: curPx,
     pe_ratio: parseNum(eps && curPx > 0 ? (curPx / eps) : computed['P/E']),
     pb_ratio: parseNum(bvps && curPx > 0 ? (curPx / bvps) : computed['P/B']),
-    roe: parseNum(raw.roe || computed['ROE']),
+    roe: parseNum(roe),
     div_yield: parseNum(divPs && curPx > 0 ? (divPs / curPx * 100) : computed['Div Yield']),
     npl: parseNum(raw.npl || computed['NPL']),
     cir: parseNum(raw.cir || computed['CIR']),
@@ -5144,6 +5157,7 @@ function getCompanyMetricsForRadar(ticker) {
     buy_price: s && s.tranches && s.tranches.length > 0 ? cS(s).avgBuy : curPx
   };
 }
+
 
 // 2. Load Radar Data & Calculate Scores
 async function loadRadarData() {
