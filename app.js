@@ -5884,6 +5884,32 @@ function populateCompareDropdown() {
 }
 
 // ── WATCHLIST ENGINE ──────────────────────────────────────────────────────────
+function wlTab(tab) {
+  const panelReport  = document.getElementById('wl-panel-report');
+  const panelHistory = document.getElementById('wl-panel-history');
+  if (panelReport)  panelReport.style.display  = tab === 'report' ? '' : 'none';
+  if (panelHistory) panelHistory.style.display = tab === 'history' ? '' : 'none';
+
+  ['report', 'history'].forEach(t => {
+    const b = document.getElementById('wl-tab-' + t);
+    if (!b) return;
+    b.style.background = t === tab ? '#00C89622' : 'transparent';
+    b.style.color      = t === tab ? 'var(--g)' : '#444';
+  });
+
+  const delBtn  = document.getElementById('wl-delete-period-btn');
+  const saveBtn = document.getElementById('wl-save-btn');
+
+  if (tab === 'history') {
+    if (delBtn) delBtn.style.display = 'none';
+    if (saveBtn) saveBtn.style.display = 'none';
+    renderWatchlistReportHistory();
+  } else {
+    if (saveBtn) saveBtn.style.display = 'inline-block';
+    checkWatchlistData();
+  }
+}
+
 function openWatchlistModal(prefillTicker) {
   _editingWlPeriodKey = null; // Reset edit state when opening modal
   if (!snapshots._watchlist) snapshots._watchlist = {};
@@ -5917,7 +5943,6 @@ function openWatchlistModal(prefillTicker) {
   if (prefillTicker) checkWatchlistData();
   openModal('modal-watchlist-fund');
 }
-
 
 function checkWatchlistData() {
   if (!snapshots._watchlist) snapshots._watchlist = {};
@@ -6047,7 +6072,6 @@ function saveWatchlistFundamentals() {
   if (typeof loadRadarData === 'function' && currentRadarTicker === ticker) loadRadarData();
 }
 
-
 function renderWatchlistReportHistory() {
   const container = document.getElementById('wl-history-list');
   const ticker = (document.getElementById('wl-ticker')?.value || '').toUpperCase().trim();
@@ -6108,7 +6132,6 @@ function loadWlPeriodForEditing(periodKey) {
   wlTab('report');
 }
 
-// Master function to purge a report period across Watchlist and Stocks
 function deleteWatchlistPeriod() {
   const ticker = (document.getElementById('wl-ticker')?.value || '').toUpperCase().trim();
   const year = document.getElementById('wl-year')?.value || new Date().getFullYear();
@@ -6131,37 +6154,6 @@ function deleteWatchlistPeriod() {
       if (_editingWlPeriodKey === reportKey) _editingWlPeriodKey = null;
     }
   );
-}
-
-
-
-function deleteReportPeriod(ticker, reportKey) {
-  const cleanTicker = ticker.toUpperCase().trim();
-
-  // 1. Remove from Watchlist snapshots
-  if (snapshots._watchlist && snapshots._watchlist[cleanTicker] && snapshots._watchlist[cleanTicker].reports) {
-    delete snapshots._watchlist[cleanTicker].reports[reportKey];
-  }
-
-  // 2. Remove from Owned Stocks
-  if (typeof stocks !== 'undefined' && Array.isArray(stocks)) {
-    const owned = stocks.find(s => s.id === cleanTicker || s.symbol === cleanTicker);
-    if (owned) {
-      if (owned.reports) delete owned.reports[reportKey];
-      if (owned.fundamentals && owned.fundamentals.reportPeriod === reportKey) {
-        owned.fundamentals.reportPeriod = null;
-        owned.fundamentals.raw = {};
-      }
-    }
-  }
-
-  persist();
-  showToast(`Deleted ${reportKey} report for ${cleanTicker}`);
-
-  // Refresh active views
-  if (typeof updateComparisonTable === 'function') updateComparisonTable();
-  if (typeof onCompareStockChange === 'function') onCompareStockChange();
-  if (typeof loadRadarData === 'function' && currentRadarTicker === cleanTicker) loadRadarData();
 }
 
 
