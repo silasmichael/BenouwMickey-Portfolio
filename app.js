@@ -5311,8 +5311,13 @@ function calculateFundamentalScore(stock, symbol) {
 
   const symUpper = (symbol || stock.id || '').toUpperCase();
   const sector = (stock.sector || stock.type || '').toLowerCase();
-  const isBank = sector.includes('bank') || ["CRDB", "NMB", "DCB", "MCB"].includes(symUpper);
+  
+  // Sector Classification
+  const isBank = sector.includes('bank') || sector.includes('commercial') || ["CRDB", "NMB", "DCB", "MCB"].includes(symUpper);
   const isHolding = sector.includes('holding') || ["NICOL", "NICO"].includes(symUpper);
+  const isETF = sector.includes('etf') || sector.includes('unit trust') || ["IEACLC"].includes(symUpper);
+  const isInsurance = sector.includes('insurance');
+  const isIndustrial = sector.includes('manufacturing') || sector.includes('brewing') || sector.includes('beverage') || sector.includes('energy') || sector.includes('construction') || ["TBL", "TCCL", "TCC", "TPCC", "SWIS", "VODA"].includes(symUpper);
 
   const num = (v) => (typeof v === 'number' && !isNaN(v) ? v : null);
 
@@ -5340,17 +5345,17 @@ function calculateFundamentalScore(stock, symbol) {
     if (divYield !== null && divYield >= 5) { score += 5; matchesFound++; }
     else if (divYield !== null && divYield >= 3) { score += 3; matchesFound++; }
 
-    if (npl !== null && npl < 4) { score += 10; matchesFound++; }
-    else if (npl !== null && npl <= 5) { score += 5; matchesFound++; }
+    if (npl !== null && npl < 3.5) { score += 10; matchesFound++; }
+    else if (npl !== null && npl <= 5.0) { score += 5; matchesFound++; }
 
     if (cir !== null && cir < 45) { score += 10; matchesFound++; }
     else if (cir !== null && cir <= 55) { score += 5; matchesFound++; }
   } else if (isHolding) {
-    if (pNav !== null && pNav > 0 && pNav < 0.7) { score += 15; matchesFound++; }
-    else if (pNav !== null && pNav <= 0.9 && pNav > 0) { score += 8; matchesFound++; }
+    if (pNav !== null && pNav > 0 && pNav < 0.75) { score += 15; matchesFound++; }
+    else if (pNav !== null && pNav <= 0.95 && pNav > 0) { score += 8; matchesFound++; }
 
-    if (navDisc !== null && navDisc >= 30) { score += 15; matchesFound++; }
-    else if (navDisc !== null && navDisc >= 15) { score += 8; matchesFound++; }
+    if (navDisc !== null && navDisc >= 25) { score += 15; matchesFound++; }
+    else if (navDisc !== null && navDisc >= 10) { score += 8; matchesFound++; }
 
     if (roe !== null && roe >= 15) { score += 15; matchesFound++; }
     else if (roe !== null && roe >= 10) { score += 8; matchesFound++; }
@@ -5360,7 +5365,17 @@ function calculateFundamentalScore(stock, symbol) {
 
     if (de !== null && de >= 0 && de < 0.5) { score += 10; matchesFound++; }
     else if (de !== null && de <= 1.0) { score += 5; matchesFound++; }
-  } else {
+  } else if (isETF) {
+    // Dynamic ETF / Unit Trust Scoring
+    if (pNav !== null && pNav > 0 && pNav <= 1.0) { score += 25; matchesFound++; }
+    else if (pNav !== null && pNav <= 1.05) { score += 15; matchesFound++; }
+    
+    if (divYield !== null && divYield >= 4) { score += 15; matchesFound++; }
+    else if (divYield !== null && divYield >= 2) { score += 10; matchesFound++; }
+
+    if (roe !== null && roe >= 10) { score += 20; matchesFound++; }
+    else { score += 10; matchesFound++; }
+  } else if (isIndustrial || isInsurance) {
     if (pe !== null && pe > 0 && pe < 10) { score += 15; matchesFound++; }
     else if (pe !== null && pe <= 15 && pe > 0) { score += 8; matchesFound++; }
 
@@ -5370,27 +5385,26 @@ function calculateFundamentalScore(stock, symbol) {
     if (roe !== null && roe >= 15) { score += 15; matchesFound++; }
     else if (roe !== null && roe >= 10) { score += 8; matchesFound++; }
 
-    if (divYield !== null && divYield >= 5) { score += 5; matchesFound++; }
-    else if (divYield !== null && divYield >= 3) { score += 3; matchesFound++; }
+    if (divYield !== null && divYield >= 5) { score += 10; matchesFound++; }
+    else if (divYield !== null && divYield >= 3) { score += 5; matchesFound++; }
 
-    if (de !== null && de >= 0 && de < 0.5) { score += 15; matchesFound++; }
-    else if (de !== null && de <= 1.2) { score += 8; matchesFound++; }
-  }
-
-  if (symUpper === 'IEACLC' || sector.includes('etf')) {
-    score = 45;
-    matchesFound = 1;
+    if (de !== null && de >= 0 && de < 0.5) { score += 10; matchesFound++; }
+    else if (de !== null && de <= 1.2) { score += 5; matchesFound++; }
+  } else {
+    // General
+    if (pe !== null && pe > 0 && pe < 12) { score += 15; matchesFound++; }
+    if (roe !== null && roe >= 12) { score += 15; matchesFound++; }
+    if (divYield !== null && divYield >= 3) { score += 10; matchesFound++; }
+    if (de !== null && de <= 1.0) { score += 10; matchesFound++; }
   }
 
   const hasData = matchesFound > 0 || stock.fairValue != null;
   return {
     score: isNaN(score) ? 0 : Math.min(score, 60),
     hasData,
-    sector: isBank ? 'Banking' : isHolding ? 'Holding' : 'Industrial'
+    sector: isBank ? 'Banking' : isHolding ? 'Holding' : isETF ? 'ETF' : 'Industrial/General'
   };
 }
-
-
 
 // 5. Signal Decision Engine (Valuation & Trend Aware)
 function calculateQuantSignal(row, fundScoreObj, holding, symbol) {
