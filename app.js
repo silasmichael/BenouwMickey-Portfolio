@@ -5066,54 +5066,72 @@ function getCompanyMetricsForRadar(ticker) {
   if (!ticker) return null;
   const cleanTicker = ticker.trim().toUpperCase();
   
-  // 1. Try finding in active portfolio holdings
+  // 1. Check in owned stocks
   let s = Array.isArray(stocks) ? stocks.find(st => 
     (st.id && st.id.toUpperCase() === cleanTicker) ||
-    (st.ticker && st.ticker.toUpperCase() === cleanTicker) ||
-    (st.name && st.name.toUpperCase().includes(cleanTicker))
+    (st.ticker && st.ticker.toUpperCase() === cleanTicker)
   ) : null;
 
-  // 2. Fallback to Watchlist Data
-  if (!s && snapshots && snapshots._watchlist && snapshots._watchlist[cleanTicker]) {
-    const wl = snapshots._watchlist[cleanTicker];
-    // Find the latest year reported
-    const years = Object.keys(wl.reports || {}).sort((a,b) => b - a);
-    const latestRaw = years.length > 0 ? wl.reports[years[0]] : {};
-    
-    s = {
-      id: wl.ticker,
-      name: wl.name,
-      type: wl.type || 'general',
-      currentPrice: wl.currentPrice || 0,
-      fundamentals: { raw: latestRaw },
-      tranches: [] // Dummy to prevent cS(s) crashing
-    };
+  let raw = {};
+  let computed = {};
+
+  if (s) {
+    raw = (s.fundamentals && s.fundamentals.raw) ? s.fundamentals.raw : {};
+    computed = typeof computeMetrics === 'function' ? computeMetrics(s) : {};
   }
 
-  if (!s) return null;
+  // 2. Check Watchlist if stock not owned or fundamentals missing
+  if (snapshots && snapshots._watchlist && snapshots._watchlist[cleanTicker]) {
+    const wl = snapshots._watchlist[cleanTicker];
+    const reports = wl.reports || {};
+    const keys = Object.keys(reports).sort();
+    
+    if (keys.length > 0) {
+      const latestRaw = reports[keys[keys.length - 1]];
+      raw = Object.assign({}, latestRaw, raw);
+    }
 
-  // Extract raw fundamentals & computed metrics
-  const raw = (s.fundamentals && s.fundamentals.raw) ? s.fundamentals.raw : {};
-  const computed = typeof computeMetrics === 'function' ? computeMetrics(s) : {};
+    if (!s) {
+      s = {
+        id: wl.ticker || cleanTicker,
+        name: wl.name || cleanTicker,
+        type: wl.type || 'bank',
+        currentPrice: wl.currentPrice || 0,
+        tranches: []
+      };
+    }
+  }
+
+  if (!s && Object.keys(raw).length === 0) return null;
 
   const parseNum = (val) => {
-    if (val == null) return 0;
-    if (typeof val === 'number') return val;
+    if (val == null || val === '—' || val === '') return null;
+    if (typeof val === 'number') return isNaN(val) ? null : val;
     const n = parseFloat(String(val).replace(/[^0-9.-]/g, ''));
-    return isNaN(n) ? 0 : n;
+    return isNaN(n) ? null : n;
   };
+
+  const curPx = parseNum(s ? s.currentPrice : 0) || 0;
+  const eps = parseNum(raw.eps);
+  const bvps = parseNum(raw.bvps);
+  const divPs = parseNum(raw.divPerShare);
 
   return {
     ...s,
-    pe_ratio: parseNum(raw.eps && s.currentPrice ? (s.currentPrice / raw.eps) : computed['P/E']),
-    pb_ratio: parseNum(raw.bvps && s.currentPrice ? (s.currentPrice / raw.bvps) : computed['P/B']),
+    id: cleanTicker,
+    currentPrice: curPx,
+    pe_ratio: parseNum(eps && curPx > 0 ? (curPx / eps) : computed['P/E']),
+    pb_ratio: parseNum(bvps && curPx > 0 ? (curPx / bvps) : computed['P/B']),
     roe: parseNum(raw.roe || computed['ROE']),
-    div_yield: parseNum(raw.divPerShare && s.currentPrice ? (raw.divPerShare / s.currentPrice * 100) : computed['Div Yield']),
+    div_yield: parseNum(divPs && curPx > 0 ? (divPs / curPx * 100) : computed['Div Yield']),
     npl: parseNum(raw.npl || computed['NPL']),
     cir: parseNum(raw.cir || computed['CIR']),
     p_nav: parseNum(computed['P/NAV']),
     nav_discount: parseNum(raw.navDiscount || computed['NAV Discount']),
-    buy_price: s.tranches && s.tranches.length > 0 ? cS(s).avgBuy : (s.currentPrice || 0)
+    de: parseNum(raw.de || computed['D/E']),
+    fairValue: parseNum(raw.fairValue || s?.fairValue),
+    avoidAbove: parseNum(raw.avoidAbove || s?.avoidAbove),
+    buy_price: s && s.tranches && s.tranches.length > 0 ? cS(s).avgBuy : curPx
   };
 }
 
@@ -5274,66 +5292,94 @@ function renderRadarTableOnly(fundScoreObj = null, userHolding = null) {
 
 // 4. Fundamental Score Matrix (Weighted Architecture - Max 60 Points)
 function calculateFundamentalScore(stock, symbol) {
-  if (!stock || Object.keys(stock).length === 0) {
+  if (!stock || typeof stock !== 'object') {
     return { score: 0, hasData: false, sector: 'General' };
   }
 
   let score = 0;
   let matchesFound = 0;
 
-  const symUpper = symbol.toUpperCase();
+  const symUpper = (symbol || stock.id || '').toUpperCase();
   const sector = (stock.sector || stock.type || '').toLowerCase();
   const isBank = sector.includes('bank') || ["CRDB", "NMB", "DCB", "MCB"].includes(symUpper);
   const isHolding = sector.includes('holding') || ["NICOL", "NICO"].includes(symUpper);
 
-  const pe = parseFloat(stock.pe_ratio || 0);
-  const pb = parseFloat(stock.pb_ratio || 0);
-  const roe = parseFloat(stock.roe || 0);
-  const divYield = parseFloat(stock.div_yield || 0);
-  const navDisc = parseFloat(stock.nav_discount || 0);
-  const pNav = parseFloat(stock.p_nav || 0);
-  const de = parseFloat(stock.de || 0);
+  const num = (v) => (typeof v === 'number' && !isNaN(v) ? v : null);
 
-  // Core Scoring Logic (Max 60 Points total)
+  const pe = num(stock.pe_ratio);
+  const pb = num(stock.pb_ratio);
+  const roe = num(stock.roe);
+  const divYield = num(stock.div_yield);
+  const navDisc = num(stock.nav_discount);
+  const pNav = num(stock.p_nav);
+  const de = num(stock.de);
+  const npl = num(stock.npl);
+  const cir = num(stock.cir);
+
   if (isBank) {
-    // Valuation & Book (20 pts)
-    if (pe > 0 && pe < 8) { score += 10; matchesFound++; } else if (pe <= 12 && pe > 0) { score += 5; matchesFound++; }
-    if (pb > 0 && pb < 1.0) { score += 10; matchesFound++; } else if (pb <= 1.5 && pb > 0) { score += 5; matchesFound++; }
-    // Efficiency & Return (20 pts)
-    if (roe >= 20) { score += 15; matchesFound++; } else if (roe >= 15) { score += 10; matchesFound++; } else if (roe >= 10) { score += 5; matchesFound++; }
-    if (divYield >= 5) { score += 5; matchesFound++; } else if (divYield >= 3) { score += 3; matchesFound++; }
-    // Risk & Operations (20 pts)
-    if (stock.npl && stock.npl < 4) { score += 10; matchesFound++; } else if (stock.npl && stock.npl <= 5) { score += 5; matchesFound++; }
-    if (stock.cir && stock.cir < 45) { score += 10; matchesFound++; } else if (stock.cir && stock.cir <= 55) { score += 5; matchesFound++; }
+    if (pe !== null && pe > 0 && pe < 8) { score += 10; matchesFound++; }
+    else if (pe !== null && pe <= 12 && pe > 0) { score += 5; matchesFound++; }
+
+    if (pb !== null && pb > 0 && pb < 1.0) { score += 10; matchesFound++; }
+    else if (pb !== null && pb <= 1.5 && pb > 0) { score += 5; matchesFound++; }
+
+    if (roe !== null && roe >= 20) { score += 15; matchesFound++; }
+    else if (roe !== null && roe >= 15) { score += 10; matchesFound++; }
+    else if (roe !== null && roe >= 10) { score += 5; matchesFound++; }
+
+    if (divYield !== null && divYield >= 5) { score += 5; matchesFound++; }
+    else if (divYield !== null && divYield >= 3) { score += 3; matchesFound++; }
+
+    if (npl !== null && npl < 4) { score += 10; matchesFound++; }
+    else if (npl !== null && npl <= 5) { score += 5; matchesFound++; }
+
+    if (cir !== null && cir < 45) { score += 10; matchesFound++; }
+    else if (cir !== null && cir <= 55) { score += 5; matchesFound++; }
   } else if (isHolding) {
-    // Valuation (30 pts)
-    if (pNav > 0 && pNav < 0.7) { score += 15; matchesFound++; } else if (pNav <= 0.9 && pNav > 0) { score += 8; matchesFound++; }
-    if (navDisc >= 30) { score += 15; matchesFound++; } else if (navDisc >= 15) { score += 8; matchesFound++; }
-    // Return & Yield (20 pts)
-    if (roe >= 15) { score += 15; matchesFound++; } else if (roe >= 10) { score += 8; matchesFound++; }
-    if (divYield >= 4) { score += 5; matchesFound++; } else if (divYield >= 2) { score += 3; matchesFound++; }
-    // Risk (10 pts)
-    if (de >= 0 && de < 0.5) { score += 10; matchesFound++; } else if (de <= 1.0) { score += 5; matchesFound++; }
+    if (pNav !== null && pNav > 0 && pNav < 0.7) { score += 15; matchesFound++; }
+    else if (pNav !== null && pNav <= 0.9 && pNav > 0) { score += 8; matchesFound++; }
+
+    if (navDisc !== null && navDisc >= 30) { score += 15; matchesFound++; }
+    else if (navDisc !== null && navDisc >= 15) { score += 8; matchesFound++; }
+
+    if (roe !== null && roe >= 15) { score += 15; matchesFound++; }
+    else if (roe !== null && roe >= 10) { score += 8; matchesFound++; }
+
+    if (divYield !== null && divYield >= 4) { score += 5; matchesFound++; }
+    else if (divYield !== null && divYield >= 2) { score += 3; matchesFound++; }
+
+    if (de !== null && de >= 0 && de < 0.5) { score += 10; matchesFound++; }
+    else if (de !== null && de <= 1.0) { score += 5; matchesFound++; }
   } else {
-    // General / Industrial
-    // Valuation (25 pts)
-    if (pe > 0 && pe < 10) { score += 15; matchesFound++; } else if (pe <= 15 && pe > 0) { score += 8; matchesFound++; }
-    if (pb > 0 && pb < 1.5) { score += 10; matchesFound++; } else if (pb <= 2.5 && pb > 0) { score += 5; matchesFound++; }
-    // Return & Yield (20 pts)
-    if (roe >= 15) { score += 15; matchesFound++; } else if (roe >= 10) { score += 8; matchesFound++; }
-    if (divYield >= 5) { score += 5; matchesFound++; } else if (divYield >= 3) { score += 3; matchesFound++; }
-    // Risk (15 pts)
-    if (de >= 0 && de < 0.5) { score += 15; matchesFound++; } else if (de <= 1.2) { score += 8; matchesFound++; }
+    if (pe !== null && pe > 0 && pe < 10) { score += 15; matchesFound++; }
+    else if (pe !== null && pe <= 15 && pe > 0) { score += 8; matchesFound++; }
+
+    if (pb !== null && pb > 0 && pb < 1.5) { score += 10; matchesFound++; }
+    else if (pb !== null && pb <= 2.5 && pb > 0) { score += 5; matchesFound++; }
+
+    if (roe !== null && roe >= 15) { score += 15; matchesFound++; }
+    else if (roe !== null && roe >= 10) { score += 8; matchesFound++; }
+
+    if (divYield !== null && divYield >= 5) { score += 5; matchesFound++; }
+    else if (divYield !== null && divYield >= 3) { score += 3; matchesFound++; }
+
+    if (de !== null && de >= 0 && de < 0.5) { score += 15; matchesFound++; }
+    else if (de !== null && de <= 1.2) { score += 8; matchesFound++; }
   }
 
   if (symUpper === 'IEACLC' || sector.includes('etf')) {
-    score = 45; // Default solid baseline for ETFs
+    score = 45;
     matchesFound = 1;
   }
 
-  const hasData = matchesFound > 0 || Boolean(pe || divYield || roe || stock.fairValue);
-  return { score: Math.min(score, 60), hasData, sector: isBank ? 'Banking' : isHolding ? 'Holding' : 'Industrial' };
+  const hasData = matchesFound > 0 || stock.fairValue != null;
+  return {
+    score: isNaN(score) ? 0 : Math.min(score, 60),
+    hasData,
+    sector: isBank ? 'Banking' : isHolding ? 'Holding' : 'Industrial'
+  };
 }
+
 
 
 // 5. Signal Decision Engine (Valuation & Trend Aware)
@@ -5887,57 +5933,53 @@ function checkWatchlistData() {
 
 function saveWatchlistFundamentals() {
   const ticker = (document.getElementById('wl-ticker')?.value || '').toUpperCase().trim();
-  const name = (document.getElementById('wl-name')?.value || '').trim();
+  const name = (document.getElementById('wl-name')?.value || '').trim() || ticker;
   const type = document.getElementById('wl-r-type')?.value || 'bank';
   const year = document.getElementById('wl-year')?.value || new Date().getFullYear();
   const period = document.getElementById('wl-period')?.value || 'FY';
   const reportKey = `${year} ${period}`;
   
-  if (!ticker) { showToast('Ticker is required', true); return; }
+  if (!ticker) { showToast('Please select or enter a ticker symbol', true); return; }
 
   const result = calcFromReport('wl-r-', type);
-  if (!result || !result.raw || !Object.keys(result.raw).some(k=>result.raw[k]!=null)) {
+  if (!result || !result.raw || !Object.keys(result.raw).some(k => result.raw[k] != null)) {
     showToast('Please enter fundamental data to save', true); return;
   }
 
   if (!snapshots._watchlist) snapshots._watchlist = {};
   if (!snapshots._watchlist[ticker]) {
     snapshots._watchlist[ticker] = { ticker, name, type, reports: {} };
+  } else {
+    snapshots._watchlist[ticker].ticker = ticker;
+    if (name) snapshots._watchlist[ticker].name = name;
+    snapshots._watchlist[ticker].type = type;
   }
   
+  if (!snapshots._watchlist[ticker].reports) snapshots._watchlist[ticker].reports = {};
   snapshots._watchlist[ticker].reports[reportKey] = result.raw;
+
   if (result.currentPrice > 0) {
     snapshots._watchlist[ticker].currentPrice = result.currentPrice;
   }
   
+  // Also sync to owned stock entry if it exists in portfolio
+  const owned = stocks.find(s => s.id === ticker);
+  if (owned) {
+    if (!owned.reports) owned.reports = {};
+    owned.reports[reportKey] = result.raw;
+    owned.fundamentals = owned.fundamentals || {};
+    owned.fundamentals.reportPeriod = reportKey;
+    owned.fundamentals.raw = result.raw;
+  }
+
   closeModal('modal-watchlist-fund');
   persist(); 
   showToast(`Saved ${reportKey} financials for ${ticker}`);
   
-  // Refresh views
-  if (currentRadarTicker === ticker) loadRadarData();
-  const compSelect = document.getElementById('compare-stock-select');
-  if (compSelect && compSelect.value === ticker) updateComparisonTable();
-}
-// Delete a financial period report from the Watchlist modal
-function deleteWatchlistPeriod() {
-  const ticker = (document.getElementById('wl-ticker')?.value || '').toUpperCase().trim();
-  const year = document.getElementById('wl-year')?.value || new Date().getFullYear();
-  const period = document.getElementById('wl-period')?.value || 'FY';
-  const reportKey = `${year} ${period}`;
-
-  if (!ticker || !reportKey) return;
-
-  confirmDelete(
-    `Delete ${reportKey} for ${ticker}?`,
-    `This will remove the saved ${reportKey} financial report.`,
-    () => {
-      deleteReportPeriod(ticker, reportKey);
-      renderReportFields('wl-r-');
-      const delBtn = document.getElementById('wl-delete-period-btn');
-      if (delBtn) delBtn.style.display = 'none';
-    }
-  );
+  // Immediate UI refresh
+  if (typeof updateComparisonTable === 'function') updateComparisonTable();
+  if (typeof onCompareStockChange === 'function') onCompareStockChange();
+  if (typeof loadRadarData === 'function' && currentRadarTicker === ticker) loadRadarData();
 }
 
 //Tab Switcher Helper for Watchlist Modal
