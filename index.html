@@ -562,13 +562,19 @@
 <!-- MODAL: ADD WATCHLIST COMPANY & FINANCIAL REPORTS -->
 <div class="modal-bg" id="modal-watchlist-fund">
   <div class="modal" style="max-height:90vh;overflow-y:auto;width:min(520px,calc(100vw - 32px))">
-    <div style="font-size:13px;font-weight:800;color:var(--g);margin-bottom:12px">Company Financial Report Entry</div>
+    <div style="font-size:14px;font-weight:800;color:var(--g);margin-bottom:10px">Watchlist & Company Reports</div>
+
+    <!-- 2-TAB STRIP AT THE VERY TOP -->
+    <div style="display:flex;gap:0;margin-bottom:14px;border:1px solid #1A2A1A;border-radius:7px;overflow:hidden">
+      <button id="wl-tab-report" onclick="wlTab('report')" style="flex:1;padding:8px;font-size:10px;font-weight:700;background:#00C89622;color:var(--g);border:none;cursor:pointer;text-transform:uppercase;letter-spacing:.5px">Entry Form</button>
+      <button id="wl-tab-history" onclick="wlTab('history')" style="flex:1;padding:8px;font-size:10px;font-weight:700;background:transparent;color:#444;border:none;cursor:pointer;text-transform:uppercase;letter-spacing:.5px">📁 Saved Periods</button>
+    </div>
     
     <div class="g2" style="margin-bottom:8px">
       <div>
         <div class="sec" style="margin-bottom:3px">Ticker</div>
         <select id="wl-ticker" onchange="checkWatchlistData()" style="width:100%;background:#0D1F12;border:1px solid #1A2A1A;color:#F0EAD6;padding:7px 9px;border-radius:6px;font-size:12px">
-          <!-- JS will populate this from DSE data -->
+          <!-- JS populates DSE tickers -->
         </select>
       </div>
       <div>
@@ -577,25 +583,19 @@
       </div>
     </div>
 
-    <!-- 2-TAB STRIP FOR WATCHLIST MODAL -->
-    <div style="display:flex;gap:0;margin-bottom:12px;border:1px solid #1A2A1A;border-radius:7px;overflow:hidden">
-      <button id="wl-tab-report" onclick="wlTab('report')" style="flex:1;padding:7px 4px;font-size:10px;font-weight:700;background:#00C89622;color:var(--g);border:none;cursor:pointer;text-transform:uppercase;letter-spacing:.5px">Entry Form</button>
-      <button id="wl-tab-history" onclick="wlTab('history')" style="flex:1;padding:7px 4px;font-size:10px;font-weight:700;background:transparent;color:#444;border:none;cursor:pointer;text-transform:uppercase;letter-spacing:.5px">📁 Saved Periods</button>
-    </div>
-
     <!-- TAB 1: ENTRY FORM -->
     <div id="wl-panel-report">
       <div class="g2" style="margin-bottom:12px">
         <div>
           <div class="sec" style="margin-bottom:3px">Company Type</div>
           <select id="wl-r-type" onchange="renderReportFields('wl-r-')" style="width:100%;background:#0D1F12;border:1px solid #1A2A1A;color:#F0EAD6;padding:7px 9px;border-radius:6px;font-size:12px">
-            <option value="bank">Bank</option>
+            <option value="bank">Bank / Financial</option>
             <option value="holding">Holding Company</option>
-            <option value="aviation">Aviation / Services</option>
-            <option value="industrial">Industrial / General</option>
+            <option value="industrial">Manufacturing / Industrial</option>
+            <option value="aviation">Aviation / Logistics / Telecoms</option>
             <option value="insurance">Insurance</option>
             <option value="etf">ETF / Unit Trust</option>
-            <option value="general">Other</option>
+            <option value="general">Other / General</option>
           </select>
         </div>
         <div>
@@ -612,14 +612,14 @@
         </div>
       </div>
 
-      <div style="font-size:9px;color:#555;margin-bottom:10px">TSh millions unless noted. Entering data calculates scores automatically.</div>
+      <div style="font-size:9px;color:#555;margin-bottom:10px">TSh millions unless noted. Non-FY reports (Q1, H1, 9M) are automatically annualized.</div>
       <div id="wl-r-fields"></div>
       <div id="wl-r-preview" style="background:#0A1A10;border:1px solid #1A2A1A;border-radius:7px;padding:10px 12px;min-height:20px;margin-bottom:12px;font-size:11px"></div>
     </div>
 
     <!-- TAB 2: SAVED PERIODS HISTORY -->
     <div id="wl-panel-history" style="display:none">
-      <div style="font-size:10px;color:#888;margin-bottom:10px">Manage or fix saved financial report periods for this watchlist company:</div>
+      <div style="font-size:10px;color:#888;margin-bottom:10px">Manage or fix saved report periods for this company:</div>
       <div id="wl-history-list"></div>
     </div>
     
@@ -630,6 +630,7 @@
     </div>
   </div>
 </div>
+
 
 <!-- MODAL: SMART ALERTS HUB -->
 <div class="modal-bg" id="modal-alerts">
