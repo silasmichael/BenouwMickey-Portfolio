@@ -2785,111 +2785,135 @@ function getPeriodAnnFactor(periodStr) {
   return 1.0;
 }
 
-function calcFromReport(prefix,type){
-  const g=id=>{const el=document.getElementById(prefix+id);return el?parseFloat(el.value)||null:null;};
-  const typ=type||document.getElementById(prefix+'type')?.value||'bank';
-  const cur=g('curprice');const raw={};
+function calcFromReport(prefix, type) {
+  const g = id => {
+    const el = document.getElementById(prefix + id);
+    return el ? parseFloat(el.value) || null : null;
+  };
+  const typ = type || document.getElementById(prefix + 'type')?.value || 'bank';
+  const cur = g('curprice');
+  const raw = {};
 
-  // Determine Annualization Factor based on period
+  // Determine Annualization Factor (ONLY for Income Statement items like Profit/Income/Divs)
   let period = 'FY';
   if (prefix === 'wl-r-') period = document.getElementById('wl-period')?.value || 'FY';
   else if (prefix === 'ef-r-') period = document.getElementById('ef-r-period')?.value || 'FY';
   else if (prefix === 'ns-r-') period = document.getElementById('ns-r-period')?.value || 'FY';
 
-  const annFactor = period === 'Q1' ? 4.0 : period === 'H1' ? 2.0 : period === '9M' ? (4/3) : 1.0;
+  const annFactor = period === 'Q1' ? 4.0 : period === 'H1' ? 2.0 : period === '9M' ? (4 / 3) : 1.0;
 
-  if(typ==='bank'){
-    const np=g('netprofit'),sh=g('shares'),dp=g('divpaid'),eq=g('equity'),eqp=g('equityprior'),
-          as=g('assets'),asp=g('assetsprior'),nii=g('nii'),avgea=g('avgea'),
-          nie=g('niexp'),ni2=g('niinc'),npl=g('npl'),gl=g('grossloans');
-    if(!sh)return null;
+  if (typ === 'bank') {
+    const np = g('netprofit'), sh = g('shares'), dp = g('divpaid'), eq = g('equity'), eqp = g('equityprior'),
+          as = g('assets'), asp = g('assetsprior'), nii = g('nii'), avgea = g('avgea'),
+          nie = g('niexp'), ni2 = g('niinc'), npl = g('npl'), gl = g('grossloans');
+    if (!sh) return null;
 
-    // Annualize Income Statement items for metrics
+    // 1. Annualize Income Statement metrics
     const annNP  = np  ? np  * annFactor : null;
     const annDP  = dp  ? dp  * annFactor : null;
     const annNII = nii ? nii * annFactor : null;
     const annNIE = nie ? nie * annFactor : null;
     const annNI2 = ni2 ? ni2 * annFactor : null;
 
-    if(annNP) raw.eps=annNP/sh;
-    if(annDP) raw.divPerShare=annDP/sh;
-    if(eq)    raw.bvps=eq/sh;
+    if (annNP) raw.eps = annNP / sh;
+    if (annDP) raw.divPerShare = annDP / sh;
+    if (eq)    raw.bvps = eq / sh;
 
-    const aeq=(eq&&eqp)?(eq+eqp)/2:eq,aas=(as&&asp)?(as+asp)/2:as;
-    if(annNP&&aeq)raw.roe=(annNP/aeq)*100;
-    if(annNP&&aas)raw.roa=(annNP/aas)*100;
-    if(npl&&gl)   raw.npl=(npl/gl)*100;
-    if(annNII&&avgea)raw.nim=(annNII/avgea)*100;
-    
-    const gi=(annNII||0)+(annNI2||0);
-    if(annNIE&&gi)raw.cir=(annNIE/gi)*100;
+    const aeq = (eq && eqp) ? (eq + eqp) / 2 : eq;
+    const aas = (as && asp) ? (as + asp) / 2 : as;
 
-    Object.assign(raw,{netProfit:np,sharesOut:sh,divPaid:dp,equity:eq,equityPrior:eqp,assets:as,assetsPrior:asp,nii,avgea,niexp:nie,niinc:ni2,nplAmt:npl,grossLoans:gl, periodFactor: annFactor});
-  }else if(typ==='holding'){
-    const np=g('netprofit'),sh=g('shares'),dp=g('divpaid'),eq=g('equity'),
-          nav=g('nav'),td=g('totaldebt');
-    if(!sh)return null;
+    if (annNP && aeq) raw.roe = (annNP / aeq) * 100;
+    if (annNP && aas) raw.roa = (annNP / aas) * 100;
+
+    // 2. NPL Ratio Calculation (NPL Amount / Gross Loans * 100)
+    // Snapshot metrics - NO annualization
+    if (npl != null && gl && gl > 0) {
+      raw.npl = (npl / gl) * 100;
+    } else if (npl != null && (gl == null || gl === 0)) {
+      // If user directly typed NPL percentage into the field
+      raw.npl = npl;
+    }
+
+    if (annNII && avgea) raw.nim = (annNII / avgea) * 100;
+
+    const gi = (annNII || 0) + (annNI2 || 0);
+    if (annNIE && gi) raw.cir = (annNIE / gi) * 100;
+
+    Object.assign(raw, {
+      netProfit: np, sharesOut: sh, divPaid: dp, equity: eq, equityPrior: eqp,
+      assets: as, assetsPrior: asp, nii, avgea, niexp: nie, niinc: ni2,
+      nplAmt: npl, grossLoans: gl, periodFactor: annFactor
+    });
+  } else if (typ === 'holding') {
+    const np = g('netprofit'), sh = g('shares'), dp = g('divpaid'), eq = g('equity'),
+          nav = g('nav'), td = g('totaldebt');
+    if (!sh) return null;
     const annNP = np ? np * annFactor : null;
     const annDP = dp ? dp * annFactor : null;
 
-    if(annNP)raw.eps=annNP/sh;
-    if(annDP)raw.divPerShare=annDP/sh;
-    if(eq)   raw.bvps=eq/sh;
-    if(annNP&&eq)raw.roe=(annNP/eq)*100;
-    if(nav){raw.navPerShare=nav;if(cur)raw.navDiscount=((nav-cur)/nav*100).toFixed(1)+'%';}
-    if(td&&eq)raw.de=(td/eq).toFixed(2)+'x';
-    Object.assign(raw,{netProfit:np,sharesOut:sh,divPaid:dp,equity:eq,navPerShare:nav,totalDebt:td, periodFactor: annFactor});
-  }else if(['nonbank','aviation','industrial'].includes(typ)){
-    const np=g('netprofit'),sh=g('shares'),dp=g('divpaid'),eq=g('equity'),eb=g('ebitda'),td=g('totaldebt'),ev=g('ev');
-    if(!sh)return null;
+    if (annNP) raw.eps = annNP / sh;
+    if (annDP) raw.divPerShare = annDP / sh;
+    if (eq)    raw.bvps = eq / sh;
+    if (annNP && eq) raw.roe = (annNP / eq) * 100;
+    if (nav) { raw.navPerShare = nav; if (cur) raw.navDiscount = ((nav - cur) / nav * 100).toFixed(1) + '%'; }
+    if (td && eq) raw.de = (td / eq).toFixed(2) + 'x';
+    Object.assign(raw, { netProfit: np, sharesOut: sh, divPaid: dp, equity: eq, navPerShare: nav, totalDebt: td, periodFactor: annFactor });
+  } else if (['nonbank', 'aviation', 'industrial'].includes(typ)) {
+    const np = g('netprofit'), sh = g('shares'), dp = g('divpaid'), eq = g('equity'), eb = g('ebitda'), td = g('totaldebt'), ev = g('ev');
+    if (!sh) return null;
     const annNP = np ? np * annFactor : null;
     const annDP = dp ? dp * annFactor : null;
     const annEB = eb ? eb * annFactor : null;
 
-    if(annNP)raw.eps=annNP/sh;
-    if(annDP)raw.divPerShare=annDP/sh;
-    if(eq)   raw.bvps=eq/sh;
-    if(annNP&&eq)raw.roe=(annNP/eq)*100;
-    if(ev&&annEB)raw.evEbitda=(ev/annEB).toFixed(2)+'x';
-    if(td&&eq)   raw.de=(td/eq).toFixed(2)+'x';
-    Object.assign(raw,{netProfit:np,sharesOut:sh,divPaid:dp,equity:eq,ebitda:eb,totalDebt:td,ev, periodFactor: annFactor});
-  }else if(typ==='etf'){
-    const nav=g('nav'),units=g('units'),ln=g('launchnav');
-    if(nav)raw.navPerShare=nav;if(ln)raw.launchNav=ln;
-    return{raw,currentPrice:cur};
-  }else if(typ==='insurance'){
-    const np=g('netprofit'),sh=g('shares'),dp=g('divpaid'),eq=g('equity'),eqp=g('equityprior');
-    if(!sh)return null;
+    if (annNP) raw.eps = annNP / sh;
+    if (annDP) raw.divPerShare = annDP / sh;
+    if (eq)    raw.bvps = eq / sh;
+    if (annNP && eq) raw.roe = (annNP / eq) * 100;
+    if (ev && annEB) raw.evEbitda = (ev / annEB).toFixed(2) + 'x';
+    if (td && eq)    raw.de = (td / eq).toFixed(2) + 'x';
+    Object.assign(raw, { netProfit: np, sharesOut: sh, divPaid: dp, equity: eq, ebitda: eb, totalDebt: td, ev, periodFactor: annFactor });
+  } else if (typ === 'etf') {
+    const nav = g('nav'), units = g('units'), ln = g('launchnav');
+    if (nav) raw.navPerShare = nav; if (ln) raw.launchNav = ln;
+    return { raw, currentPrice: cur };
+  } else if (typ === 'insurance') {
+    const np = g('netprofit'), sh = g('shares'), dp = g('divpaid'), eq = g('equity'), eqp = g('equityprior');
+    if (!sh) return null;
     const annNP = np ? np * annFactor : null;
     const annDP = dp ? dp * annFactor : null;
 
-    if(annNP)raw.eps=annNP/sh;
-    if(annDP)raw.divPerShare=annDP/sh;
-    if(eq)   raw.bvps=eq/sh;
-    const aeq=(eq&&eqp)?(eq+eqp)/2:eq;
-    if(annNP&&aeq)raw.roe=(annNP/aeq)*100;
-    Object.assign(raw,{netProfit:np,sharesOut:sh,divPaid:dp,equity:eq,equityPrior:eqp, periodFactor: annFactor});
-  }else{
-    const np=g('netprofit'),sh=g('shares'),dp=g('divpaid'),eq=g('equity'),eb=g('ebitda');
-    if(!sh)return null;
+    if (annNP) raw.eps = annNP / sh;
+    if (annDP) raw.divPerShare = annDP / sh;
+    if (eq)    raw.bvps = eq / sh;
+    const aeq = (eq && eqp) ? (eq + eqp) / 2 : eq;
+    if (annNP && aeq) raw.roe = (annNP / aeq) * 100;
+    Object.assign(raw, { netProfit: np, sharesOut: sh, divPaid: dp, equity: eq, equityPrior: eqp, periodFactor: annFactor });
+  } else {
+    const np = g('netprofit'), sh = g('shares'), dp = g('divpaid'), eq = g('equity'), eb = g('ebitda');
+    if (!sh) return null;
     const annNP = np ? np * annFactor : null;
     const annDP = dp ? dp * annFactor : null;
 
-    if(annNP)raw.eps=annNP/sh;
-    if(annDP)raw.divPerShare=annDP/sh;
-    if(eq)   raw.bvps=eq/sh;
-    if(annNP&&eq)raw.roe=(annNP/eq)*100;
-    Object.assign(raw,{netProfit:np,sharesOut:sh,divPaid:dp,equity:eq,ebitda:eb, periodFactor: annFactor});
+    if (annNP) raw.eps = annNP / sh;
+    if (annDP) raw.divPerShare = annDP / sh;
+    if (eq)    raw.bvps = eq / sh;
+    if (annNP && eq) raw.roe = (annNP / eq) * 100;
+    Object.assign(raw, { netProfit: np, sharesOut: sh, divPaid: dp, equity: eq, ebitda: eb, periodFactor: annFactor });
   }
 
-  const pm=typ==='bank'?9:typ==='insurance'?10:12;
-  if(raw.eps&&raw.bvps)raw.grahamFV=Math.round(Math.sqrt(22.5*raw.eps*raw.bvps));
-  if(raw.eps)raw.epsFV=Math.round(raw.eps*pm);
-  if(raw.grahamFV&&raw.epsFV)raw.fairValue=Math.round((raw.grahamFV+raw.epsFV)/2);
-  else raw.fairValue=raw.grahamFV||raw.epsFV||null;
-  if(raw.fairValue){raw.buyZoneLow=Math.round(raw.fairValue*0.60);raw.buyZoneHigh=Math.round(raw.fairValue*0.80);raw.avoidAbove=Math.round(raw.fairValue*0.90);}
-  return{raw,currentPrice:cur};
+  const pm = typ === 'bank' ? 9 : typ === 'insurance' ? 10 : 12;
+  if (raw.eps && raw.bvps) raw.grahamFV = Math.round(Math.sqrt(22.5 * raw.eps * raw.bvps));
+  if (raw.eps) raw.epsFV = Math.round(raw.eps * pm);
+  if (raw.grahamFV && raw.epsFV) raw.fairValue = Math.round((raw.grahamFV + raw.epsFV) / 2);
+  else raw.fairValue = raw.grahamFV || raw.epsFV || null;
+  if (raw.fairValue) {
+    raw.buyZoneLow  = Math.round(raw.fairValue * 0.60);
+    raw.buyZoneHigh = Math.round(raw.fairValue * 0.80);
+    raw.avoidAbove  = Math.round(raw.fairValue * 0.90);
+  }
+  return { raw, currentPrice: cur };
 }
+
 
 function previewReport(prefix){
   const typeEl=document.getElementById(prefix+'type');
