@@ -6929,7 +6929,6 @@ function dismissAlert(idx) {
   updateAlertBadge();
   openAlertModal();
 }
-
 function dismissAllAlerts() {
   activeAlerts = [];
   hasUnreadAlerts = false;
