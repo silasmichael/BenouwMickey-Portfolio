@@ -6411,7 +6411,219 @@ function updateComparisonTable() {
       </table>
     </div>`;
 }
+// ── PEER COMPARISON ENGINE (2 COMPANIES, SAME PERIOD) ──────────────────────
+function onPeerCompanyChange(triggeredBy) {
+  const compAEl = document.getElementById('peer-company-a');
+  const compBEl = document.getElementById('peer-company-b');
+  const periodEl = document.getElementById('peer-period-select');
 
+  if (!compAEl || !compBEl || !periodEl) return;
+
+  const tickerA = compAEl.value;
+  let tickerB = compBEl.value;
+
+  // Auto-select a different company B if both are same
+  if (tickerA === tickerB) {
+    const all = getFullMarketTickers();
+    tickerB = all.find(t => t !== tickerA) || tickerA;
+    compBEl.value = tickerB;
+  }
+
+  // Collect reports available for both Company A and Company B
+  const reportsA = {};
+  const reportsB = {};
+
+  const collectReports = (ticker, targetObj) => {
+    if (typeof stocks !== 'undefined' && Array.isArray(stocks)) {
+      const owned = stocks.find(s => s.id === ticker || s.symbol === ticker);
+      if (owned) {
+        if (owned.reports) Object.assign(targetObj, owned.reports);
+        if (owned.fundamentals && owned.fundamentals.raw) {
+          const p = owned.fundamentals.reportPeriod || 'Current';
+          targetObj[p] = owned.fundamentals.raw;
+        }
+      }
+    }
+    if (typeof snapshots !== 'undefined' && snapshots && snapshots._watchlist && snapshots._watchlist[ticker]) {
+      const wl = snapshots._watchlist[ticker];
+      if (wl.reports) Object.assign(targetObj, wl.reports);
+    }
+  };
+
+  collectReports(tickerA, reportsA);
+  collectReports(tickerB, reportsB);
+
+  // Combine unique periods from both companies
+  const allPeriods = Array.from(new Set([...Object.keys(reportsA), ...Object.keys(reportsB)])).sort().reverse();
+
+  let opts = '<option value="">Select Period...</option>';
+  allPeriods.forEach(p => {
+    const hasA = !!reportsA[p];
+    const hasB = !!reportsB[p];
+    const tag = (hasA && hasB) ? ' (Both)' : hasA ? ` (${tickerA} only)` : ` (${tickerB} only)`;
+    opts += `<option value="${p}">${p}${tag}</option>`;
+  });
+
+  periodEl.innerHTML = opts;
+
+  // Default to first period where both companies have reports if available
+  const commonPeriod = allPeriods.find(p => reportsA[p] && reportsB[p]) || allPeriods[0];
+  if (commonPeriod) periodEl.value = commonPeriod;
+
+  updatePeerComparisonTable();
+}
+
+function updatePeerComparisonTable() {
+  const tickerA = document.getElementById('peer-company-a')?.value;
+  const tickerB = document.getElementById('peer-company-b')?.value;
+  const period = document.getElementById('peer-period-select')?.value;
+  const container = document.getElementById('peer-table-container');
+
+  if (!container) return;
+
+  if (!tickerA || !tickerB || !period) {
+    container.innerHTML = `<div style="color:#555;font-size:11px;text-align:center;padding:20px">Select two companies and a financial period to run peer comparison.</div>`;
+    return;
+  }
+
+  // Fetch metrics data for both tickers
+  const getMetricsForPeriod = (ticker) => {
+    let rep = null;
+    let type = 'bank';
+    let price = 0;
+
+    if (typeof stocks !== 'undefined' && Array.isArray(stocks)) {
+      const owned = stocks.find(s => s.id === ticker || s.symbol === ticker);
+      if (owned) {
+        type = owned.type || 'bank';
+        price = owned.currentPrice || 0;
+        if (owned.reports && owned.reports[period]) rep = owned.reports[period];
+        else if (owned.fundamentals && owned.fundamentals.raw && (owned.fundamentals.reportPeriod === period || period === 'Current')) {
+          rep = owned.fundamentals.raw;
+        }
+      }
+    }
+
+    if (!rep && typeof snapshots !== 'undefined' && snapshots._watchlist && snapshots._watchlist[ticker]) {
+      const wl = snapshots._watchlist[ticker];
+      if (wl.type) type = wl.type;
+      if (wl.currentPrice && price === 0) price = wl.currentPrice;
+      if (wl.reports && wl.reports[period]) rep = wl.reports[period];
+    }
+
+    if (!rep) return null;
+
+    const annFactor = rep.periodFactor || getPeriodAnnFactor(period);
+    const eps = rep.eps ? (rep.eps * annFactor) : (rep.netProfit && rep.sharesOut ? (rep.netProfit * annFactor) / rep.sharesOut : null);
+    const roe = rep.roe ? rep.roe : (rep.netProfit && rep.equity ? ((rep.netProfit * annFactor) / rep.equity) * 100 : null);
+    const roa = rep.roa ? rep.roa : (rep.netProfit && rep.assets ? ((rep.netProfit * annFactor) / rep.assets) * 100 : null);
+    const bvps = rep.bvps || (rep.equity && rep.sharesOut ? rep.equity / rep.sharesOut : null);
+    const pe = price > 0 && eps > 0 ? price / eps : null;
+    const pb = price > 0 && bvps > 0 ? price / bvps : null;
+
+    return {
+      ticker, type, price,
+      netProfit: rep.netProfit || rep.netprofit || null,
+      eps, roe, roa,
+      nim: rep.nim || null,
+      npl: rep.nplAmt || rep.npl || null,
+      cir: rep.cir || null,
+      pe, pb,
+      de: rep.de || (rep.totalDebt && rep.equity ? rep.totalDebt / rep.equity : null),
+      bvps,
+      fairValue: rep.fairValue || null
+    };
+  };
+
+  const dataA = getMetricsForPeriod(tickerA);
+  const dataB = getMetricsForPeriod(tickerB);
+
+  if (!dataA && !dataB) {
+    container.innerHTML = `<div style="color:#A0A0B0;font-size:12px;text-align:center;padding:20px;background:#161622;border:1px dashed #2A2A3D;border-radius:8px">No fundamental report saved for either <b style="color:#FFF">${tickerA}</b> or <b style="color:#FFF">${tickerB}</b> for period <b>${period}</b>.</div>`;
+    return;
+  }
+
+  const metrics = [
+    { label: 'Company Type / Sector', key: 'type', isText: true },
+    { label: 'Current Price (TSh)', key: 'price', fmt: v => fT(v) },
+    { label: 'Net Profit (TSh M)', key: 'netProfit', higherBetter: true },
+    { label: 'EPS (TSh, Annualized)', key: 'eps', higherBetter: true, fmt: v => Math.round(v).toLocaleString() },
+    { label: 'ROE (% p.a.)', key: 'roe', higherBetter: true, evalKey: 'roe', fmt: v => v.toFixed(1) + '%' },
+    { label: 'ROA (% p.a.)', key: 'roa', higherBetter: true, evalKey: 'roa', fmt: v => v.toFixed(1) + '%' },
+    { label: 'NIM (%)', key: 'nim', higherBetter: true, evalKey: 'nim', fmt: v => v.toFixed(1) + '%' },
+    { label: 'NPL Ratio (%)', key: 'npl', higherBetter: false, evalKey: 'npl', fmt: v => v.toFixed(1) + '%' },
+    { label: 'Cost to Income / CIR (%)', key: 'cir', higherBetter: false, evalKey: 'cir', fmt: v => v.toFixed(1) + '%' },
+    { label: 'P/E Ratio', key: 'pe', higherBetter: false, evalKey: 'pe', fmt: v => v.toFixed(2) + 'x' },
+    { label: 'P/B Ratio', key: 'pb', higherBetter: false, evalKey: 'pb', fmt: v => v.toFixed(2) + 'x' },
+    { label: 'D/E Ratio', key: 'de', higherBetter: false, evalKey: 'de', fmt: v => v.toFixed(2) + 'x' },
+    { label: 'Book Value / Share (TSh)', key: 'bvps', higherBetter: true, fmt: v => Math.round(v).toLocaleString() },
+    { label: 'Fair Value (TSh)', key: 'fairValue', fmt: v => fT(v) }
+  ];
+
+  let tbody = metrics.map(m => {
+    const valA = dataA ? dataA[m.key] : null;
+    const valB = dataB ? dataB[m.key] : null;
+
+    if ((valA == null || valA === '') && (valB == null || valB === '')) return '';
+
+    let isABetter = false;
+    let isBBetter = false;
+
+    if (m.higherBetter !== undefined && typeof valA === 'number' && typeof valB === 'number') {
+      if (m.higherBetter) {
+        if (valA > valB) isABetter = true;
+        else if (valB > valA) isBBetter = true;
+      } else {
+        if (valA < valB) isABetter = true;
+        else if (valB < valA) isBBetter = true;
+      }
+    }
+
+    const renderCell = (val, isBetter, companyData) => {
+      if (val == null || val === '') return '<td style="padding:8px 12px;border-bottom:1px solid #1A1A28;text-align:right;color:#555">—</td>';
+      
+      let disp = m.fmt ? m.fmt(val) : (typeof val === 'number' ? Math.round(val).toLocaleString() : val);
+      let ratingBadge = '';
+
+      if (m.evalKey && typeof val === 'number') {
+        const rating = rateMetric(m.evalKey, val, companyData?.type);
+        if (rating && rating.text !== '—') {
+          ratingBadge = `<span style="display:inline-block;margin-left:4px;padding:1px 4px;border-radius:3px;font-size:8px;font-weight:700;background:${rating.color}20;color:${rating.color};border:1px solid ${rating.color}40">${rating.text}</span>`;
+        }
+      }
+
+      const bg = isBetter ? 'background:#00C89612;' : '';
+      const color = isBetter ? 'color:#00C896;font-weight:800;' : 'color:#DDD;';
+      const winnerTag = isBetter ? ' <span style="font-size:9px;color:#00C896">👑</span>' : '';
+
+      return `<td style="padding:8px 12px;border-bottom:1px solid #1A1A28;text-align:right;${bg}${color}">
+        ${disp}${ratingBadge}${winnerTag}
+      </td>`;
+    };
+
+    return `<tr>
+      <td style="padding:8px 12px;border-bottom:1px solid #1A1A28;font-weight:600;color:#AAA">${m.label}</td>
+      ${renderCell(valA, isABetter, dataA)}
+      ${renderCell(valB, isBBetter, dataB)}
+    </tr>`;
+  }).filter(Boolean).join('');
+
+  container.innerHTML = `
+    <div style="overflow-x:auto;background:#11111A;padding:10px;border-radius:8px;border:1px solid #222230">
+      <table style="width:100%;border-collapse:collapse;font-size:11px">
+        <thead>
+          <tr style="color:#777;text-transform:uppercase;font-size:9px">
+            <th style="padding:8px 12px;text-align:left;border-bottom:1px solid #2A2A3A">Metric (${period})</th>
+            <th style="padding:8px 12px;text-align:right;border-bottom:1px solid #2A2A3A;color:#00C896;font-size:12px;font-weight:800">${tickerA}</th>
+            <th style="padding:8px 12px;text-align:right;border-bottom:1px solid #2A2A3A;color:#4A90E2;font-size:12px;font-weight:800">${tickerB}</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tbody}
+        </tbody>
+      </table>
+    </div>`;
+}
 
 // Fetch all DSE tickers immediately on startup
 fetchDynamicTickers();
