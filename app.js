@@ -6526,8 +6526,6 @@ function updateComparisonTable() {
       </table>
     </div>`;
 }
-i
-
 // ── PEER COMPARISON ENGINE (2 COMPANIES, SAME PERIOD) ──────────────────────
 function onPeerCompanyChange(triggeredBy) {
   const compAEl = document.getElementById('peer-company-a');
