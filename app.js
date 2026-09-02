@@ -386,7 +386,8 @@ function computeMetrics(s){
   const divps=r.divPerShare!=null?r.divPerShare:(f.divPerShare||null);
   const roe=r.roe!=null?r.roe.toFixed(1)+'%':(f.roe||null);
   const roa=r.roa!=null?r.roa.toFixed(1)+'%':(f.roa||null);
-  const npl=r.npl!=null?r.npl.toFixed(1)+'%':(f.npl||null);
+  const npl = r.npl != null ? (typeof r.npl === 'number' ? r.npl.toFixed(1) + '%' : r.npl) : (r.nplAmt && r.grossLoans ? ((r.nplAmt / r.grossLoans) * 100).toFixed(1) + '%' : (f.npl || null));
+
   const nim=r.nim!=null?r.nim.toFixed(1)+'%':(f.nim||null);
   const cir=r.cir!=null?r.cir.toFixed(1)+'%':(f.cir||null);
   if(typ==='bank'){
