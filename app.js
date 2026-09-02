@@ -376,85 +376,168 @@ function metricColor(key,valStr){
   if(t.min){if(n>=t.min[0])return 'var(--g)';if(n>=t.min[1])return '#F4A623';return 'var(--r)';}
   return '#555';
 }
+// ── ANNUALIZATION HELPER ────────────────────────────────────────────────────
+function getPeriodAnnFactor(period) {
+  if (!period) return 1.0;
+  const p = String(period).toUpperCase().trim();
+  if (p.includes('Q1')) return 4.0;
+  if (p.includes('H1') || p.includes('Q2')) return 2.0;
+  if (p.includes('9M') || p.includes('Q3')) return 4 / 3; // 1.3333x for 9M/Q3
+  return 1.0; // FY / Full Year
+}
+
+// ── CENTRAL UNIFIED METRIC CALCULATOR ───────────────────────────────────────
+function calculateSectorMetrics(data) {
+  const r = data.raw || data.fundamentals?.raw || data.fundamentals || {};
+  const price = data.price || data.currentPrice || 0;
+  const typ = data.type || 'general';
+  const period = data.period || data.reportPeriod || 'FY';
+
+  // Determine annualization factor for Income Statement items ONLY
+  const annFactor = r.periodFactor || getPeriodAnnFactor(period);
+
+  // Raw Financial Inputs
+  const np = r.netProfit != null ? r.netProfit : (r.netprofit != null ? r.netprofit : null);
+  const sh = r.sharesOut != null ? r.sharesOut : (r.shares != null ? r.shares : null);
+  const eq = r.equity != null ? r.equity : null;
+  const eqp = r.equityPrior != null ? r.equityPrior : null;
+  const as = r.assets != null ? r.assets : null;
+  const asp = r.assetsPrior != null ? r.assetsPrior : null;
+  const dp = r.divPaid != null ? r.divPaid : (r.divpaid != null ? r.divpaid : null);
+
+  // Sector-Specific Raw Inputs
+  const nii = r.nii != null ? r.nii : null;
+  const avgea = r.avgea != null ? r.avgea : null;
+  const nie = r.niexp != null ? r.niexp : null;
+  const ni2 = r.niinc != null ? r.niinc : null;
+  const nplAmt = r.nplAmt != null ? r.nplAmt : null;
+  const gl = r.grossLoans != null ? r.grossLoans : null;
+  const nav = r.navPerShare != null ? r.navPerShare : (r.nav != null ? r.nav : null);
+  const lnav = r.launchNav != null ? r.launchNav : null;
+  const td = r.totalDebt != null ? r.totalDebt : null;
+  const eb = r.ebitda != null ? r.ebitda : null;
+  const ev = r.ev != null ? r.ev : null;
+
+  // 1. Annualized Income Statement Items
+  const annNP  = np  != null ? np  * annFactor : null;
+  const annDP  = dp  != null ? dp  * annFactor : null;
+  const annNII = nii != null ? nii * annFactor : null;
+  const annNIE = nie != null ? nie * annFactor : null;
+  const annNI2 = ni2 != null ? ni2 * annFactor : null;
+  const annEB  = eb  != null ? eb  * annFactor : null;
+
+  // 2. Per-Share Calculations
+  const eps = r.eps != null ? r.eps : (annNP != null && sh ? annNP / sh : null);
+  const bvps = r.bvps != null ? r.bvps : (eq != null && sh ? eq / sh : null);
+  const divPerShare = r.divPerShare != null ? r.divPerShare : (annDP != null && sh ? annDP / sh : null);
+
+  // 3. Balance Sheet Averages & Profitability Ratios
+  const aeq = (eq != null && eqp != null) ? (eq + eqp) / 2 : eq;
+  const aas = (as != null && asp != null) ? (as + asp) / 2 : as;
+
+  const roe = r.roe != null ? (typeof r.roe === 'number' ? r.roe : parseFloat(r.roe)) : (annNP != null && aeq ? (annNP / aeq) * 100 : null);
+  const roa = r.roa != null ? (typeof r.roa === 'number' ? r.roa : parseFloat(r.roa)) : (annNP != null && aas ? (annNP / aas) * 100 : null);
+
+  // 4. Sector Ratios (NPL, NIM, CIR - NO annualization on snapshot figures like loans/assets)
+  const npl = r.npl != null ? (typeof r.npl === 'number' ? r.npl : parseFloat(r.npl)) : (nplAmt != null && gl && gl > 0 ? (nplAmt / gl) * 100 : null);
+  const nim = r.nim != null ? (typeof r.nim === 'number' ? r.nim : parseFloat(r.nim)) : (annNII != null && avgea && avgea > 0 ? (annNII / avgea) * 100 : null);
+  
+  const grossIncome = (annNII || 0) + (annNI2 || 0);
+  const cir = r.cir != null ? (typeof r.cir === 'number' ? r.cir : parseFloat(r.cir)) : (annNIE != null && grossIncome > 0 ? (annNIE / grossIncome) * 100 : null);
+
+  // 5. Valuation Multiples
+  const pe = price > 0 && eps > 0 ? price / eps : null;
+  const pb = price > 0 && bvps > 0 ? price / bvps : null;
+  const divYield = price > 0 && divPerShare > 0 ? (divPerShare / price) * 100 : null;
+  const pNav = price > 0 && nav > 0 ? price / nav : null;
+  const de = r.de != null ? r.de : (td != null && eq ? td / eq : null);
+  const evEbitda = r.evEbitda != null ? r.evEbitda : (ev != null && annEB ? ev / annEB : null);
+
+  // 6. Fair Value
+  let fairValue = r.fairValue || null;
+  if (!fairValue && eps && bvps) {
+    const pm = typ === 'bank' ? 9 : typ === 'insurance' ? 10 : 12;
+    const graham = (eps > 0 && bvps > 0) ? Math.sqrt(22.5 * eps * bvps) : null;
+    const epsFV = eps > 0 ? eps * pm : null;
+    if (graham && epsFV) fairValue = (graham + epsFV) / 2;
+    else fairValue = graham || epsFV || null;
+  }
+
+  return {
+    netProfit: np, eps, bvps, divPerShare, divYield, roe, roa, pe, pb, de, fairValue,
+    nim, npl, cir, navPerShare: nav, pNav, launchNav: lnav,
+    vsLaunch: (lnav && nav) ? ((nav - lnav) / lnav) * 100 : null,
+    evEbitda, altmanZ: r.altmanZ || data.fundamentals?.altmanZ || null,
+    combinedRatio: r.combinedRatio || data.fundamentals?.combinedRatio || null,
+    solvency: r.solvency || data.fundamentals?.solvency || null,
+    annFactor
+  };
+}
 
 // ── METRIC COMPUTATION
 function computeMetrics(s) {
-  const f = s.fundamentals || {}, r = f.raw || {}, p = s.currentPrice, typ = s.type || 'general';
-  const m = { ...(s.metrics || {}) };
-  
-  // raw.eps stored in calcFromReport is already annualized by periodFactor
-  const eps = r.eps != null ? r.eps : (f.eps || null);
-  const bvps = r.bvps != null ? r.bvps : (f.bvps || null);
-  const divps = r.divPerShare != null ? r.divPerShare : (f.divPerShare || null);
-  const roe = r.roe != null ? (typeof r.roe === 'number' ? r.roe.toFixed(1) + '%' : r.roe) : (f.roe || null);
-  const roa = r.roa != null ? (typeof r.roa === 'number' ? r.roa.toFixed(1) + '%' : r.roa) : (f.roa || null);
-  const npl = r.npl != null ? (typeof r.npl === 'number' ? r.npl.toFixed(1) + '%' : r.npl) : (r.nplAmt && r.grossLoans ? ((r.nplAmt / r.grossLoans) * 100).toFixed(1) + '%' : (f.npl || null));
-  const nim = r.nim != null ? (typeof r.nim === 'number' ? r.nim.toFixed(1) + '%' : r.nim) : (f.nim || null);
-  const cir = r.cir != null ? (typeof r.cir === 'number' ? r.cir.toFixed(1) + '%' : r.cir) : (f.cir || null);
+  const p = s.currentPrice || 0;
+  const typ = s.type || 'general';
+  const calc = calculateSectorMetrics({
+    raw: s.fundamentals?.raw || s.fundamentals || {},
+    price: p,
+    type: typ,
+    period: s.fundamentals?.reportPeriod || 'FY'
+  });
+
+  const m = {};
 
   if (typ === 'bank') {
-    if (eps && eps > 0 && p) m['P/E'] = (p / eps).toFixed(2) + 'x';
-    if (bvps && bvps > 0 && p) m['P/B'] = (p / bvps).toFixed(2) + 'x';
-    if (roe) m['ROE'] = roe; 
-    if (roa) m['ROA'] = roa;
-    if (npl) m['NPL'] = npl; 
-    if (nim) m['NIM'] = nim; 
-    if (cir) m['CIR'] = cir;
-    if (divps && p) {
-      m['Div/Share'] = 'TSh ' + Math.round(divps).toLocaleString();
-      m['Div Yield'] = (divps / p * 100).toFixed(2) + '%';
-    }
+    if (calc.pe != null) m['P/E'] = calc.pe.toFixed(2) + 'x';
+    if (calc.pb != null) m['P/B'] = calc.pb.toFixed(2) + 'x';
+    if (calc.roe != null) m['ROE'] = calc.roe.toFixed(1) + '%';
+    if (calc.roa != null) m['ROA'] = calc.roa.toFixed(1) + '%';
+    if (calc.npl != null) m['NPL'] = calc.npl.toFixed(1) + '%';
+    if (calc.nim != null) m['NIM'] = calc.nim.toFixed(1) + '%';
+    if (calc.cir != null) m['CIR'] = calc.cir.toFixed(1) + '%';
+    if (calc.divPerShare != null) m['Div/Share'] = 'TSh ' + Math.round(calc.divPerShare).toLocaleString();
+    if (calc.divYield != null) m['Div Yield'] = calc.divYield.toFixed(2) + '%';
   } else if (['aviation', 'industrial'].includes(typ)) {
-    if (eps && eps > 0 && p) m['P/E'] = (p / eps).toFixed(2) + 'x';
-    if (f.altmanZ || r.altmanZ) m['Altman Z'] = f.altmanZ || r.altmanZ;
-    if (f.evEbitda || r.evEbitda) m['EV/EBITDA'] = f.evEbitda || r.evEbitda;
-    if (f.de || r.de) m['D/E'] = f.de || r.de;
-    if (divps && p) m['Div Yield'] = (divps / p * 100).toFixed(2) + '%';
+    if (calc.pe != null) m['P/E'] = calc.pe.toFixed(2) + 'x';
+    if (calc.altmanZ != null) m['Altman Z'] = calc.altmanZ;
+    if (calc.evEbitda != null) m['EV/EBITDA'] = typeof calc.evEbitda === 'number' ? calc.evEbitda.toFixed(2) + 'x' : calc.evEbitda;
+    if (calc.de != null) m['D/E'] = typeof calc.de === 'number' ? calc.de.toFixed(2) + 'x' : calc.de;
+    if (calc.divYield != null) m['Div Yield'] = calc.divYield.toFixed(2) + '%';
   } else if (typ === 'holding') {
-    if (f.navPerShare && p) {
-      m['P/NAV'] = (p / f.navPerShare).toFixed(2) + 'x';
-      m['NAV/Share'] = 'TSh ' + f.navPerShare.toLocaleString();
+    if (calc.navPerShare != null) {
+      m['NAV/Share'] = 'TSh ' + calc.navPerShare.toLocaleString();
+      if (calc.pNav != null) m['P/NAV'] = calc.pNav.toFixed(2) + 'x';
     }
-    if (f.navDiscount) m['NAV Discount'] = f.navDiscount;
-    if (roe) m['ROE'] = roe;
-    if (f.de || r.de) m['D/E'] = f.de || r.de;
-    if (divps && p) {
-      m['Div/Share'] = 'TSh ' + Math.round(divps).toLocaleString();
-      m['Div Yield'] = (divps / p * 100).toFixed(2) + '%';
-    }
-    if (eps && eps > 0 && p) m['P/E'] = (p / eps).toFixed(2) + 'x';
+    if (calc.roe != null) m['ROE'] = calc.roe.toFixed(1) + '%';
+    if (calc.de != null) m['D/E'] = typeof calc.de === 'number' ? calc.de.toFixed(2) + 'x' : calc.de;
+    if (calc.pe != null) m['P/E'] = calc.pe.toFixed(2) + 'x';
+    if (calc.divYield != null) m['Div Yield'] = calc.divYield.toFixed(2) + '%';
   } else if (typ === 'insurance') {
-    if (eps && eps > 0 && p) m['P/E'] = (p / eps).toFixed(2) + 'x';
-    if (roe) m['ROE'] = roe;
-    if (f.combinedRatio) m['Combined Ratio'] = f.combinedRatio;
-    if (f.solvency) m['Solvency'] = f.solvency;
-    if (divps && p) m['Div Yield'] = (divps / p * 100).toFixed(2) + '%';
+    if (calc.pe != null) m['P/E'] = calc.pe.toFixed(2) + 'x';
+    if (calc.roe != null) m['ROE'] = calc.roe.toFixed(1) + '%';
+    if (calc.combinedRatio != null) m['Combined Ratio'] = calc.combinedRatio;
+    if (calc.solvency != null) m['Solvency'] = calc.solvency;
+    if (calc.divYield != null) m['Div Yield'] = calc.divYield.toFixed(2) + '%';
   } else if (typ === 'etf') {
-    const nav = f.navPerShare || r.navPerShare || null;
-    if (nav) m['Current NAV'] = 'TSh ' + Number(nav).toLocaleString();
-    if (nav && p) m['P/NAV'] = (p / nav).toFixed(3) + 'x';
-    const lnav = f.launchNav || r.launchNav || null;
-    if (lnav && nav) m['vs Launch'] = ((nav - lnav) / lnav * 100).toFixed(1) + '%';
-    if (f.expenseRatio) m['Expense'] = f.expenseRatio;
-    if (eps && eps > 0 && p) m['P/E'] = (p / eps).toFixed(2) + 'x';
-    if (divps && p) m['Div Yield'] = (divps / p * 100).toFixed(2) + '%';
+    if (calc.navPerShare != null) m['Current NAV'] = 'TSh ' + calc.navPerShare.toLocaleString();
+    if (calc.pNav != null) m['P/NAV'] = calc.pNav.toFixed(3) + 'x';
+    if (calc.vsLaunch != null) m['vs Launch'] = calc.vsLaunch.toFixed(1) + '%';
+    if (calc.pe != null) m['P/E'] = calc.pe.toFixed(2) + 'x';
+    if (calc.divYield != null) m['Div Yield'] = calc.divYield.toFixed(2) + '%';
   } else {
-    if (eps && eps > 0 && p) m['P/E'] = (p / eps).toFixed(2) + 'x';
-    if (roe) m['ROE'] = roe;
-    if (divps && p) m['Div Yield'] = (divps / p * 100).toFixed(2) + '%';
-    if (f.navPerShare) {
-      m['NAV/Share'] = 'TSh ' + f.navPerShare.toLocaleString();
-      m['P/NAV'] = (p / f.navPerShare).toFixed(2) + 'x';
-    }
+    if (calc.pe != null) m['P/E'] = calc.pe.toFixed(2) + 'x';
+    if (calc.roe != null) m['ROE'] = calc.roe.toFixed(1) + '%';
+    if (calc.divYield != null) m['Div Yield'] = calc.divYield.toFixed(2) + '%';
   }
+
+  const f = s.fundamentals || {};
   if (f.ipoPrice) {
-    m['vs IPO'] = ((p - f.ipoPrice) / f.ipoPrice * 100).toFixed(1) + '%';
+    m['vs IPO'] = (((p - f.ipoPrice) / f.ipoPrice) * 100).toFixed(1) + '%';
     m['IPO Price'] = 'TSh ' + f.ipoPrice.toLocaleString();
   }
-  if (f.oversubscribed) m['Oversubscribed'] = f.oversubscribed;
-  if (f.coverage) m['Coverage'] = f.coverage;
   return m;
 }
+
 
 // Smart helper to get & auto-sync the active report period badge on Stock Cards
 function getLatestReportPeriod(s) {
