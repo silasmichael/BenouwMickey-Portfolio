@@ -6382,7 +6382,6 @@ function updateComparisonTable() {
   const container = document.getElementById('compare-table-container');
 
   if (!container) return;
-
   if (!ticker) {
     container.innerHTML = `<div style="color:#555;font-size:11px;text-align:center;padding:20px">Select a company above to view financial performance comparison.</div>`;
     return;
@@ -6413,14 +6412,10 @@ function updateComparisonTable() {
   }
 
   let periodKeys = Object.keys(combinedReports);
-
   if (periodKeys.length === 0) {
     container.innerHTML = `
       <div style="color:#A0A0B0;font-size:12px;text-align:center;padding:25px;background:#161622;border:1px dashed #2A2A3D;border-radius:8px">
-        No saved fundamental reports found for <b style="color:#FFF">${ticker}</b>.<br>
-        <span style="font-size:10px;color:#666;margin-top:6px;display:block">
-          Click <b>+ Add Watchlist</b> above or <b>Edit Fundamentals</b> on the Stock card to save period financials.
-        </span>
+        No saved fundamental reports found for <b style="color:#FFF">${ticker}</b>.
       </div>`;
     return;
   }
@@ -6464,39 +6459,14 @@ function updateComparisonTable() {
 
     periodKeys.forEach(k => {
       const rep = combinedReports[k] || {};
-
-      // FIX: rep.eps and rep.roe are ALREADY annualized by calcFromReport(). Do NOT re-multiply by annFactor.
-      let val = rep[m.key];
-
-      if (m.key === 'eps') {
-        val = rep.eps != null ? rep.eps : (rep.netProfit && rep.sharesOut ? (rep.netProfit * getPeriodAnnFactor(k)) / rep.sharesOut : null);
-      }
-      if (m.key === 'roe') {
-        val = rep.roe != null ? rep.roe : (rep.netProfit && rep.equity ? ((rep.netProfit * getPeriodAnnFactor(k)) / rep.equity) * 100 : null);
-      }
-      if (m.key === 'roa') {
-        val = rep.roa != null ? rep.roa : (rep.netProfit && rep.assets ? ((rep.netProfit * getPeriodAnnFactor(k)) / rep.assets) * 100 : null);
-      }
-      if (m.key === 'bvps') {
-        val = rep.bvps != null ? rep.bvps : (rep.equity && rep.sharesOut ? rep.equity / rep.sharesOut : null);
-      }
-      if (m.key === 'npl') {
-        val = rep.npl != null ? rep.npl : (rep.nplAmt && rep.grossLoans ? (rep.nplAmt / rep.grossLoans) * 100 : null);
-      }
-      if (m.key === 'pe' && currentPrice > 0) {
-        let epsVal = rep.eps != null ? rep.eps : (rep.netProfit && rep.sharesOut ? (rep.netProfit * getPeriodAnnFactor(k)) / rep.sharesOut : null);
-        if (epsVal > 0) val = currentPrice / epsVal;
-      }
-      if (m.key === 'pb' && currentPrice > 0) {
-        let bvpsVal = rep.bvps != null ? rep.bvps : (rep.equity && rep.sharesOut ? rep.equity / rep.sharesOut : null);
-        if (bvpsVal > 0) val = currentPrice / bvpsVal;
-      }
+      const calc = calculateSectorMetrics({ raw: rep, price: currentPrice, type: companyType, period: k });
+      let val = calc[m.key];
 
       let formatted = '—';
       let ratingBadge = '';
 
       if (val !== undefined && val !== null && val !== '') {
-        let num = typeof val === 'string' ? parseFloat(val.replace(/[^0-9.-]/g, '')) : parseFloat(val);
+        let num = typeof val === 'number' ? val : parseFloat(val);
         
         if (!isNaN(num)) {
           hasDataInRow = true;
@@ -6510,9 +6480,6 @@ function updateComparisonTable() {
               ratingBadge = `<span style="display:inline-block;margin-left:5px;padding:1px 5px;border-radius:3px;font-size:8px;font-weight:700;background:${rating.color}20;color:${rating.color};border:1px solid ${rating.color}40">${rating.text}</span>`;
             }
           }
-        } else {
-          formatted = val;
-          hasDataInRow = true;
         }
       }
 
@@ -6545,6 +6512,7 @@ function updateComparisonTable() {
       </table>
     </div>`;
 }
+i
 
 // ── PEER COMPARISON ENGINE (2 COMPANIES, SAME PERIOD) ──────────────────────
 function onPeerCompanyChange(triggeredBy) {
@@ -6615,17 +6583,13 @@ function updatePeerComparisonTable() {
   const container = document.getElementById('peer-table-container');
 
   if (!container) return;
-
   if (!tickerA || !tickerB || !period) {
     container.innerHTML = `<div style="color:#555;font-size:11px;text-align:center;padding:20px">Select two companies and a financial period to run peer comparison.</div>`;
     return;
   }
 
-  // Fetch metrics data for both tickers
   const getMetricsForPeriod = (ticker) => {
-    let rep = null;
-    let type = 'bank';
-    let price = 0;
+    let rep = null, type = 'bank', price = 0;
 
     if (typeof stocks !== 'undefined' && Array.isArray(stocks)) {
       const owned = stocks.find(s => s.id === ticker || s.symbol === ticker);
@@ -6648,30 +6612,8 @@ function updatePeerComparisonTable() {
 
     if (!rep) return null;
 
-    // FIX: rep.eps, rep.roe are ALREADY annualized when saved into raw report by calcFromReport.
-    // Only apply getPeriodAnnFactor if calculating on-the-fly from unannualized raw netProfit.
-    const eps = rep.eps != null ? rep.eps : (rep.netProfit && rep.sharesOut ? (rep.netProfit * getPeriodAnnFactor(period)) / rep.sharesOut : null);
-    const roe = rep.roe != null ? rep.roe : (rep.netProfit && rep.equity ? ((rep.netProfit * getPeriodAnnFactor(period)) / rep.equity) * 100 : null);
-    const roa = rep.roa != null ? rep.roa : (rep.netProfit && rep.assets ? ((rep.netProfit * getPeriodAnnFactor(period)) / rep.assets) * 100 : null);
-    const bvps = rep.bvps || (rep.equity && rep.sharesOut ? rep.equity / rep.sharesOut : null);
-    const pe = price > 0 && eps > 0 ? price / eps : null;
-    const pb = price > 0 && bvps > 0 ? price / bvps : null;
-
-    const npl = rep.npl != null ? rep.npl : (rep.nplAmt && rep.grossLoans && rep.grossLoans > 0 ? (rep.nplAmt / rep.grossLoans) * 100 : null);
-    const cir = rep.cir != null ? rep.cir : (rep.niexp && (rep.nii || rep.niinc) ? (rep.niexp / ((rep.nii || 0) + (rep.niinc || 0))) * 100 : null);
-
-    return {
-      ticker, type, price,
-      netProfit: rep.netProfit || rep.netprofit || null,
-      eps, roe, roa,
-      nim: rep.nim || null,
-      npl,
-      cir,
-      pe, pb,
-      de: rep.de || (rep.totalDebt && rep.equity ? rep.totalDebt / rep.equity : null),
-      bvps,
-      fairValue: rep.fairValue || null
-    };
+    const calc = calculateSectorMetrics({ raw: rep, price, type, period });
+    return { ticker, type, price, ...calc };
   };
 
   const dataA = getMetricsForPeriod(tickerA);
@@ -6694,7 +6636,7 @@ function updatePeerComparisonTable() {
     { label: 'Cost to Income / CIR (%)', key: 'cir', higherBetter: false, evalKey: 'cir', fmt: v => v.toFixed(1) + '%' },
     { label: 'P/E Ratio', key: 'pe', higherBetter: false, evalKey: 'pe', fmt: v => v.toFixed(2) + 'x' },
     { label: 'P/B Ratio', key: 'pb', higherBetter: false, evalKey: 'pb', fmt: v => v.toFixed(2) + 'x' },
-    { label: 'D/E Ratio', key: 'de', higherBetter: false, evalKey: 'de', fmt: v => v.toFixed(2) + 'x' },
+    { label: 'D/E Ratio', key: 'de', higherBetter: false, evalKey: 'de', fmt: v => (typeof v === 'number' ? v.toFixed(2) + 'x' : v) },
     { label: 'Book Value / Share (TSh)', key: 'bvps', higherBetter: true, fmt: v => Math.round(v).toLocaleString() },
     { label: 'Fair Value (TSh)', key: 'fairValue', fmt: v => fT(v) }
   ];
@@ -6763,7 +6705,6 @@ function updatePeerComparisonTable() {
       </table>
     </div>`;
 }
-
 
 // Fetch all DSE tickers immediately on startup
 fetchDynamicTickers();
