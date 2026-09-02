@@ -6543,19 +6543,23 @@ function updatePeerComparisonTable() {
 
     const annFactor = rep.periodFactor || getPeriodAnnFactor(period);
     const eps = rep.eps ? (rep.eps * annFactor) : (rep.netProfit && rep.sharesOut ? (rep.netProfit * annFactor) / rep.sharesOut : null);
-    const roe = rep.roe ? rep.roe : (rep.netProfit && rep.equity ? ((rep.netProfit * annFactor) / rep.equity) * 100 : null);
-    const roa = rep.roa ? rep.roa : (rep.netProfit && rep.assets ? ((rep.netProfit * annFactor) / rep.assets) * 100 : null);
+    const roe = rep.roe != null ? rep.roe : (rep.netProfit && rep.equity ? ((rep.netProfit * annFactor) / rep.equity) * 100 : null);
+    const roa = rep.roa != null ? rep.roa : (rep.netProfit && rep.assets ? ((rep.netProfit * annFactor) / rep.assets) * 100 : null);
     const bvps = rep.bvps || (rep.equity && rep.sharesOut ? rep.equity / rep.sharesOut : null);
     const pe = price > 0 && eps > 0 ? price / eps : null;
     const pb = price > 0 && bvps > 0 ? price / bvps : null;
+
+    // FIX: Prioritize pre-calculated percentage (rep.npl), otherwise compute (nplAmt / grossLoans * 100)
+    const npl = rep.npl != null ? rep.npl : (rep.nplAmt && rep.grossLoans && rep.grossLoans > 0 ? (rep.nplAmt / rep.grossLoans) * 100 : null);
+    const cir = rep.cir != null ? rep.cir : (rep.niexp && (rep.nii || rep.niinc) ? (rep.niexp / ((rep.nii || 0) + (rep.niinc || 0))) * 100 : null);
 
     return {
       ticker, type, price,
       netProfit: rep.netProfit || rep.netprofit || null,
       eps, roe, roa,
       nim: rep.nim || null,
-      npl: rep.nplAmt || rep.npl || null,
-      cir: rep.cir || null,
+      npl,
+      cir,
       pe, pb,
       de: rep.de || (rep.totalDebt && rep.equity ? rep.totalDebt / rep.equity : null),
       bvps,
