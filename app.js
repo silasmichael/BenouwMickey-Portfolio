@@ -495,13 +495,18 @@ function computeMetrics(s) {
     if (calc.npl != null) m['NPL'] = calc.npl.toFixed(1) + '%';
     if (calc.nim != null) m['NIM'] = calc.nim.toFixed(1) + '%';
     if (calc.cir != null) m['CIR'] = calc.cir.toFixed(1) + '%';
+    if (calc.bvps != null) m['BVPS'] = 'TSh ' + Math.round(calc.bvps).toLocaleString();
+    if (calc.fairValue != null) m['Fair Value'] = 'TSh ' + Math.round(calc.fairValue).toLocaleString();
     if (calc.divPerShare != null) m['Div/Share'] = 'TSh ' + Math.round(calc.divPerShare).toLocaleString();
     if (calc.divYield != null) m['Div Yield'] = calc.divYield.toFixed(2) + '%';
   } else if (['aviation', 'industrial'].includes(typ)) {
     if (calc.pe != null) m['P/E'] = calc.pe.toFixed(2) + 'x';
+    if (calc.pb != null) m['P/B'] = calc.pb.toFixed(2) + 'x';
+    if (calc.roe != null) m['ROE'] = calc.roe.toFixed(1) + '%';
     if (calc.altmanZ != null) m['Altman Z'] = calc.altmanZ;
     if (calc.evEbitda != null) m['EV/EBITDA'] = typeof calc.evEbitda === 'number' ? calc.evEbitda.toFixed(2) + 'x' : calc.evEbitda;
     if (calc.de != null) m['D/E'] = typeof calc.de === 'number' ? calc.de.toFixed(2) + 'x' : calc.de;
+    if (calc.fairValue != null) m['Fair Value'] = 'TSh ' + Math.round(calc.fairValue).toLocaleString();
     if (calc.divYield != null) m['Div Yield'] = calc.divYield.toFixed(2) + '%';
   } else if (typ === 'holding') {
     if (calc.navPerShare != null) {
@@ -511,12 +516,15 @@ function computeMetrics(s) {
     if (calc.roe != null) m['ROE'] = calc.roe.toFixed(1) + '%';
     if (calc.de != null) m['D/E'] = typeof calc.de === 'number' ? calc.de.toFixed(2) + 'x' : calc.de;
     if (calc.pe != null) m['P/E'] = calc.pe.toFixed(2) + 'x';
+    if (calc.fairValue != null) m['Fair Value'] = 'TSh ' + Math.round(calc.fairValue).toLocaleString();
     if (calc.divYield != null) m['Div Yield'] = calc.divYield.toFixed(2) + '%';
   } else if (typ === 'insurance') {
     if (calc.pe != null) m['P/E'] = calc.pe.toFixed(2) + 'x';
+    if (calc.pb != null) m['P/B'] = calc.pb.toFixed(2) + 'x';
     if (calc.roe != null) m['ROE'] = calc.roe.toFixed(1) + '%';
     if (calc.combinedRatio != null) m['Combined Ratio'] = calc.combinedRatio;
     if (calc.solvency != null) m['Solvency'] = calc.solvency;
+    if (calc.fairValue != null) m['Fair Value'] = 'TSh ' + Math.round(calc.fairValue).toLocaleString();
     if (calc.divYield != null) m['Div Yield'] = calc.divYield.toFixed(2) + '%';
   } else if (typ === 'etf') {
     if (calc.navPerShare != null) m['Current NAV'] = 'TSh ' + calc.navPerShare.toLocaleString();
@@ -526,7 +534,11 @@ function computeMetrics(s) {
     if (calc.divYield != null) m['Div Yield'] = calc.divYield.toFixed(2) + '%';
   } else {
     if (calc.pe != null) m['P/E'] = calc.pe.toFixed(2) + 'x';
+    if (calc.pb != null) m['P/B'] = calc.pb.toFixed(2) + 'x';
     if (calc.roe != null) m['ROE'] = calc.roe.toFixed(1) + '%';
+    if (calc.roa != null) m['ROA'] = calc.roa.toFixed(1) + '%';
+    if (calc.de != null) m['D/E'] = typeof calc.de === 'number' ? calc.de.toFixed(2) + 'x' : calc.de;
+    if (calc.fairValue != null) m['Fair Value'] = 'TSh ' + Math.round(calc.fairValue).toLocaleString();
     if (calc.divYield != null) m['Div Yield'] = calc.divYield.toFixed(2) + '%';
   }
 
