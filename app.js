@@ -378,63 +378,84 @@ function metricColor(key,valStr){
 }
 
 // ── METRIC COMPUTATION
-function computeMetrics(s){
-  const f=s.fundamentals||{},r=f.raw||{},p=s.currentPrice,typ=s.type||'general';
-  const m={...(s.metrics||{})};
-  const eps=r.eps!=null?r.eps:(f.eps||null);
-  const bvps=r.bvps!=null?r.bvps:(f.bvps||null);
-  const divps=r.divPerShare!=null?r.divPerShare:(f.divPerShare||null);
-  const roe=r.roe!=null?r.roe.toFixed(1)+'%':(f.roe||null);
-  const roa=r.roa!=null?r.roa.toFixed(1)+'%':(f.roa||null);
+function computeMetrics(s) {
+  const f = s.fundamentals || {}, r = f.raw || {}, p = s.currentPrice, typ = s.type || 'general';
+  const m = { ...(s.metrics || {}) };
+  
+  // raw.eps stored in calcFromReport is already annualized by periodFactor
+  const eps = r.eps != null ? r.eps : (f.eps || null);
+  const bvps = r.bvps != null ? r.bvps : (f.bvps || null);
+  const divps = r.divPerShare != null ? r.divPerShare : (f.divPerShare || null);
+  const roe = r.roe != null ? (typeof r.roe === 'number' ? r.roe.toFixed(1) + '%' : r.roe) : (f.roe || null);
+  const roa = r.roa != null ? (typeof r.roa === 'number' ? r.roa.toFixed(1) + '%' : r.roa) : (f.roa || null);
   const npl = r.npl != null ? (typeof r.npl === 'number' ? r.npl.toFixed(1) + '%' : r.npl) : (r.nplAmt && r.grossLoans ? ((r.nplAmt / r.grossLoans) * 100).toFixed(1) + '%' : (f.npl || null));
+  const nim = r.nim != null ? (typeof r.nim === 'number' ? r.nim.toFixed(1) + '%' : r.nim) : (f.nim || null);
+  const cir = r.cir != null ? (typeof r.cir === 'number' ? r.cir.toFixed(1) + '%' : r.cir) : (f.cir || null);
 
-  const nim=r.nim!=null?r.nim.toFixed(1)+'%':(f.nim||null);
-  const cir=r.cir!=null?r.cir.toFixed(1)+'%':(f.cir||null);
-  if(typ==='bank'){
-    if(eps&&p)   m['P/E']=(p/eps).toFixed(2)+'x';
-    if(bvps&&p)  m['P/B']=(p/bvps).toFixed(2)+'x';
-    if(roe)      m['ROE']=roe; if(roa) m['ROA']=roa;
-    if(npl)      m['NPL']=npl; if(nim) m['NIM']=nim; if(cir) m['CIR']=cir;
-    if(divps&&p){m['Div/Share']='TSh '+Math.round(divps).toLocaleString();m['Div Yield']=(divps/p*100).toFixed(2)+'%';}
-  } else if(['aviation','industrial'].includes(typ)){
-    if(eps&&p)              m['P/E']=(p/eps).toFixed(2)+'x';
-    if(f.altmanZ||r.altmanZ) m['Altman Z']=f.altmanZ||r.altmanZ;
-    if(f.evEbitda||r.evEbitda) m['EV/EBITDA']=f.evEbitda||r.evEbitda;
-    if(f.de||r.de)          m['D/E']=f.de||r.de;
-    if(divps&&p)            m['Div Yield']=(divps/p*100).toFixed(2)+'%';
-  } else if(typ==='holding'){
-    if(f.navPerShare&&p){m['P/NAV']=(p/f.navPerShare).toFixed(2)+'x';m['NAV/Share']='TSh '+f.navPerShare.toLocaleString();}
-    if(f.navDiscount)    m['NAV Discount']=f.navDiscount;
-    if(roe)              m['ROE']=roe;
-    if(f.de||r.de)       m['D/E']=f.de||r.de;
-    if(divps&&p){m['Div/Share']='TSh '+Math.round(divps).toLocaleString();m['Div Yield']=(divps/p*100).toFixed(2)+'%';}
-    if(eps&&p)           m['P/E']=(p/eps).toFixed(2)+'x';
-  } else if(typ==='insurance'){
-    if(eps&&p)           m['P/E']=(p/eps).toFixed(2)+'x';
-    if(roe)              m['ROE']=roe;
-    if(f.combinedRatio)  m['Combined Ratio']=f.combinedRatio;
-    if(f.solvency)       m['Solvency']=f.solvency;
-    if(divps&&p)         m['Div Yield']=(divps/p*100).toFixed(2)+'%';
-  } else if(typ==='etf'){
-    const nav=f.navPerShare||r.navPerShare||null;
-    if(nav)          m['Current NAV']='TSh '+Number(nav).toLocaleString();
-    if(nav&&p)       m['P/NAV']=(p/nav).toFixed(3)+'x';
-    const lnav=f.launchNav||r.launchNav||null;
-    if(lnav&&nav)    m['vs Launch']=((nav-lnav)/lnav*100).toFixed(1)+'%';
-    if(f.expenseRatio) m['Expense']=f.expenseRatio;
-    if(eps&&p)       m['P/E']=(p/eps).toFixed(2)+'x';
-    if(divps&&p)     m['Div Yield']=(divps/p*100).toFixed(2)+'%';
+  if (typ === 'bank') {
+    if (eps && eps > 0 && p) m['P/E'] = (p / eps).toFixed(2) + 'x';
+    if (bvps && bvps > 0 && p) m['P/B'] = (p / bvps).toFixed(2) + 'x';
+    if (roe) m['ROE'] = roe; 
+    if (roa) m['ROA'] = roa;
+    if (npl) m['NPL'] = npl; 
+    if (nim) m['NIM'] = nim; 
+    if (cir) m['CIR'] = cir;
+    if (divps && p) {
+      m['Div/Share'] = 'TSh ' + Math.round(divps).toLocaleString();
+      m['Div Yield'] = (divps / p * 100).toFixed(2) + '%';
+    }
+  } else if (['aviation', 'industrial'].includes(typ)) {
+    if (eps && eps > 0 && p) m['P/E'] = (p / eps).toFixed(2) + 'x';
+    if (f.altmanZ || r.altmanZ) m['Altman Z'] = f.altmanZ || r.altmanZ;
+    if (f.evEbitda || r.evEbitda) m['EV/EBITDA'] = f.evEbitda || r.evEbitda;
+    if (f.de || r.de) m['D/E'] = f.de || r.de;
+    if (divps && p) m['Div Yield'] = (divps / p * 100).toFixed(2) + '%';
+  } else if (typ === 'holding') {
+    if (f.navPerShare && p) {
+      m['P/NAV'] = (p / f.navPerShare).toFixed(2) + 'x';
+      m['NAV/Share'] = 'TSh ' + f.navPerShare.toLocaleString();
+    }
+    if (f.navDiscount) m['NAV Discount'] = f.navDiscount;
+    if (roe) m['ROE'] = roe;
+    if (f.de || r.de) m['D/E'] = f.de || r.de;
+    if (divps && p) {
+      m['Div/Share'] = 'TSh ' + Math.round(divps).toLocaleString();
+      m['Div Yield'] = (divps / p * 100).toFixed(2) + '%';
+    }
+    if (eps && eps > 0 && p) m['P/E'] = (p / eps).toFixed(2) + 'x';
+  } else if (typ === 'insurance') {
+    if (eps && eps > 0 && p) m['P/E'] = (p / eps).toFixed(2) + 'x';
+    if (roe) m['ROE'] = roe;
+    if (f.combinedRatio) m['Combined Ratio'] = f.combinedRatio;
+    if (f.solvency) m['Solvency'] = f.solvency;
+    if (divps && p) m['Div Yield'] = (divps / p * 100).toFixed(2) + '%';
+  } else if (typ === 'etf') {
+    const nav = f.navPerShare || r.navPerShare || null;
+    if (nav) m['Current NAV'] = 'TSh ' + Number(nav).toLocaleString();
+    if (nav && p) m['P/NAV'] = (p / nav).toFixed(3) + 'x';
+    const lnav = f.launchNav || r.launchNav || null;
+    if (lnav && nav) m['vs Launch'] = ((nav - lnav) / lnav * 100).toFixed(1) + '%';
+    if (f.expenseRatio) m['Expense'] = f.expenseRatio;
+    if (eps && eps > 0 && p) m['P/E'] = (p / eps).toFixed(2) + 'x';
+    if (divps && p) m['Div Yield'] = (divps / p * 100).toFixed(2) + '%';
   } else {
-    if(eps&&p)   m['P/E']=(p/eps).toFixed(2)+'x';
-    if(roe)      m['ROE']=roe;
-    if(divps&&p) m['Div Yield']=(divps/p*100).toFixed(2)+'%';
-    if(f.navPerShare){m['NAV/Share']='TSh '+f.navPerShare.toLocaleString();m['P/NAV']=(p/f.navPerShare).toFixed(2)+'x';}
+    if (eps && eps > 0 && p) m['P/E'] = (p / eps).toFixed(2) + 'x';
+    if (roe) m['ROE'] = roe;
+    if (divps && p) m['Div Yield'] = (divps / p * 100).toFixed(2) + '%';
+    if (f.navPerShare) {
+      m['NAV/Share'] = 'TSh ' + f.navPerShare.toLocaleString();
+      m['P/NAV'] = (p / f.navPerShare).toFixed(2) + 'x';
+    }
   }
-  if(f.ipoPrice){m['vs IPO']=((p-f.ipoPrice)/f.ipoPrice*100).toFixed(1)+'%';m['IPO Price']='TSh '+f.ipoPrice.toLocaleString();}
-  if(f.oversubscribed) m['Oversubscribed']=f.oversubscribed;
-  if(f.coverage)       m['Coverage']=f.coverage;
+  if (f.ipoPrice) {
+    m['vs IPO'] = ((p - f.ipoPrice) / f.ipoPrice * 100).toFixed(1) + '%';
+    m['IPO Price'] = 'TSh ' + f.ipoPrice.toLocaleString();
+  }
+  if (f.oversubscribed) m['Oversubscribed'] = f.oversubscribed;
+  if (f.coverage) m['Coverage'] = f.coverage;
   return m;
 }
+
 // Smart helper to get & auto-sync the active report period badge on Stock Cards
 function getLatestReportPeriod(s) {
   if (!s) return null;
