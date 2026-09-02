@@ -6381,29 +6381,31 @@ function updateComparisonTable() {
 
     periodKeys.forEach(k => {
       const rep = combinedReports[k] || {};
-      const annFactor = rep.periodFactor || getPeriodAnnFactor(k);
 
+      // FIX: rep.eps and rep.roe are ALREADY annualized by calcFromReport(). Do NOT re-multiply by annFactor.
       let val = rep[m.key];
 
-      // Annualize EPS, ROE, ROA for interim reports (Q1, H1, 9M)
-      if (m.key === 'eps' && rep.netProfit && rep.sharesOut) {
-        val = (rep.netProfit * annFactor) / rep.sharesOut;
+      if (m.key === 'eps') {
+        val = rep.eps != null ? rep.eps : (rep.netProfit && rep.sharesOut ? (rep.netProfit * getPeriodAnnFactor(k)) / rep.sharesOut : null);
       }
-      if (m.key === 'roe' && rep.netProfit && rep.equity) {
-        val = ((rep.netProfit * annFactor) / rep.equity) * 100;
+      if (m.key === 'roe') {
+        val = rep.roe != null ? rep.roe : (rep.netProfit && rep.equity ? ((rep.netProfit * getPeriodAnnFactor(k)) / rep.equity) * 100 : null);
       }
-      if (m.key === 'roa' && rep.netProfit && rep.assets) {
-        val = ((rep.netProfit * annFactor) / rep.assets) * 100;
+      if (m.key === 'roa') {
+        val = rep.roa != null ? rep.roa : (rep.netProfit && rep.assets ? ((rep.netProfit * getPeriodAnnFactor(k)) / rep.assets) * 100 : null);
       }
-      if (m.key === 'bvps' && rep.equity && rep.sharesOut) {
-        val = rep.equity / rep.sharesOut;
+      if (m.key === 'bvps') {
+        val = rep.bvps != null ? rep.bvps : (rep.equity && rep.sharesOut ? rep.equity / rep.sharesOut : null);
+      }
+      if (m.key === 'npl') {
+        val = rep.npl != null ? rep.npl : (rep.nplAmt && rep.grossLoans ? (rep.nplAmt / rep.grossLoans) * 100 : null);
       }
       if (m.key === 'pe' && currentPrice > 0) {
-        let epsVal = rep.eps ? (rep.eps * annFactor) : (rep.netProfit && rep.sharesOut ? (rep.netProfit * annFactor) / rep.sharesOut : null);
+        let epsVal = rep.eps != null ? rep.eps : (rep.netProfit && rep.sharesOut ? (rep.netProfit * getPeriodAnnFactor(k)) / rep.sharesOut : null);
         if (epsVal > 0) val = currentPrice / epsVal;
       }
       if (m.key === 'pb' && currentPrice > 0) {
-        let bvpsVal = rep.bvps || (rep.equity && rep.sharesOut ? rep.equity / rep.sharesOut : null);
+        let bvpsVal = rep.bvps != null ? rep.bvps : (rep.equity && rep.sharesOut ? rep.equity / rep.sharesOut : null);
         if (bvpsVal > 0) val = currentPrice / bvpsVal;
       }
 
@@ -6460,6 +6462,7 @@ function updateComparisonTable() {
       </table>
     </div>`;
 }
+
 // ── PEER COMPARISON ENGINE (2 COMPANIES, SAME PERIOD) ──────────────────────
 function onPeerCompanyChange(triggeredBy) {
   const compAEl = document.getElementById('peer-company-a');
@@ -6562,15 +6565,15 @@ function updatePeerComparisonTable() {
 
     if (!rep) return null;
 
-    const annFactor = rep.periodFactor || getPeriodAnnFactor(period);
-    const eps = rep.eps ? (rep.eps * annFactor) : (rep.netProfit && rep.sharesOut ? (rep.netProfit * annFactor) / rep.sharesOut : null);
-    const roe = rep.roe != null ? rep.roe : (rep.netProfit && rep.equity ? ((rep.netProfit * annFactor) / rep.equity) * 100 : null);
-    const roa = rep.roa != null ? rep.roa : (rep.netProfit && rep.assets ? ((rep.netProfit * annFactor) / rep.assets) * 100 : null);
+    // FIX: rep.eps, rep.roe are ALREADY annualized when saved into raw report by calcFromReport.
+    // Only apply getPeriodAnnFactor if calculating on-the-fly from unannualized raw netProfit.
+    const eps = rep.eps != null ? rep.eps : (rep.netProfit && rep.sharesOut ? (rep.netProfit * getPeriodAnnFactor(period)) / rep.sharesOut : null);
+    const roe = rep.roe != null ? rep.roe : (rep.netProfit && rep.equity ? ((rep.netProfit * getPeriodAnnFactor(period)) / rep.equity) * 100 : null);
+    const roa = rep.roa != null ? rep.roa : (rep.netProfit && rep.assets ? ((rep.netProfit * getPeriodAnnFactor(period)) / rep.assets) * 100 : null);
     const bvps = rep.bvps || (rep.equity && rep.sharesOut ? rep.equity / rep.sharesOut : null);
     const pe = price > 0 && eps > 0 ? price / eps : null;
     const pb = price > 0 && bvps > 0 ? price / bvps : null;
 
-    // FIX: Prioritize pre-calculated percentage (rep.npl), otherwise compute (nplAmt / grossLoans * 100)
     const npl = rep.npl != null ? rep.npl : (rep.nplAmt && rep.grossLoans && rep.grossLoans > 0 ? (rep.nplAmt / rep.grossLoans) * 100 : null);
     const cir = rep.cir != null ? rep.cir : (rep.niexp && (rep.nii || rep.niinc) ? (rep.niexp / ((rep.nii || 0) + (rep.niinc || 0))) * 100 : null);
 
@@ -6677,6 +6680,7 @@ function updatePeerComparisonTable() {
       </table>
     </div>`;
 }
+
 
 // Fetch all DSE tickers immediately on startup
 fetchDynamicTickers();
