@@ -3671,13 +3671,12 @@ function renderPlanner() {
   // Build remaining months from current month to Dec of current year
   const remainingMonths = [];
   for (let m = curMon; m <= 11; m++) remainingMonths.push(`${mNames[m]} ${curYr}`);
-  // Add Jan–Dec next year too so plan can extend beyond 2026
   for (let m = 0; m <= 11; m++) remainingMonths.push(`${mNames[m]} ${curYr+1}`);
 
   // Stock options — only stocks currently held (shares > 0)
   const heldStocks = stocks.filter(s => cS(s).shares > 0);
 
-    // --- NEW: Gather all unique tickers for the comparison dropdown ---
+  // Gather all unique tickers for comparison dropdowns
   const allTickers = getFullMarketTickers();
   let compareOpts = allTickers.map(t => `<option value="${t}">${t}</option>`).join('');
 
@@ -3720,7 +3719,7 @@ function renderPlanner() {
       </div>
 
       <!-- Current Position strip — buy card -->
-      <div id="dca-position-card" style="display:none;background:#0D0D16;border:1px solid #1E2A3A;border-radius:9px;padding:12px 14px;margin-bottom:12px">
+      <div id="dca-position-card" style="display:none;background:#0D0D16;border:1px solid #1E2A3A;border-radius:99px;padding:12px 14px;margin-bottom:12px">
         <div style="font-size:9px;color:#555;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Current Position</div>
         <div id="dca-position-body"></div>
       </div>
@@ -3826,9 +3825,9 @@ function renderPlanner() {
       </div>
     </div>
 
-        <!-- MULTI-YEAR COMPARISON & GUIDE -->
+    <!-- 1. MULTI-YEAR COMPARISON FOR SINGLE COMPANY -->
     <div class="card" style="border-color:#1A2A1A">
-      <div class="sec" style="color:var(--g);margin-bottom:14px">📊 Multi-Year Fundamental Comparison</div>
+      <div class="sec" style="color:var(--g);margin-bottom:14px">📊 Multi-Year Fundamental Comparison (Single Company)</div>
       
       <div style="margin-bottom:16px;">
         <div class="sec" style="margin-bottom:6px">Select Company & Periods to Compare</div>
@@ -3857,18 +3856,57 @@ function renderPlanner() {
            <em>Note: Historical data is pulled from your Watchlist and Stock entries.</em>
          </div>
       </div>
-      
+    </div>
+
+    <!-- 2. NEW: PEER COMPARISON FOR TWO COMPANIES (SAME PERIOD) -->
+    <div class="card" style="border-color:#F4A62333">
+      <div class="sec" style="color:var(--gold);margin-bottom:14px">⚔️ Peer Fundamental Comparison — 2 Companies (Same Period)</div>
+
+      <div style="margin-bottom:16px;">
+        <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+          <div style="flex:1; min-width:140px;">
+            <div class="sec" style="margin-bottom:4px">Company A</div>
+            <select id="peer-company-a" onchange="onPeerCompanyChange('A')" style="width:100%;background:#1A1A28;border:1px solid #2A2A3A;border-radius:6px;padding:7px 9px;color:#00C896;font-weight:700;font-size:12px;outline:none">
+              ${compareOpts}
+            </select>
+          </div>
+          <div style="flex:1; min-width:140px;">
+            <div class="sec" style="margin-bottom:4px">Company B</div>
+            <select id="peer-company-b" onchange="onPeerCompanyChange('B')" style="width:100%;background:#1A1A28;border:1px solid #2A2A3A;border-radius:6px;padding:7px 9px;color:#4A90E2;font-weight:700;font-size:12px;outline:none">
+              ${compareOpts}
+            </select>
+          </div>
+          <div style="flex:1; min-width:130px;">
+            <div class="sec" style="margin-bottom:4px">Shared Financial Period</div>
+            <select id="peer-period-select" onchange="updatePeerComparisonTable()" style="width:100%;background:#1A1A28;border:1px solid #2A2A3A;border-radius:6px;padding:7px 9px;color:var(--gold);font-weight:700;font-size:12px;outline:none">
+              <option value="">Select Period...</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div id="peer-table-container">
+        <div style="text-align:center; color:#555; font-size:11px; padding:20px; border:1px dashed #2A2A3A; border-radius:8px;">
+          Select two companies and a shared period to compare their fundamentals side-by-side.<br><br>
+          <em>The system automatically highlights superior metrics (ROE, P/E, NPL, NIM, CIR, P/B, etc.).</em>
+        </div>
+      </div>
+
       <!-- Collapsed Reference Guide -->
       <details style="margin-top:20px; border-top:1px solid #1A1A24; padding-top:14px;">
         <summary style="font-size:11px; color:#888; cursor:pointer; font-weight:bold; outline:none;">📖 View Fundamentals Reference Guide</summary>
         <div id="fund-guide-body" style="margin-top:12px;"></div>
       </details>
     </div>
+
   </div>`;
 
   dcaUpdate();
   sellUpdate();
   renderFundGuide();
+  
+  // Initialize peer dropdowns
+  onPeerCompanyChange('init');
 }
 
 let _sellMode = 'shares';
