@@ -4944,7 +4944,9 @@ function renderAll() {
   renderProjection();
   renderBonds();
   renderPlanner();
+  generatePortfolioAlerts();
 }
+
 
 // Render from cache immediately so screen isn't blank underneath
 renderAll();
@@ -6537,14 +6539,12 @@ function onPeerCompanyChange(triggeredBy) {
   const tickerA = compAEl.value;
   let tickerB = compBEl.value;
 
-  // Auto-select a different company B if both are same
   if (tickerA === tickerB) {
     const all = getFullMarketTickers();
     tickerB = all.find(t => t !== tickerA) || tickerA;
     compBEl.value = tickerB;
   }
 
-  // Collect reports available for both Company A and Company B
   const reportsA = {};
   const reportsB = {};
 
@@ -6568,7 +6568,6 @@ function onPeerCompanyChange(triggeredBy) {
   collectReports(tickerA, reportsA);
   collectReports(tickerB, reportsB);
 
-  // Combine unique periods from both companies
   const allPeriods = Array.from(new Set([...Object.keys(reportsA), ...Object.keys(reportsB)])).sort().reverse();
 
   let opts = '<option value="">Select Period...</option>';
@@ -6581,7 +6580,6 @@ function onPeerCompanyChange(triggeredBy) {
 
   periodEl.innerHTML = opts;
 
-  // Default to first period where both companies have reports if available
   const commonPeriod = allPeriods.find(p => reportsA[p] && reportsB[p]) || allPeriods[0];
   if (commonPeriod) periodEl.value = commonPeriod;
 
@@ -6718,7 +6716,6 @@ function updatePeerComparisonTable() {
     </div>`;
 }
 
-// Fetch all DSE tickers immediately on startup
 fetchDynamicTickers();
 
 // ── SMART ACTION HUB & ALERTS ENGINE (V2: QUANT, RADAR & FUNDAMENTAL INTEGRATED) ──
@@ -6727,50 +6724,48 @@ let hasUnreadAlerts = false;
 
 function generatePortfolioAlerts() {
   const alerts = [];
+  const processedTickers = new Set();
 
+  // 1. Process Portfolio Stocks
   if (Array.isArray(stocks)) {
     stocks.forEach(s => {
-      // Portfolio math lookup (shares, invested, gain, value)
-      const t = typeof cS === 'function' 
-        ? cS(s) 
+      if (!s || !s.id) return;
+      processedTickers.add(s.id.toUpperCase());
+
+      const t = typeof cS === 'function'
+        ? cS(s)
         : { shares: parseFloat(s.shares || 0), invested: parseFloat(s.invested || 0), gain: 0, value: 0 };
-      
+
       const currentPrice = parseFloat(s.currentPrice || s.price || 0);
       if (currentPrice <= 0) return;
 
-      // 1. Live Market Data & Quant Signal Integration from Radar
+      const metricsObj = typeof getCompanyMetricsForRadar === 'function'
+        ? getCompanyMetricsForRadar(s.id)
+        : s;
+
+      const fundScoreObj = typeof calculateFundamentalScore === 'function'
+        ? calculateFundamentalScore(metricsObj, s.id)
+        : { score: 0, hasData: false };
+
       let row = { close_price: currentPrice, outstanding_bid: 0, outstanding_offer: 0 };
       if (typeof currentRadarData !== 'undefined' && Array.isArray(currentRadarData)) {
         const found = currentRadarData.find(r => r.ticker === s.id || r.symbol === s.id);
         if (found) row = found;
       }
-      
-      // Execute your existing Radar scoring functions
-      const fundScoreObj = typeof calculateFundamentalScore === 'function' 
-        ? calculateFundamentalScore(s, s.id) 
-        : { score: 0, hasData: false };
-        
+
       const analysis = typeof calculateQuantSignal === 'function'
-        ? calculateQuantSignal(row, fundScoreObj, s, s.id)
+        ? calculateQuantSignal(row, fundScoreObj, metricsObj, s.id)
         : { compositeScore: 0, signal: 'N/A' };
 
       const quantScore = analysis.compositeScore || 0;
-
-      // Unified Metric Engine for Fair Value & Sector Financials
-      const calc = typeof calculateSectorMetrics === 'function'
-        ? calculateSectorMetrics({ raw: s.fundamentals?.raw || s.fundamentals || {}, price: currentPrice, type: s.type || 'general' })
-        : {};
-
-      const fv = calc.fairValue || s.fairValue;
+      const fv = metricsObj.fairValue || s.fairValue;
       const isOwned = t.shares > 0;
 
-      // 2. Checks for CURRENTLY HELD STOCKS (Portfolio Companies)
       if (isOwned) {
-        const avgPrice = t.invested / t.shares;
+        const avgPrice = t.shares > 0 ? t.invested / t.shares : currentPrice;
         const profitPct = t.invested > 0 ? (t.gain / t.invested) * 100 : 0;
-        const priceVsAvgPct = ((currentPrice - avgPrice) / avgPrice) * 100;
+        const priceVsAvgPct = avgPrice > 0 ? ((currentPrice - avgPrice) / avgPrice) * 100 : 0;
 
-        // A. Profit Target (+50%)
         if (profitPct >= 50) {
           alerts.push({
             type: 'profit', color: '#00C896', title: `🎯 Profit Target Hit: ${s.id}`,
@@ -6778,12 +6773,11 @@ function generatePortfolioAlerts() {
           });
         }
 
-        // B. Cost Basis Proximity & DCA Logic (Quant Score Scored)
-        if (priceVsAvgPct <= 5) { 
-          if (quantScore >= 60) {
+        if (priceVsAvgPct <= 5) {
+          if (quantScore >= 55) {
             alerts.push({
               type: 'buy', color: '#00C896', title: `🟢 Accumulate / DCA Entry: ${s.id}`,
-              msg: `Price (${currentPrice}) is near/below your average cost (${Math.round(avgPrice)}). Quant score is strong (${quantScore}/100). Excellent setup to add capital.`
+              msg: `Price (${fT(currentPrice)}) is near/below your average cost (${fT(Math.round(avgPrice))}). Quant score is strong (${quantScore}/100). Good setup to add capital.`
             });
           } else if (priceVsAvgPct < 0 && quantScore < 45) {
             alerts.push({
@@ -6793,42 +6787,80 @@ function generatePortfolioAlerts() {
           }
         }
 
-        // C. Overvaluation Guardrail
         if (s.avoidAbove && currentPrice >= s.avoidAbove) {
           alerts.push({
             type: 'warning', color: '#E056A0', title: `⚠️ Avoid-Above Cap Reached: ${s.id}`,
-            msg: `${s.name || s.id} crossed your avoid limit (${s.avoidAbove}). Avoid deploying new funds here.`
+            msg: `${s.name || s.id} crossed your avoid limit (${fT(s.avoidAbove)}). Avoid deploying new funds here.`
           });
         }
-      } 
+      }
 
-      // 3. Checks for WATCHLIST STOCKS or Entry Point Radar Triggers
       if (quantScore >= 75) {
         alerts.push({
           type: 'buy', color: '#4A90E2', title: `🚀 Strong Radar Buy Signal: ${s.id}`,
-          msg: `${s.id} triggered a Strong Buy (${quantScore}/100) based on order book depth, trend, and fundamentals. Price: TSh ${currentPrice.toLocaleString()}.`
-        });
-      } else if (quantScore <= 35 && !isOwned) {
-        alerts.push({
-          type: 'warning', color: '#F4A623', title: `🟡 Low Score / Wait: ${s.id}`,
-          msg: `Radar score is weak (${quantScore}/100). Fundamental or order-book momentum is insufficient for entry.`
+          msg: `${s.id} triggered a Strong Buy (${quantScore}/100). Price: ${fT(currentPrice)}.`
         });
       }
 
-      // D. Fair Value Discount Alerts (All Monitored Companies)
       if (fv && fv > 0) {
         const discount = ((fv - currentPrice) / fv) * 100;
         if (discount >= 20) {
           alerts.push({
             type: 'fairValue', color: '#00C896', title: `💎 Undervalued Entry: ${s.id}`,
-            msg: `Trading at TSh ${currentPrice.toLocaleString()}, a ${discount.toFixed(1)}% margin of safety below Fair Value (TSh ${Math.round(fv).toLocaleString()}).`
+            msg: `Trading at ${fT(currentPrice)}, a ${discount.toFixed(1)}% margin of safety below Fair Value (${fT(Math.round(fv))}).`
           });
         }
       }
     });
   }
 
-  // 4. Sector Concentration Risk Check
+  // 2. Process Watchlist Stocks
+  if (snapshots && snapshots._watchlist) {
+    Object.keys(snapshots._watchlist).forEach(ticker => {
+      const cleanTicker = ticker.toUpperCase();
+      if (processedTickers.has(cleanTicker)) return;
+
+      const metricsObj = typeof getCompanyMetricsForRadar === 'function'
+        ? getCompanyMetricsForRadar(cleanTicker)
+        : null;
+
+      if (!metricsObj) return;
+
+      const fundScoreObj = typeof calculateFundamentalScore === 'function'
+        ? calculateFundamentalScore(metricsObj, cleanTicker)
+        : { score: 0, hasData: false };
+
+      const currentPrice = metricsObj.currentPrice || 0;
+      if (currentPrice <= 0) return;
+
+      let row = { close_price: currentPrice, outstanding_bid: 0, outstanding_offer: 0 };
+      const analysis = typeof calculateQuantSignal === 'function'
+        ? calculateQuantSignal(row, fundScoreObj, metricsObj, cleanTicker)
+        : { compositeScore: 0 };
+
+      const quantScore = analysis.compositeScore || 0;
+      const fv = metricsObj.fairValue;
+
+      if (quantScore >= 75) {
+        alerts.push({
+          type: 'buy', color: '#4A90E2', title: `🚀 Watchlist Buy Signal: ${cleanTicker}`,
+          msg: `${cleanTicker} scored ${quantScore}/100. Current price: ${fT(currentPrice)}.`
+        });
+      }
+
+      if (fv && fv > 0) {
+        const discount = ((fv - currentPrice) / fv) * 100;
+        if (discount >= 20) {
+          alerts.push({
+            type: 'fairValue', color: '#00C896', title: `💎 Watchlist Undervalued: ${cleanTicker}`,
+            msg: `${cleanTicker} is trading at ${fT(currentPrice)} (${discount.toFixed(1)}% below Fair Value ${fT(Math.round(fv))}).`
+          });
+        }
+      }
+    });
+  }
+
+  // 3. Sector Risk Check
   if (typeof totals === 'function') {
     const tot = totals();
     const gt = tot ? tot.gt : 0;
@@ -6856,7 +6888,6 @@ function generatePortfolioAlerts() {
   if (typeof updateAlertBadge === 'function') updateAlertBadge();
 }
 
-// ── UI BADGE & MODAL RENDERERS ─────────────────────────────────────────────
 function updateAlertBadge() {
   const deskBadge = document.getElementById('alert-badge-desk');
   const mobBadge  = document.getElementById('alert-badge-mob');
@@ -6906,15 +6937,4 @@ function dismissAllAlerts() {
   hasUnreadAlerts = false;
   updateAlertBadge();
   if (typeof closeModal === 'function') closeModal('modal-alerts');
-}
-
-// ── PRICE SYNC HOOK ─────────────────────────────────────────────────────────
-// Automatically re-evaluate alerts whenever price sync completes
-if (typeof window.syncLivePrices === 'function') {
-  const originalSyncLivePrices = window.syncLivePrices;
-  window.syncLivePrices = async function(...args) {
-    const result = await originalSyncLivePrices.apply(this, args);
-    generatePortfolioAlerts();
-    return result;
-  };
 }
