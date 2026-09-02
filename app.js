@@ -6721,7 +6721,7 @@ function updatePeerComparisonTable() {
 // Fetch all DSE tickers immediately on startup
 fetchDynamicTickers();
 
-// ── SMART ACTION HUB & ALERTS ENGINE (V2: QUANT & COST AWARE) ──────────────────────
+// ── SMART ACTION HUB & ALERTS ENGINE (V2: QUANT, RADAR & FUNDAMENTAL INTEGRATED) ──
 let activeAlerts = [];
 let hasUnreadAlerts = false;
 
@@ -6730,15 +6730,22 @@ function generatePortfolioAlerts() {
 
   if (Array.isArray(stocks)) {
     stocks.forEach(s => {
-      const t = cS(s); // Your portfolio math function (shares, invested, gain)
+      // Portfolio math lookup (shares, invested, gain, value)
+      const t = typeof cS === 'function' 
+        ? cS(s) 
+        : { shares: parseFloat(s.shares || 0), invested: parseFloat(s.invested || 0), gain: 0, value: 0 };
       
-      // 1. Fetch live market data and compute Quant Score for the stock
-      let row = { close_price: s.currentPrice, outstanding_bid: 0, outstanding_offer: 0 };
-      if (typeof currentRadarData !== 'undefined') {
+      const currentPrice = parseFloat(s.currentPrice || s.price || 0);
+      if (currentPrice <= 0) return;
+
+      // 1. Live Market Data & Quant Signal Integration from Radar
+      let row = { close_price: currentPrice, outstanding_bid: 0, outstanding_offer: 0 };
+      if (typeof currentRadarData !== 'undefined' && Array.isArray(currentRadarData)) {
         const found = currentRadarData.find(r => r.ticker === s.id || r.symbol === s.id);
         if (found) row = found;
       }
       
+      // Execute your existing Radar scoring functions
       const fundScoreObj = typeof calculateFundamentalScore === 'function' 
         ? calculateFundamentalScore(s, s.id) 
         : { score: 0, hasData: false };
@@ -6747,74 +6754,100 @@ function generatePortfolioAlerts() {
         ? calculateQuantSignal(row, fundScoreObj, s, s.id)
         : { compositeScore: 0, signal: 'N/A' };
 
-      // 2. Checks for CURRENTLY HELD stocks
-      if (t.shares > 0) {
+      const quantScore = analysis.compositeScore || 0;
+
+      // Unified Metric Engine for Fair Value & Sector Financials
+      const calc = typeof calculateSectorMetrics === 'function'
+        ? calculateSectorMetrics({ raw: s.fundamentals?.raw || s.fundamentals || {}, price: currentPrice, type: s.type || 'general' })
+        : {};
+
+      const fv = calc.fairValue || s.fairValue;
+      const isOwned = t.shares > 0;
+
+      // 2. Checks for CURRENTLY HELD STOCKS (Portfolio Companies)
+      if (isOwned) {
         const avgPrice = t.invested / t.shares;
         const profitPct = t.invested > 0 ? (t.gain / t.invested) * 100 : 0;
-        
-        // Calculate how close current price is to your average buy price
-        const priceVsAvgPct = ((s.currentPrice - avgPrice) / avgPrice) * 100;
+        const priceVsAvgPct = ((currentPrice - avgPrice) / avgPrice) * 100;
 
         // A. Profit Target (+50%)
         if (profitPct >= 50) {
           alerts.push({
-            type: 'profit', color: '#E05656', title: `🎯 Profit Target Hit: ${s.id}`,
-            msg: `${s.name} is up +${profitPct.toFixed(1)}%. Consider taking partial profits.`
+            type: 'profit', color: '#00C896', title: `🎯 Profit Target Hit: ${s.id}`,
+            msg: `${s.name || s.id} is up +${profitPct.toFixed(1)}% over cost basis. Consider harvesting partial profits.`
           });
         }
 
-        // B. Cost Basis Proximity & DCA Logic (The New Feature)
+        // B. Cost Basis Proximity & DCA Logic (Quant Score Scored)
         if (priceVsAvgPct <= 5) { 
-          // Price is below, or very close (within 5%) to your average cost
-          if (analysis.compositeScore >= 60) {
+          if (quantScore >= 60) {
             alerts.push({
-              type: 'buy', color: '#00C896', title: `🟢 Accumulate / DCA: ${s.id}`,
-              msg: `Price (${s.currentPrice}) is near your average cost (${Math.round(avgPrice)}). Quant score is strong (${analysis.compositeScore}/100). Great time to average down or add.`
+              type: 'buy', color: '#00C896', title: `🟢 Accumulate / DCA Entry: ${s.id}`,
+              msg: `Price (${currentPrice}) is near/below your average cost (${Math.round(avgPrice)}). Quant score is strong (${quantScore}/100). Excellent setup to add capital.`
             });
-          } else if (priceVsAvgPct < 0 && analysis.compositeScore < 45) {
+          } else if (priceVsAvgPct < 0 && quantScore < 45) {
             alerts.push({
               type: 'warning', color: '#F4A623', title: `🟡 Caution on Dip: ${s.id}`,
-              msg: `You are down on this position, but DO NOT average down yet. The Quant score is weak (${analysis.compositeScore}/100). Wait for better market depth or valuation signals.`
+              msg: `Position is down (${priceVsAvgPct.toFixed(1)}%), but HOLD OFF on averaging down. Radar Quant Score is weak (${quantScore}/100).`
             });
           }
         }
 
         // C. Overvaluation Guardrail
-        if (s.avoidAbove && s.currentPrice >= s.avoidAbove) {
+        if (s.avoidAbove && currentPrice >= s.avoidAbove) {
           alerts.push({
-            type: 'warning', color: '#E056A0', title: `⚠️ Overvalued: ${s.id}`,
-            msg: `${s.name} has crossed your avoid-above limit (${s.avoidAbove}). Do not add capital here regardless of demand.`
+            type: 'warning', color: '#E056A0', title: `⚠️ Avoid-Above Cap Reached: ${s.id}`,
+            msg: `${s.name || s.id} crossed your avoid limit (${s.avoidAbove}). Avoid deploying new funds here.`
           });
         }
       } 
-      // 3. Checks for WATCHLIST stocks (Not yet owned)
-      else {
-        if (analysis.compositeScore >= 75) {
+
+      // 3. Checks for WATCHLIST STOCKS or Entry Point Radar Triggers
+      if (quantScore >= 75) {
+        alerts.push({
+          type: 'buy', color: '#4A90E2', title: `🚀 Strong Radar Buy Signal: ${s.id}`,
+          msg: `${s.id} triggered a Strong Buy (${quantScore}/100) based on order book depth, trend, and fundamentals. Price: TSh ${currentPrice.toLocaleString()}.`
+        });
+      } else if (quantScore <= 35 && !isOwned) {
+        alerts.push({
+          type: 'warning', color: '#F4A623', title: `🟡 Low Score / Wait: ${s.id}`,
+          msg: `Radar score is weak (${quantScore}/100). Fundamental or order-book momentum is insufficient for entry.`
+        });
+      }
+
+      // D. Fair Value Discount Alerts (All Monitored Companies)
+      if (fv && fv > 0) {
+        const discount = ((fv - currentPrice) / fv) * 100;
+        if (discount >= 20) {
           alerts.push({
-             type: 'buy', color: '#4A90E2', title: `🚀 Strong Buy Signal: ${s.id}`,
-             msg: `${s.id} triggered a STRONG BUY (Score: ${analysis.compositeScore}/100) based on fundamentals and market depth. Current Price: ${s.currentPrice}.`
+            type: 'fairValue', color: '#00C896', title: `💎 Undervalued Entry: ${s.id}`,
+            msg: `Trading at TSh ${currentPrice.toLocaleString()}, a ${discount.toFixed(1)}% margin of safety below Fair Value (TSh ${Math.round(fv).toLocaleString()}).`
           });
         }
       }
     });
   }
 
-  // 4. Sector Concentration Risk
-  const { gt } = totals();
-  if (gt > 0 && Array.isArray(stocks)) {
-    let bankVal = 0;
-    stocks.forEach(s => {
-      const sector = (s.sector || s.type || '').toLowerCase();
-      if (sector.includes('bank') || sector.includes('commercial')) {
-        bankVal += cS(s).value;
-      }
-    });
-    const bankPct = (bankVal / gt) * 100;
-    if (bankPct > 65) {
-      alerts.push({
-        type: 'risk', color: '#F4A623', title: `⚠️ Sector Risk`,
-        msg: `Banks make up ${bankPct.toFixed(1)}% of your portfolio. Consider diversifying.`
+  // 4. Sector Concentration Risk Check
+  if (typeof totals === 'function') {
+    const tot = totals();
+    const gt = tot ? tot.gt : 0;
+    if (gt > 0 && Array.isArray(stocks)) {
+      let bankVal = 0;
+      stocks.forEach(s => {
+        const sector = (s.sector || s.type || '').toLowerCase();
+        if (sector.includes('bank') || sector.includes('commercial')) {
+          const t = typeof cS === 'function' ? cS(s) : { value: 0 };
+          bankVal += t.value || 0;
+        }
       });
+      const bankPct = (bankVal / gt) * 100;
+      if (bankPct > 60) {
+        alerts.push({
+          type: 'risk', color: '#F4A623', title: `⚠️ Sector Exposure Risk`,
+          msg: `Banking sector makes up ${bankPct.toFixed(1)}% of your total portfolio weight. Consider diversifying.`
+        });
+      }
     }
   }
 
@@ -6823,7 +6856,7 @@ function generatePortfolioAlerts() {
   if (typeof updateAlertBadge === 'function') updateAlertBadge();
 }
 
-
+// ── UI BADGE & MODAL RENDERERS ─────────────────────────────────────────────
 function updateAlertBadge() {
   const deskBadge = document.getElementById('alert-badge-desk');
   const mobBadge  = document.getElementById('alert-badge-mob');
@@ -6840,11 +6873,11 @@ function updateAlertBadge() {
 }
 
 function openAlertModal() {
-  const container = document.getElementById('alerts-container');
+  const container = document.getElementById('alerts-container') || document.getElementById('action-hub-container');
   if (!container) return;
 
   if (activeAlerts.length === 0) {
-    container.innerHTML = `<div style="text-align:center;color:#555;padding:30px;font-size:11px">🎉 No active alerts. All positions are operating within normal parameters.</div>`;
+    container.innerHTML = `<div style="text-align:center;color:#555;padding:30px;font-size:11px">🎉 No active alerts. All positions and watchlist stocks are operating within normal parameters.</div>`;
   } else {
     container.innerHTML = activeAlerts.map((a, i) => `
       <div style="background:#111118;border-left:3px solid ${a.color};border:1px solid #1E2A3A;border-radius:8px;padding:10px 12px;margin-bottom:8px">
@@ -6857,10 +6890,9 @@ function openAlertModal() {
     `).join('');
   }
 
-  // Mark as read when opened
   hasUnreadAlerts = false;
   updateAlertBadge();
-  openModal('modal-alerts');
+  if (typeof openModal === 'function') openModal('modal-alerts');
 }
 
 function dismissAlert(idx) {
@@ -6873,10 +6905,16 @@ function dismissAllAlerts() {
   activeAlerts = [];
   hasUnreadAlerts = false;
   updateAlertBadge();
-  closeModal('modal-alerts');
+  if (typeof closeModal === 'function') closeModal('modal-alerts');
 }
 
-// Hook into syncLivePrices so alerts generate automatically after new prices load
-const originalSyncLivePrices = window.syncLivePrices;
-// We append generatePortfolioAlerts right after price update completes inside syncLivePrices or call it here:
-
+// ── PRICE SYNC HOOK ─────────────────────────────────────────────────────────
+// Automatically re-evaluate alerts whenever price sync completes
+if (typeof window.syncLivePrices === 'function') {
+  const originalSyncLivePrices = window.syncLivePrices;
+  window.syncLivePrices = async function(...args) {
+    const result = await originalSyncLivePrices.apply(this, args);
+    generatePortfolioAlerts();
+    return result;
+  };
+}
