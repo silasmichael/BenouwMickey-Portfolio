@@ -3743,8 +3743,8 @@ function renderPlanner() {
         </div>
       </div>
 
-      <!-- Current Position strip — buy card -->
-      <div id="dca-position-card" style="display:none;background:#0D0D16;border:1px solid #1E2A3A;border-radius:99px;padding:12px 14px;margin-bottom:12px">
+      <!-- Current Position strip — buy card (FIXED BORDER RADIUS) -->
+      <div id="dca-position-card" style="display:none;background:#0D0D16;border:1px solid #1E2A3A;border-radius:9px;padding:12px 14px;margin-bottom:12px">
         <div style="font-size:9px;color:#555;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Current Position</div>
         <div id="dca-position-body"></div>
       </div>
@@ -3883,7 +3883,7 @@ function renderPlanner() {
       </div>
     </div>
 
-    <!-- 2. NEW: PEER COMPARISON FOR TWO COMPANIES (SAME PERIOD) -->
+    <!-- 2. STANDALONE PEER COMPARISON CARD -->
     <div class="card" style="border-color:#F4A62333">
       <div class="sec" style="color:var(--gold);margin-bottom:14px">⚔️ Peer Fundamental Comparison — 2 Companies (Same Period)</div>
 
@@ -3916,10 +3916,12 @@ function renderPlanner() {
           <em>The system automatically highlights superior metrics (ROE, P/E, NPL, NIM, CIR, P/B, etc.).</em>
         </div>
       </div>
+    </div>
 
-      <!-- Collapsed Reference Guide -->
-      <details style="margin-top:20px; border-top:1px solid #1A1A24; padding-top:14px;">
-        <summary style="font-size:11px; color:#888; cursor:pointer; font-weight:bold; outline:none;">📖 View Fundamentals Reference Guide</summary>
+    <!-- 3. STANDALONE REFERENCE GUIDE CARD -->
+    <div class="card" style="border-color:#1E2A3A">
+      <details>
+        <summary style="font-size:12px; color:#888; cursor:pointer; font-weight:bold; outline:none; font-family:Inter,sans-serif;">📖 View Fundamentals Reference Guide</summary>
         <div id="fund-guide-body" style="margin-top:12px;"></div>
       </details>
     </div>
@@ -3933,6 +3935,7 @@ function renderPlanner() {
   // Initialize peer dropdowns
   onPeerCompanyChange('init');
 }
+
 
 let _sellMode = 'shares';
 
