@@ -4995,21 +4995,9 @@ async function syncLivePrices() {
   const allBtns = [btnDesk, btnMob].filter(Boolean);
 
   const marketInfo = getLatestMarketSession();
-  const priceDates = (snapshots && snapshots._priceDates) ? snapshots._priceDates : {};
 
-  const expKeys = [
-    ...(typeof stocks !== 'undefined' ? stocks.map(s => s.id) : []),
-    ...(typeof funds  !== 'undefined' ? funds.map(f => f.id)  : []),
-  ];
-
-  // Check if we ALREADY have the closing prices for the latest valid session
-  const alreadyUpToDate = expKeys.length > 0 && expKeys.every(k => {
-    if (!priceDates[k]) return false;
-    const keyDay = new Date(priceDates[k]).toDateString();
-    return new Date(keyDay) >= new Date(marketInfo.sessionDateStr);
-  });
-
-  if (alreadyUpToDate) {
+  // Already synced for this session? Skip the network call entirely.
+  if (snapshots && snapshots._lastSyncSessionStr === marketInfo.sessionDateStr) {
     const nextMsg = marketInfo.isTodayClosed 
       ? 'Next update available tomorrow after 5:00 PM EAT.' 
       : 'Market closes at 5:00 PM EAT (Mon-Fri).';
@@ -5040,9 +5028,8 @@ async function syncLivePrices() {
 
     if (!response.ok) throw new Error('Server error ' + response.status);
     const result = await response.json();
-    const p = result.prices || result; // handles either { prices: {...} } or direct object
+    const p = result.prices || result;
 
-    // Create a normalized case-insensitive dictionary
     const normP = {};
     if (p && typeof p === 'object') {
       Object.keys(p).forEach(k => {
@@ -5056,7 +5043,6 @@ async function syncLivePrices() {
     let stocksUpdated = 0;
     let fundsUpdated = 0;
 
-    // 1. Update Stock Prices in Portfolio
     if (typeof stocks !== 'undefined' && Array.isArray(stocks)) {
       stocks.forEach(s => {
         const val = normP[s.id.toLowerCase()];
@@ -5068,7 +5054,6 @@ async function syncLivePrices() {
       });
     }
 
-    // 2. Update Mutual Fund NAVs in Portfolio
     if (typeof funds !== 'undefined' && Array.isArray(funds)) {
       funds.forEach(f => {
         const val = normP[f.id.toLowerCase()];
@@ -5080,16 +5065,14 @@ async function syncLivePrices() {
       });
     }
 
-    snapshots._lastPriceTime = _now;
+    snapshots._lastPriceTime      = _now;
+    snapshots._lastSyncSessionStr = marketInfo.sessionDateStr; // this sync attempt covers this session — full stop
 
-    // 3. Re-apply metric calculations and snapshots
     if (typeof applyMigrations === 'function') applyMigrations(stocks, funds);
     if (typeof updateMonthlySnapshots === 'function') updateMonthlySnapshots();
 
-    // 4. Save to local cache
     saveToCache();
 
-    // 5. Explicitly force write to Supabase portfolio table (id=1)
     snapshots._dividends = dividends;
     snapshots._reserves  = reserves;
     snapshots._bonds     = bonds;
@@ -5107,13 +5090,11 @@ async function syncLivePrices() {
       });
     }
 
-    // 6. Preserve open accordion state & re-render Portfolio UI
     const _oids = typeof getOpenIds === 'function' ? getOpenIds() : [];
     if (typeof renderAll === 'function') renderAll();
     if (typeof updateHeader === 'function') updateHeader();
     if (typeof restoreOpenIds === 'function') restoreOpenIds(_oids);
 
-    // Refresh Radar if active
     if (typeof loadRadarData === 'function' && document.getElementById('pane-radar')?.classList.contains('on')) {
       loadRadarData();
     }
@@ -5125,15 +5106,7 @@ async function syncLivePrices() {
     if (iconFresh)    iconFresh.classList.remove('loading-spin');
     if (iconMobFresh) iconMobFresh.classList.remove('loading-spin');
 
-    allBtns.forEach(b => {
-      b.textContent      = 'Updated';
-      b.style.background = 'var(--g)';
-      b.style.color      = '#000';
-      b.style.borderColor= 'var(--g)';
-      b.style.opacity    = '1';
-      b.style.cursor     = 'pointer';
-      b.disabled         = false;
-    });
+    setPriceButtonState();
 
   } catch (err) {
     console.error("Price sync error:", err);
