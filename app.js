@@ -5132,8 +5132,6 @@ async function syncLivePrices() {
       b.disabled         = false;
     });
 
-    setPriceButtonState();
-
   } catch (err) {
     console.error("Price sync error:", err);
     if (iconFresh)    iconFresh.classList.remove('loading-spin');
@@ -5160,6 +5158,7 @@ async function syncLivePrices() {
     }, 8000);
   }
 }
+
 
 // Reveal page once JS is fully loaded — prevents CSS flash on open
 document.addEventListener('DOMContentLoaded', () => {
