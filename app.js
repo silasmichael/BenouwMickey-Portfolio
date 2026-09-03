@@ -221,39 +221,21 @@ function getLatestMarketSession() {
   };
 }
 
-function toDateCode(d) {
-  if (!d) return '';
-  const dateObj = new Date(d);
-  if (isNaN(dateObj.getTime())) return '';
-  return `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`;
-}
-
 function setPriceButtonState() {
   const priceDates = (snapshots && snapshots._priceDates) ? snapshots._priceDates : {};
   const { sessionDateStr } = getLatestMarketSession();
   
-  const sessionCode = toDateCode(sessionDateStr);
-  if (!sessionCode) return;
-
   const expKeys = [
     ...(typeof stocks !== 'undefined' ? stocks.map(s => s.id) : []),
     ...(typeof funds  !== 'undefined' ? funds.map(f => f.id)  : []),
   ];
 
-  // Fallback: check global last price update timestamp
-  const lastTimeCode = toDateCode(snapshots && snapshots._lastPriceTime);
-  const globalUpdated = lastTimeCode && lastTimeCode >= sessionCode;
-
-  // Check if stocks/funds are updated on or after the target session date
-  let allUpdated = false;
-  if (expKeys.length > 0) {
-    allUpdated = expKeys.every(k => {
-      const kCode = toDateCode(priceDates[k]);
-      return (kCode && kCode >= sessionCode) || globalUpdated;
-    });
-  } else if (globalUpdated) {
-    allUpdated = true;
-  }
+  // Check if every stock/fund has been updated on or after the latest valid session
+  const allUpdated = expKeys.length > 0 && expKeys.every(k => {
+    if (!priceDates[k]) return false;
+    const keyDay = new Date(priceDates[k]).toDateString();
+    return new Date(keyDay) >= new Date(sessionDateStr);
+  });
 
   const allBtns = [
     document.getElementById('sync-btn'),
@@ -266,20 +248,18 @@ function setPriceButtonState() {
     b.style.cursor  = 'pointer';
 
     if (allUpdated) {
-      b.textContent       = '✓ Updated';
-      b.style.background  = 'var(--g)';
-      b.style.color       = '#000';
-      b.style.borderColor = 'var(--g)';
+      b.textContent      = 'Updated';
+      b.style.background = 'var(--g)';
+      b.style.color      = '#000';
+      b.style.borderColor= 'var(--g)';
     } else {
-      const iconId = b.id === 'sync-btn' ? 'sync-icon' : 'sync-icon-mob';
-      b.innerHTML         = `<span id="${iconId}"></span> Update Prices`;
-      b.style.background  = 'transparent';
-      b.style.color       = '#555';
-      b.style.borderColor = '#333';
+      b.innerHTML        = '<span id="' + (b.id === 'sync-btn' ? 'sync-icon' : 'sync-icon-mob') + '"></span> Update Prices';
+      b.style.background = 'transparent';
+      b.style.color      = '#555';
+      b.style.borderColor= '#333';
     }
   });
 }
-
 let _dataReady = false; // blocks syncToSupabase until at least one successful read
 let _syncRetries = 0;
 async function syncFromSupabase() {
@@ -291,6 +271,7 @@ async function syncFromSupabase() {
     if (error) {
       _syncFromRunning = false;
       console.error('Supabase read error:', error.message, error.code);
+      // Keep retrying: 3s → 8s → 20s → 30s then every 30s
       const delays = [3000, 8000, 20000, 30000];
       const delay = delays[Math.min(_syncRetries, delays.length - 1)];
       _syncRetries++;
@@ -324,13 +305,7 @@ async function syncFromSupabase() {
       }
       applyMigrations(stocks, funds);
       updateMonthlySnapshots();
-      renderAll(); 
-      updateHeader();
-      
-      // Update UI button states & run smart action hub alerts
-      setPriceButtonState();
-      if (typeof generatePortfolioAlerts === 'function') generatePortfolioAlerts();
-
+      renderAll(); updateHeader();
       if (snapshots._lastPriceTime) stampPriceUpdate(snapshots._lastPriceTime);
       saveToCache();
       _dataReady = true;
@@ -4969,11 +4944,9 @@ function renderAll() {
   renderProjection();
   renderBonds();
   renderPlanner();
-
-  // Refresh price button state and active alerts whenever UI renders
-  if (typeof setPriceButtonState === 'function') setPriceButtonState();
-  if (typeof generatePortfolioAlerts === 'function') generatePortfolioAlerts();
+  generatePortfolioAlerts();
 }
+
 
 // Render from cache immediately so screen isn't blank underneath
 renderAll();
@@ -5029,11 +5002,10 @@ async function syncLivePrices() {
   ];
 
   // Check if we ALREADY have the closing prices for the latest valid session
-  const sessionTime = new Date(marketInfo.sessionDateStr).getTime();
   const alreadyUpToDate = expKeys.length > 0 && expKeys.every(k => {
     if (!priceDates[k]) return false;
-    const keyDayStr = new Date(priceDates[k]).toDateString();
-    return new Date(keyDayStr).getTime() >= sessionTime;
+    const keyDay = new Date(priceDates[k]).toDateString();
+    return new Date(keyDay) >= new Date(marketInfo.sessionDateStr);
   });
 
   if (alreadyUpToDate) {
@@ -5048,10 +5020,16 @@ async function syncLivePrices() {
   // Show Loading Spinners
   allBtns.forEach(b => {
     const iconId = b.id === 'sync-btn' ? 'sync-icon' : 'sync-icon-mob';
-    b.innerHTML     = `<span id="${iconId}" class="loading-spin"></span> Updating...`;
+    b.innerHTML     = '<span id="' + iconId + '" class="loading-spin"></span> Updating...';
     b.disabled      = true;
     b.style.opacity = '0.7';
+    b.style.background  = 'transparent';
+    b.style.color       = '#555';
+    b.style.borderColor = '#333';
   });
+
+  const iconFresh    = document.getElementById('sync-icon');
+  const iconMobFresh = document.getElementById('sync-icon-mob');
 
   try {
     const response = await fetch('https://brwkhnqnsoormvpjqcmd.supabase.co/functions/v1/get-prices', {
@@ -5061,8 +5039,9 @@ async function syncLivePrices() {
 
     if (!response.ok) throw new Error('Server error ' + response.status);
     const result = await response.json();
-    const p = result.prices || result;
+    const p = result.prices || result; // handles either { prices: {...} } or direct object
 
+    // Create a normalized case-insensitive dictionary
     const normP = {};
     if (p && typeof p === 'object') {
       Object.keys(p).forEach(k => {
@@ -5142,14 +5121,26 @@ async function syncLivePrices() {
     setStatus('synced');
     showToast(`Updated ${stocksUpdated} stocks & ${fundsUpdated} funds for session ${marketInfo.sessionDateStr}`);
 
-    // Update Price Button Visual State
-    setPriceButtonState();
+    if (iconFresh)    iconFresh.classList.remove('loading-spin');
+    if (iconMobFresh) iconMobFresh.classList.remove('loading-spin');
 
-    // Generate alerts after price sync
-    if (typeof generatePortfolioAlerts === 'function') generatePortfolioAlerts();
+    allBtns.forEach(b => {
+      b.textContent      = 'Updated';
+      b.style.background = 'var(--g)';
+      b.style.color      = '#000';
+      b.style.borderColor= 'var(--g)';
+      b.style.opacity    = '1';
+      b.style.cursor     = 'pointer';
+      b.disabled         = false;
+    });
+
+    setPriceButtonState();
 
   } catch (err) {
     console.error("Price sync error:", err);
+    if (iconFresh)    iconFresh.classList.remove('loading-spin');
+    if (iconMobFresh) iconMobFresh.classList.remove('loading-spin');
+    
     allBtns.forEach(b => {
       b.textContent      = 'Failed — Retry';
       b.style.color      = 'var(--r)';
@@ -5161,11 +5152,16 @@ async function syncLivePrices() {
     });
 
     setTimeout(() => {
-      setPriceButtonState();
-    }, 6000);
+      allBtns.forEach(b => {
+        if (b.textContent && b.textContent.includes('Retry')) {
+          b.innerHTML        = '<span id="' + (b.id === 'sync-btn' ? 'sync-icon' : 'sync-icon-mob') + '"></span> Update Prices';
+          b.style.color      = '#555';
+          b.style.borderColor= '#333';
+        }
+      });
+    }, 8000);
   }
 }
-
 
 // Reveal page once JS is fully loaded — prevents CSS flash on open
 document.addEventListener('DOMContentLoaded', () => {
@@ -6543,14 +6539,12 @@ function onPeerCompanyChange(triggeredBy) {
   const tickerA = compAEl.value;
   let tickerB = compBEl.value;
 
-  // Auto-select a different company B if both are same
   if (tickerA === tickerB) {
     const all = getFullMarketTickers();
     tickerB = all.find(t => t !== tickerA) || tickerA;
     compBEl.value = tickerB;
   }
 
-  // Collect reports available for both Company A and Company B
   const reportsA = {};
   const reportsB = {};
 
@@ -6574,7 +6568,6 @@ function onPeerCompanyChange(triggeredBy) {
   collectReports(tickerA, reportsA);
   collectReports(tickerB, reportsB);
 
-  // Combine unique periods from both companies
   const allPeriods = Array.from(new Set([...Object.keys(reportsA), ...Object.keys(reportsB)])).sort().reverse();
 
   let opts = '<option value="">Select Period...</option>';
@@ -6587,7 +6580,6 @@ function onPeerCompanyChange(triggeredBy) {
 
   periodEl.innerHTML = opts;
 
-  // Default to first period where both companies have reports if available
   const commonPeriod = allPeriods.find(p => reportsA[p] && reportsB[p]) || allPeriods[0];
   if (commonPeriod) periodEl.value = commonPeriod;
 
@@ -6724,7 +6716,6 @@ function updatePeerComparisonTable() {
     </div>`;
 }
 
-// Fetch all DSE tickers immediately on startup
 fetchDynamicTickers();
 
 // ── SMART ACTION HUB & ALERTS ENGINE (V2: QUANT, RADAR & FUNDAMENTAL INTEGRATED) ──
@@ -6733,75 +6724,143 @@ let hasUnreadAlerts = false;
 
 function generatePortfolioAlerts() {
   const alerts = [];
+  const processedTickers = new Set();
 
+  // 1. Process Portfolio Stocks
   if (Array.isArray(stocks)) {
     stocks.forEach(s => {
-      const t = (typeof cS === 'function') ? cS(s) : { shares: 0, invested: 0, gain: 0, value: 0 };
-      const currentPrice = parseFloat(s.currentPrice || 0);
+      if (!s || !s.id) return;
+      processedTickers.add(s.id.toUpperCase());
+
+      const t = typeof cS === 'function'
+        ? cS(s)
+        : { shares: parseFloat(s.shares || 0), invested: parseFloat(s.invested || 0), gain: 0, value: 0 };
+
+      const currentPrice = parseFloat(s.currentPrice || s.price || 0);
       if (currentPrice <= 0) return;
 
-      const isOwned = t.shares > 0;
-      const fv = s.fairValue || (s.fundamentals && s.fundamentals.raw && s.fundamentals.raw.fairValue);
+      const metricsObj = typeof getCompanyMetricsForRadar === 'function'
+        ? getCompanyMetricsForRadar(s.id)
+        : s;
 
-      // 1. Profit Target Alerts (+50% or higher)
-      if (isOwned && t.invested > 0) {
-        const profitPct = (t.gain / t.invested) * 100;
-        const avgPrice = t.invested / t.shares;
+      const fundScoreObj = typeof calculateFundamentalScore === 'function'
+        ? calculateFundamentalScore(metricsObj, s.id)
+        : { score: 0, hasData: false };
+
+      let row = { close_price: currentPrice, outstanding_bid: 0, outstanding_offer: 0 };
+      if (typeof currentRadarData !== 'undefined' && Array.isArray(currentRadarData)) {
+        const found = currentRadarData.find(r => r.ticker === s.id || r.symbol === s.id);
+        if (found) row = found;
+      }
+
+      const analysis = typeof calculateQuantSignal === 'function'
+        ? calculateQuantSignal(row, fundScoreObj, metricsObj, s.id)
+        : { compositeScore: 0, signal: 'N/A' };
+
+      const quantScore = analysis.compositeScore || 0;
+      const fv = metricsObj.fairValue || s.fairValue;
+      const isOwned = t.shares > 0;
+
+      if (isOwned) {
+        const avgPrice = t.shares > 0 ? t.invested / t.shares : currentPrice;
+        const profitPct = t.invested > 0 ? (t.gain / t.invested) * 100 : 0;
+        const priceVsAvgPct = avgPrice > 0 ? ((currentPrice - avgPrice) / avgPrice) * 100 : 0;
 
         if (profitPct >= 50) {
           alerts.push({
             type: 'profit', color: '#00C896', title: `🎯 Profit Target Hit: ${s.id}`,
-            msg: `${s.name || s.id} is up +${profitPct.toFixed(1)}% over your average cost. Consider taking partial profits.`
+            msg: `${s.name || s.id} is up +${profitPct.toFixed(1)}% over cost basis. Consider harvesting partial profits.`
           });
         }
 
-        // 2. Accumulation / DCA Opportunity (Trading at or below cost basis)
-        if (currentPrice <= avgPrice) {
-          alerts.push({
-            type: 'buy', color: '#00C896', title: `🟢 DCA Entry: ${s.id}`,
-            msg: `Current price (TSh ${currentPrice.toLocaleString()}) is at or below your average cost (TSh ${Math.round(avgPrice).toLocaleString()}). Good opportunity to accumulate.`
-          });
+        if (priceVsAvgPct <= 5) {
+          if (quantScore >= 55) {
+            alerts.push({
+              type: 'buy', color: '#00C896', title: `🟢 Accumulate / DCA Entry: ${s.id}`,
+              msg: `Price (${fT(currentPrice)}) is near/below your average cost (${fT(Math.round(avgPrice))}). Quant score is strong (${quantScore}/100). Good setup to add capital.`
+            });
+          } else if (priceVsAvgPct < 0 && quantScore < 45) {
+            alerts.push({
+              type: 'warning', color: '#F4A623', title: `🟡 Caution on Dip: ${s.id}`,
+              msg: `Position is down (${priceVsAvgPct.toFixed(1)}%), but HOLD OFF on averaging down. Radar Quant Score is weak (${quantScore}/100).`
+            });
+          }
         }
 
-        // 3. Avoid Above Ceiling Cap Reached
         if (s.avoidAbove && currentPrice >= s.avoidAbove) {
           alerts.push({
-            type: 'warning', color: '#E056A0', title: `⚠️ Near Cap / Avoid Above: ${s.id}`,
-            msg: `${s.id} is trading at TSh ${currentPrice.toLocaleString()}, reaching your ceiling limit (TSh ${s.avoidAbove.toLocaleString()}). Pause new purchases.`
+            type: 'warning', color: '#E056A0', title: `⚠️ Avoid-Above Cap Reached: ${s.id}`,
+            msg: `${s.name || s.id} crossed your avoid limit (${fT(s.avoidAbove)}). Avoid deploying new funds here.`
           });
         }
       }
 
-      // 4. In Buy Zone Alert (Owned or Watchlist)
-      if (typeof inBuyZone === 'function' && inBuyZone(s)) {
+      if (quantScore >= 75) {
         alerts.push({
-          type: 'buyZone', color: '#00C896', title: `✅ In Buy Zone: ${s.id}`,
-          msg: `${s.id} (TSh ${currentPrice.toLocaleString()}) is currently trading within its target Buy Zone (${s.buyZone}).`
+          type: 'buy', color: '#4A90E2', title: `🚀 Strong Radar Buy Signal: ${s.id}`,
+          msg: `${s.id} triggered a Strong Buy (${quantScore}/100). Price: ${fT(currentPrice)}.`
         });
       }
 
-      // 5. Fair Value Discount (20%+ Margin of Safety)
-      if (fv && fv > currentPrice) {
+      if (fv && fv > 0) {
         const discount = ((fv - currentPrice) / fv) * 100;
         if (discount >= 20) {
           alerts.push({
-            type: 'fairValue', color: '#4A90E2', title: `💎 Undervalued Stock: ${s.id}`,
-            msg: `${s.id} is trading at TSh ${currentPrice.toLocaleString()}, a ${discount.toFixed(1)}% discount below its Fair Value (TSh ${Math.round(fv).toLocaleString()}).`
+            type: 'fairValue', color: '#00C896', title: `💎 Undervalued Entry: ${s.id}`,
+            msg: `Trading at ${fT(currentPrice)}, a ${discount.toFixed(1)}% margin of safety below Fair Value (${fT(Math.round(fv))}).`
           });
         }
-      }
-
-      // 6. Buy / Strong Buy / Accumulate Signals
-      if (s.signal === 'STRONG BUY' || s.signal === 'BUY' || s.signal === 'ACCUMULATE') {
-        alerts.push({
-          type: 'signal', color: '#10B981', title: `📢 Active Signal (${s.signal}): ${s.id}`,
-          msg: `${s.id} carries an active ${s.signal} signal at TSh ${currentPrice.toLocaleString()}.`
-        });
       }
     });
   }
 
-  // 7. Sector Concentration Check (>60% in Banking)
+  // 2. Process Watchlist Stocks
+  if (snapshots && snapshots._watchlist) {
+    Object.keys(snapshots._watchlist).forEach(ticker => {
+      const cleanTicker = ticker.toUpperCase();
+      if (processedTickers.has(cleanTicker)) return;
+
+      const metricsObj = typeof getCompanyMetricsForRadar === 'function'
+        ? getCompanyMetricsForRadar(cleanTicker)
+        : null;
+
+      if (!metricsObj) return;
+
+      const fundScoreObj = typeof calculateFundamentalScore === 'function'
+        ? calculateFundamentalScore(metricsObj, cleanTicker)
+        : { score: 0, hasData: false };
+
+      const currentPrice = metricsObj.currentPrice || 0;
+      if (currentPrice <= 0) return;
+
+      let row = { close_price: currentPrice, outstanding_bid: 0, outstanding_offer: 0 };
+      const analysis = typeof calculateQuantSignal === 'function'
+        ? calculateQuantSignal(row, fundScoreObj, metricsObj, cleanTicker)
+        : { compositeScore: 0 };
+
+      const quantScore = analysis.compositeScore || 0;
+      const fv = metricsObj.fairValue;
+
+      if (quantScore >= 75) {
+        alerts.push({
+          type: 'buy', color: '#4A90E2', title: `🚀 Watchlist Buy Signal: ${cleanTicker}`,
+          msg: `${cleanTicker} scored ${quantScore}/100. Current price: ${fT(currentPrice)}.`
+        });
+      }
+
+      if (fv && fv > 0) {
+        const discount = ((fv - currentPrice) / fv) * 100;
+        if (discount >= 20) {
+          alerts.push({
+            type: 'fairValue', color: '#00C896', title: `💎 Watchlist Undervalued: ${cleanTicker}`,
+            msg: `${cleanTicker} is trading at ${fT(currentPrice)} (${discount.toFixed(1)}% below Fair Value ${fT(Math.round(fv))}).`
+          });
+        }
+      }
+    });
+  }
+
+  // 3. Sector Risk Check
   if (typeof totals === 'function') {
     const tot = totals();
     const gt = tot ? tot.gt : 0;
@@ -6810,7 +6869,7 @@ function generatePortfolioAlerts() {
       stocks.forEach(s => {
         const sector = (s.sector || s.type || '').toLowerCase();
         if (sector.includes('bank') || sector.includes('commercial')) {
-          const t = (typeof cS === 'function') ? cS(s) : { value: 0 };
+          const t = typeof cS === 'function' ? cS(s) : { value: 0 };
           bankVal += t.value || 0;
         }
       });
@@ -6818,7 +6877,7 @@ function generatePortfolioAlerts() {
       if (bankPct > 60) {
         alerts.push({
           type: 'risk', color: '#F4A623', title: `⚠️ Sector Exposure Risk`,
-          msg: `Banking sector represents ${bankPct.toFixed(1)}% of your total portfolio. Consider diversifying into other sectors.`
+          msg: `Banking sector makes up ${bankPct.toFixed(1)}% of your total portfolio weight. Consider diversifying.`
         });
       }
     }
@@ -6829,7 +6888,6 @@ function generatePortfolioAlerts() {
   if (typeof updateAlertBadge === 'function') updateAlertBadge();
 }
 
-// ── UI BADGE & MODAL RENDERERS ─────────────────────────────────────────────
 function updateAlertBadge() {
   const deskBadge = document.getElementById('alert-badge-desk');
   const mobBadge  = document.getElementById('alert-badge-mob');
@@ -6846,9 +6904,6 @@ function updateAlertBadge() {
 }
 
 function openAlertModal() {
-  // Regenerate alerts immediately when opening modal
-  if (typeof generatePortfolioAlerts === 'function') generatePortfolioAlerts();
-
   const container = document.getElementById('alerts-container') || document.getElementById('action-hub-container');
   if (!container) return;
 
@@ -6882,15 +6937,4 @@ function dismissAllAlerts() {
   hasUnreadAlerts = false;
   updateAlertBadge();
   if (typeof closeModal === 'function') closeModal('modal-alerts');
-}
-
-// ── PRICE SYNC HOOK ─────────────────────────────────────────────────────────
-// Automatically re-evaluate alerts whenever price sync completes
-if (typeof window.syncLivePrices === 'function') {
-  const originalSyncLivePrices = window.syncLivePrices;
-  window.syncLivePrices = async function(...args) {
-    const result = await originalSyncLivePrices.apply(this, args);
-    generatePortfolioAlerts();
-    return result;
-  };
 }
