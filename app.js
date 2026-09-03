@@ -224,17 +224,21 @@ function getLatestMarketSession() {
 function setPriceButtonState() {
   const priceDates = (snapshots && snapshots._priceDates) ? snapshots._priceDates : {};
   const { sessionDateStr } = getLatestMarketSession();
+  const sessionTime = new Date(sessionDateStr).getTime();
   
   const expKeys = [
     ...(typeof stocks !== 'undefined' ? stocks.map(s => s.id) : []),
     ...(typeof funds  !== 'undefined' ? funds.map(f => f.id)  : []),
   ];
 
-  // Check if every stock/fund has been updated on or after the latest valid session
-  const allUpdated = expKeys.length > 0 && expKeys.every(k => {
+  if (expKeys.length === 0) return;
+
+  // Check if every stock/fund has been updated on or after the latest valid session date
+  const allUpdated = expKeys.every(k => {
     if (!priceDates[k]) return false;
-    const keyDay = new Date(priceDates[k]).toDateString();
-    return new Date(keyDay) >= new Date(sessionDateStr);
+    const keyDayStr = new Date(priceDates[k]).toDateString();
+    const keyDayTime = new Date(keyDayStr).getTime();
+    return keyDayTime >= sessionTime;
   });
 
   const allBtns = [
@@ -248,18 +252,20 @@ function setPriceButtonState() {
     b.style.cursor  = 'pointer';
 
     if (allUpdated) {
-      b.textContent      = 'Updated';
-      b.style.background = 'var(--g)';
-      b.style.color      = '#000';
-      b.style.borderColor= 'var(--g)';
+      b.textContent       = '✓ Updated';
+      b.style.background  = 'var(--g)';
+      b.style.color       = '#000';
+      b.style.borderColor = 'var(--g)';
     } else {
-      b.innerHTML        = '<span id="' + (b.id === 'sync-btn' ? 'sync-icon' : 'sync-icon-mob') + '"></span> Update Prices';
-      b.style.background = 'transparent';
-      b.style.color      = '#555';
-      b.style.borderColor= '#333';
+      const iconId = b.id === 'sync-btn' ? 'sync-icon' : 'sync-icon-mob';
+      b.innerHTML         = `<span id="${iconId}"></span> Update Prices`;
+      b.style.background  = 'transparent';
+      b.style.color       = '#555';
+      b.style.borderColor = '#333';
     }
   });
 }
+
 let _dataReady = false; // blocks syncToSupabase until at least one successful read
 let _syncRetries = 0;
 async function syncFromSupabase() {
@@ -271,7 +277,6 @@ async function syncFromSupabase() {
     if (error) {
       _syncFromRunning = false;
       console.error('Supabase read error:', error.message, error.code);
-      // Keep retrying: 3s → 8s → 20s → 30s then every 30s
       const delays = [3000, 8000, 20000, 30000];
       const delay = delays[Math.min(_syncRetries, delays.length - 1)];
       _syncRetries++;
@@ -305,7 +310,13 @@ async function syncFromSupabase() {
       }
       applyMigrations(stocks, funds);
       updateMonthlySnapshots();
-      renderAll(); updateHeader();
+      renderAll(); 
+      updateHeader();
+      
+      // Update UI button states & run smart action hub alerts
+      setPriceButtonState();
+      if (typeof generatePortfolioAlerts === 'function') generatePortfolioAlerts();
+
       if (snapshots._lastPriceTime) stampPriceUpdate(snapshots._lastPriceTime);
       saveToCache();
       _dataReady = true;
