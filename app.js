@@ -3292,6 +3292,32 @@ function deleteCurrentStockPeriod() {
   );
 }
 
+//Delete selected report from watchlist
+function deleteReportPeriod(ticker, reportKey) {
+  if (!ticker || !reportKey) return;
+
+  // 1. Remove from Watchlist if present
+  if (snapshots._watchlist && snapshots._watchlist[ticker] && snapshots._watchlist[ticker].reports) {
+    delete snapshots._watchlist[ticker].reports[reportKey];
+  }
+
+  // 2. Remove from Owned Stock if present
+  const owned = stocks.find(s => s.id === ticker);
+  if (owned) {
+    if (owned.reports) delete owned.reports[reportKey];
+    if (owned.fundamentals && owned.fundamentals.reportPeriod === reportKey) {
+      delete owned.fundamentals.reportPeriod;
+      delete owned.fundamentals.raw;
+      // Auto-sync to remaining latest report period if any exist
+      if (typeof getLatestReportPeriod === 'function') getLatestReportPeriod(owned);
+    }
+  }
+
+  persist();
+  renderAll();
+  showToast(`Deleted ${reportKey} report for ${ticker}`);
+}
+
 function saveEditFundamentals(){
   const s = stocks.find(x => x.id === _efStockId);
   if (!s) return;
