@@ -5750,6 +5750,49 @@ async function evaluateCompanyForAlert(ticker, isOwned) {
     currentPrice: metrics.currentPrice
   };
 }
+// Compares today's evaluation for one company against what was last actually shown for it
+// (stored in snapshots._alertState). Only returns true when a value has crossed into a new
+// step/bucket, or a flag has flipped from off to on — so the same unchanged condition doesn't
+// re-notify you every single sync. When it decides something IS new, it saves today's state
+// as the new baseline for next time.
+function shouldSurfaceAlert(evalResult) {
+  if (!snapshots._alertState) snapshots._alertState = {};
+  const prev = snapshots._alertState[evalResult.ticker] || {};
+  const curr = {};
+
+  // A. Profit target: re-surface every +10% once past the 50% trigger
+  if (evalResult.profitPct !== null && evalResult.profitPct >= 50) {
+    curr.profitStep = Math.floor(evalResult.profitPct / 10) * 10;
+  }
+
+  // B. DCA add-more (owned, near your average cost, decent score): re-surface every +5 score points
+  const dcaEligible = evalResult.isOwned
+    && evalResult.profitPct !== null
+    && evalResult.profitPct < 50
+    && Math.abs(evalResult.profitPct) <= 5
+    && evalResult.compositeScore >= 60;
+  if (dcaEligible) {
+    curr.scoreStep = Math.floor(evalResult.compositeScore / 5) * 5;
+  }
+
+  // C. Watchlist entry: re-surface every +10% deeper discount, or a fresh near-4-week-low flag
+  if (!evalResult.isOwned) {
+    if (evalResult.discountPct !== null && evalResult.discountPct >= 20) {
+      curr.discountStep = Math.floor(evalResult.discountPct / 10) * 10;
+    }
+    if (evalResult.nearLow) curr.lowFlag = true;
+  }
+
+  // D. Warning signals (oversupply / overvalued / overbought): re-surface only when the category itself changes
+  if (['WAIT / SELL', 'HOLD (Overvalued)', 'WAIT (Overbought)'].includes(evalResult.signal)) {
+    curr.warnSignal = evalResult.signal;
+  }
+
+  const isNew = Object.keys(curr).some(k => curr[k] !== prev[k]);
+  if (isNew) snapshots._alertState[evalResult.ticker] = curr;
+
+  return isNew;
+}
 
 // 6. Chart Image Embed Helper
 function addChartToPdf(doc, canvasId, x, y, maxWidth, maxHeight) {
@@ -6753,114 +6796,85 @@ function updatePeerComparisonTable() {
 // Fetch all DSE tickers immediately on startup
 fetchDynamicTickers();
 
-// ── SMART ACTION HUB & ALERTS ENGINE (V2: QUANT, RADAR & FUNDAMENTAL INTEGRATED) ──
+// ── SMART ACTION HUB & ALERTS ENGINE (V3: FULL PORTFOLIO + WATCHLIST, STEP-AWARE) ──
 let activeAlerts = [];
 let hasUnreadAlerts = false;
 
-function generatePortfolioAlerts() {
-  const alerts = [];
+
+async function generatePortfolioAlerts() {
+  // 1. Build the full list of tickers to check: everything owned, plus everything watchlisted
+  //    that isn't already owned (owned status wins if a ticker is in both).
+  const tickers = [];
+  const seen = new Set();
 
   if (Array.isArray(stocks)) {
     stocks.forEach(s => {
-      // Portfolio math lookup (shares, invested, gain, value)
-      const t = typeof cS === 'function' 
-        ? cS(s) 
-        : { shares: parseFloat(s.shares || 0), invested: parseFloat(s.invested || 0), gain: 0, value: 0 };
-      
-      const currentPrice = parseFloat(s.currentPrice || s.price || 0);
-      if (currentPrice <= 0) return;
-
-      // 1. Live Market Data & Quant Signal Integration from Radar
-      let row = { close_price: currentPrice, outstanding_bid: 0, outstanding_offer: 0 };
-      if (typeof currentRadarData !== 'undefined' && Array.isArray(currentRadarData)) {
-        const found = currentRadarData.find(r => r.ticker === s.id || r.symbol === s.id);
-        if (found) row = found;
-      }
-      
-      // Execute your existing Radar scoring functions
-      const fundScoreObj = typeof calculateFundamentalScore === 'function' 
-        ? calculateFundamentalScore(s, s.id) 
-        : { score: 0, hasData: false };
-        
-      const analysis = typeof calculateQuantSignal === 'function'
-        ? calculateQuantSignal(row, fundScoreObj, s, s.id)
-        : { compositeScore: 0, signal: 'N/A' };
-
-      const quantScore = analysis.compositeScore || 0;
-
-      // Unified Metric Engine for Fair Value & Sector Financials
-      const calc = typeof calculateSectorMetrics === 'function'
-        ? calculateSectorMetrics({ raw: s.fundamentals?.raw || s.fundamentals || {}, price: currentPrice, type: s.type || 'general' })
-        : {};
-
-      const fv = calc.fairValue || s.fairValue;
-      const isOwned = t.shares > 0;
-
-      // 2. Checks for CURRENTLY HELD STOCKS (Portfolio Companies)
-      if (isOwned) {
-        const avgPrice = t.invested / t.shares;
-        const profitPct = t.invested > 0 ? (t.gain / t.invested) * 100 : 0;
-        const priceVsAvgPct = ((currentPrice - avgPrice) / avgPrice) * 100;
-
-        // A. Profit Target (+50%)
-        if (profitPct >= 50) {
-          alerts.push({
-            type: 'profit', color: '#00C896', title: `🎯 Profit Target Hit: ${s.id}`,
-            msg: `${s.name || s.id} is up +${profitPct.toFixed(1)}% over cost basis. Consider harvesting partial profits.`
-          });
-        }
-
-        // B. Cost Basis Proximity & DCA Logic (Quant Score Scored)
-        if (priceVsAvgPct <= 5) { 
-          if (quantScore >= 60) {
-            alerts.push({
-              type: 'buy', color: '#00C896', title: `🟢 Accumulate / DCA Entry: ${s.id}`,
-              msg: `Price (${currentPrice}) is near/below your average cost (${Math.round(avgPrice)}). Quant score is strong (${quantScore}/100). Excellent setup to add capital.`
-            });
-          } else if (priceVsAvgPct < 0 && quantScore < 45) {
-            alerts.push({
-              type: 'warning', color: '#F4A623', title: `🟡 Caution on Dip: ${s.id}`,
-              msg: `Position is down (${priceVsAvgPct.toFixed(1)}%), but HOLD OFF on averaging down. Radar Quant Score is weak (${quantScore}/100).`
-            });
-          }
-        }
-
-        // C. Overvaluation Guardrail
-        if (s.avoidAbove && currentPrice >= s.avoidAbove) {
-          alerts.push({
-            type: 'warning', color: '#E056A0', title: `⚠️ Avoid-Above Cap Reached: ${s.id}`,
-            msg: `${s.name || s.id} crossed your avoid limit (${s.avoidAbove}). Avoid deploying new funds here.`
-          });
-        }
-      } 
-
-      // 3. Checks for WATCHLIST STOCKS or Entry Point Radar Triggers
-      if (quantScore >= 75) {
-        alerts.push({
-          type: 'buy', color: '#4A90E2', title: `🚀 Strong Radar Buy Signal: ${s.id}`,
-          msg: `${s.id} triggered a Strong Buy (${quantScore}/100) based on order book depth, trend, and fundamentals. Price: TSh ${currentPrice.toLocaleString()}.`
-        });
-      } else if (quantScore <= 35 && !isOwned) {
-        alerts.push({
-          type: 'warning', color: '#F4A623', title: `🟡 Low Score / Wait: ${s.id}`,
-          msg: `Radar score is weak (${quantScore}/100). Fundamental or order-book momentum is insufficient for entry.`
-        });
-      }
-
-      // D. Fair Value Discount Alerts (All Monitored Companies)
-      if (fv && fv > 0) {
-        const discount = ((fv - currentPrice) / fv) * 100;
-        if (discount >= 20) {
-          alerts.push({
-            type: 'fairValue', color: '#00C896', title: `💎 Undervalued Entry: ${s.id}`,
-            msg: `Trading at TSh ${currentPrice.toLocaleString()}, a ${discount.toFixed(1)}% margin of safety below Fair Value (TSh ${Math.round(fv).toLocaleString()}).`
-          });
-        }
+      const t = typeof cS === 'function' ? cS(s) : { shares: parseFloat(s.shares || 0) };
+      if (t.shares > 0 && !seen.has(s.id)) {
+        tickers.push({ ticker: s.id, isOwned: true });
+        seen.add(s.id);
       }
     });
   }
 
-  // 4. Sector Concentration Risk Check
+  if (snapshots && snapshots._watchlist) {
+    Object.keys(snapshots._watchlist).forEach(ticker => {
+      if (!seen.has(ticker)) {
+        tickers.push({ ticker, isOwned: false });
+        seen.add(ticker);
+      }
+    });
+  }
+
+  // 2. Evaluate every ticker in parallel (each one fetches its own depth data independently now)
+  const results = await Promise.all(
+    tickers.map(({ ticker, isOwned }) => evaluateCompanyForAlert(ticker, isOwned))
+  );
+
+  // 3. Turns one evaluation into a card matching the format the bell modal already renders
+  const buildAlertCard = (evalResult) => {
+    let color = '#4A90E2';
+    let emoji = '🔔';
+
+    if (evalResult.profitPct !== null && evalResult.profitPct >= 50) {
+      color = '#00C896'; emoji = '🎯';
+    } else if (['WAIT / SELL', 'HOLD (Overvalued)', 'WAIT (Overbought)'].includes(evalResult.signal)) {
+      color = '#E05656'; emoji = '⚠️';
+    } else if (evalResult.isOwned) {
+      color = '#00C896'; emoji = '🟢';
+    } else {
+      color = '#00C896'; emoji = '💎';
+    }
+
+    return {
+      type: evalResult.isOwned ? 'portfolio' : 'watchlist',
+      ticker: evalResult.ticker,
+      color,
+      title: `${emoji} ${evalResult.ticker}`,
+      msg: evalResult.reasons.map(r => r.charAt(0).toUpperCase() + r.slice(1)).join('. ') + '.'
+    };
+  };
+
+  const alerts = [];
+  let anyNew = false;
+
+  results.forEach((evalResult, i) => {
+    const ticker = tickers[i].ticker;
+
+    // If nothing is currently triggered for this ticker, clear its saved state so that if the
+    // same condition returns later, it counts as new again instead of matching a stale bucket.
+    if (!evalResult) {
+      if (snapshots._alertState && snapshots._alertState[ticker]) {
+        delete snapshots._alertState[ticker];
+      }
+      return;
+    }
+
+    if (shouldSurfaceAlert(evalResult)) anyNew = true;
+    alerts.push(buildAlertCard(evalResult));
+  });
+
+  // 4. Sector Concentration Risk Check (unchanged from before)
   if (typeof totals === 'function') {
     const tot = totals();
     const gt = tot ? tot.gt : 0;
@@ -6884,9 +6898,11 @@ function generatePortfolioAlerts() {
   }
 
   activeAlerts = alerts;
-  hasUnreadAlerts = alerts.length > 0;
+  hasUnreadAlerts = anyNew;
+  saveToCache();
   if (typeof updateAlertBadge === 'function') updateAlertBadge();
 }
+
 
 // ── UI BADGE & MODAL RENDERERS ─────────────────────────────────────────────
 function updateAlertBadge() {
