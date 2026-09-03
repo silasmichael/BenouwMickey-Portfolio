@@ -230,7 +230,6 @@ function setPriceButtonState() {
     ...(typeof funds  !== 'undefined' ? funds.map(f => f.id)  : []),
   ];
 
-  // Check if every stock/fund has been updated on or after the latest valid session
   const allUpdated = expKeys.length > 0 && expKeys.every(k => {
     if (!priceDates[k]) return false;
     const keyDay = new Date(priceDates[k]).toDateString();
@@ -243,23 +242,26 @@ function setPriceButtonState() {
   ].filter(Boolean);
 
   allBtns.forEach(b => {
-    b.disabled      = false;
-    b.style.opacity = '1';
-    b.style.cursor  = 'pointer';
-
     if (allUpdated) {
       b.textContent      = 'Updated';
       b.style.background = 'var(--g)';
       b.style.color      = '#000';
       b.style.borderColor= 'var(--g)';
+      b.style.opacity    = '0.7';
+      b.style.cursor     = 'not-allowed';
+      b.disabled         = true;
     } else {
       b.innerHTML        = '<span id="' + (b.id === 'sync-btn' ? 'sync-icon' : 'sync-icon-mob') + '"></span> Update Prices';
       b.style.background = 'transparent';
       b.style.color      = '#555';
       b.style.borderColor= '#333';
+      b.style.opacity    = '1';
+      b.style.cursor     = 'pointer';
+      b.disabled         = false;
     }
   });
 }
+
 let _dataReady = false; // blocks syncToSupabase until at least one successful read
 let _syncRetries = 0;
 async function syncFromSupabase() {
@@ -271,7 +273,6 @@ async function syncFromSupabase() {
     if (error) {
       _syncFromRunning = false;
       console.error('Supabase read error:', error.message, error.code);
-      // Keep retrying: 3s → 8s → 20s → 30s then every 30s
       const delays = [3000, 8000, 20000, 30000];
       const delay = delays[Math.min(_syncRetries, delays.length - 1)];
       _syncRetries++;
@@ -307,6 +308,7 @@ async function syncFromSupabase() {
       updateMonthlySnapshots();
       renderAll(); updateHeader();
       if (snapshots._lastPriceTime) stampPriceUpdate(snapshots._lastPriceTime);
+      setPriceButtonState();
       saveToCache();
       _dataReady = true;
     }
@@ -323,6 +325,7 @@ async function syncFromSupabase() {
   }
   finally { _syncFromRunning = false; }
 }
+
 
 async function syncToSupabase() {
   if (!_dataReady) return; // CRITICAL: never write before first Supabase read — prevents wiping live data
