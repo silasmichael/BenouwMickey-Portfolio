@@ -221,25 +221,39 @@ function getLatestMarketSession() {
   };
 }
 
+function toDateCode(d) {
+  if (!d) return '';
+  const dateObj = new Date(d);
+  if (isNaN(dateObj.getTime())) return '';
+  return `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`;
+}
+
 function setPriceButtonState() {
   const priceDates = (snapshots && snapshots._priceDates) ? snapshots._priceDates : {};
   const { sessionDateStr } = getLatestMarketSession();
-  const sessionTime = new Date(sessionDateStr).getTime();
   
+  const sessionCode = toDateCode(sessionDateStr);
+  if (!sessionCode) return;
+
   const expKeys = [
     ...(typeof stocks !== 'undefined' ? stocks.map(s => s.id) : []),
     ...(typeof funds  !== 'undefined' ? funds.map(f => f.id)  : []),
   ];
 
-  if (expKeys.length === 0) return;
+  // Fallback: check global last price update timestamp
+  const lastTimeCode = toDateCode(snapshots && snapshots._lastPriceTime);
+  const globalUpdated = lastTimeCode && lastTimeCode >= sessionCode;
 
-  // Check if every stock/fund has been updated on or after the latest valid session date
-  const allUpdated = expKeys.every(k => {
-    if (!priceDates[k]) return false;
-    const keyDayStr = new Date(priceDates[k]).toDateString();
-    const keyDayTime = new Date(keyDayStr).getTime();
-    return keyDayTime >= sessionTime;
-  });
+  // Check if stocks/funds are updated on or after the target session date
+  let allUpdated = false;
+  if (expKeys.length > 0) {
+    allUpdated = expKeys.every(k => {
+      const kCode = toDateCode(priceDates[k]);
+      return (kCode && kCode >= sessionCode) || globalUpdated;
+    });
+  } else if (globalUpdated) {
+    allUpdated = true;
+  }
 
   const allBtns = [
     document.getElementById('sync-btn'),
