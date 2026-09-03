@@ -222,19 +222,8 @@ function getLatestMarketSession() {
 }
 
 function setPriceButtonState() {
-  const priceDates = (snapshots && snapshots._priceDates) ? snapshots._priceDates : {};
   const { sessionDateStr } = getLatestMarketSession();
-  
-  const expKeys = [
-    ...(typeof stocks !== 'undefined' ? stocks.map(s => s.id) : []),
-    ...(typeof funds  !== 'undefined' ? funds.map(f => f.id)  : []),
-  ];
-
-  const allUpdated = expKeys.length > 0 && expKeys.every(k => {
-    if (!priceDates[k]) return false;
-    const keyDay = new Date(priceDates[k]).toDateString();
-    return new Date(keyDay) >= new Date(sessionDateStr);
-  });
+  const isCurrent = snapshots && snapshots._lastSyncSessionStr === sessionDateStr;
 
   const allBtns = [
     document.getElementById('sync-btn'),
@@ -242,7 +231,7 @@ function setPriceButtonState() {
   ].filter(Boolean);
 
   allBtns.forEach(b => {
-    if (allUpdated) {
+    if (isCurrent) {
       b.textContent      = 'Updated';
       b.style.background = 'var(--g)';
       b.style.color      = '#000';
@@ -261,6 +250,7 @@ function setPriceButtonState() {
     }
   });
 }
+
 
 let _dataReady = false; // blocks syncToSupabase until at least one successful read
 let _syncRetries = 0;
