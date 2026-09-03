@@ -5596,13 +5596,12 @@ function calculateFundamentalScore(stock, symbol) {
 }
 
 // 5. Signal Decision Engine (Valuation & Trend Aware)
-function calculateQuantSignal(row, fundScoreObj, holding, symbol) {
+function calculateQuantSignal(row, fundScoreObj, holding, symbol, depthArray) {
   const closePx = row.close_price || 0;
   const bids = row.outstanding_bid || 0;
   const offers = row.outstanding_offer || 0;
   const totalDepth = bids + offers;
   
-  // 1. Order Depth Score (Max 15 points - demoted to avoid hype traps)
   let depthScore = 7; 
   if (totalDepth > 0) {
     depthScore = Math.round((bids / totalDepth) * 15);
@@ -5610,44 +5609,42 @@ function calculateQuantSignal(row, fundScoreObj, holding, symbol) {
     depthScore = 15;
   }
 
-  // 2. Valuation Margin Score (Max 25 points)
-  let valScore = 10; // Default fair
+  let valScore = 10;
   let isOvervalued = false;
   
   if (holding && holding.fairValue) {
     const fv = holding.fairValue;
     const avoid = holding.avoidAbove || (fv * 1.1);
-    const buyLow = fv * 0.6; // approx buy zone
+    const buyLow = fv * 0.6;
     const buyHigh = fv * 0.8;
 
     if (closePx <= buyHigh) valScore = 25;
     else if (closePx <= fv) valScore = 15;
-    else if (closePx >= avoid) { valScore = -15; isOvervalued = true; } // Penalty for being way too high!
-    else { valScore = 0; isOvervalued = (closePx > fv); } // Slightly over FV
+    else if (closePx >= avoid) { valScore = -15; isOvervalued = true; }
+    else { valScore = 0; isOvervalued = (closePx > fv); }
   } else {
-    valScore = 15; // Baseline if no fair value is calculated
+    valScore = 15;
   }
 
   // 3. Price Trend (14-day momentum check)
   let trendPenalty = 0;
   let trendStr = "";
-  if (typeof currentRadarData !== 'undefined' && currentRadarData.length > 0) {
-    const currentIndex = currentRadarData.findIndex(d => d === row);
+  const srcData = depthArray || (typeof currentRadarData !== 'undefined' ? currentRadarData : []);
+  if (srcData.length > 0) {
+    const currentIndex = srcData.findIndex(d => d === row);
     if (currentIndex !== -1) {
-      // Look back ~14 trading sessions
       let lookbackIdx = currentIndex + 14;
-      if (lookbackIdx >= currentRadarData.length) lookbackIdx = currentRadarData.length - 1;
+      if (lookbackIdx >= srcData.length) lookbackIdx = srcData.length - 1;
       
-      if (lookbackIdx > currentIndex + 4) { // Only calculate if we have at least 5 days of history
-        const historicalPx = currentRadarData[lookbackIdx].close_price;
+      if (lookbackIdx > currentIndex + 4) {
+        const historicalPx = srcData[lookbackIdx].close_price;
         if (historicalPx > 0) {
           const pctChange = ((closePx - historicalPx) / historicalPx) * 100;
           trendStr = `14d trend: ${(pctChange>=0?'+':'')}${pctChange.toFixed(1)}%. `;
           
-          // If price surged > 10% in 14 days AND it's overvalued -> massive penalty
           if (pctChange > 10 && isOvervalued) {
             trendPenalty = 20; 
-          } else if (pctChange > 15) { // Surged incredibly fast even if not overvalued yet
+          } else if (pctChange > 15) {
             trendPenalty = 10;
           }
         }
@@ -5655,11 +5652,9 @@ function calculateQuantSignal(row, fundScoreObj, holding, symbol) {
     }
   }
 
-  // 4. Calculate Master Composite Score (Max 100)
   let baseComposite = fundScoreObj.hasData ? (fundScoreObj.score + depthScore + valScore) : Math.round(((depthScore + valScore) / 40) * 100);
   let compositeScore = Math.max(0, Math.min(100, baseComposite - trendPenalty));
 
-  // 5. Hard Safeguard Overrides
   if (holding && holding.buy_price && holding.buy_price > 0) {
     const profitPct = ((closePx - holding.buy_price) / holding.buy_price) * 100;
     if (profitPct >= 50) {
@@ -5672,7 +5667,6 @@ function calculateQuantSignal(row, fundScoreObj, holding, symbol) {
   }
 
   if (isOvervalued && compositeScore >= 60) {
-    // Overrides a "BUY" if the stock is trading above Fair Value / Avoid Above limit
     return {
       compositeScore: Math.min(compositeScore, 65), depthScore, valScore,
       signal: 'HOLD (Overvalued)', color: '#F4A623',
@@ -5688,7 +5682,6 @@ function calculateQuantSignal(row, fundScoreObj, holding, symbol) {
     };
   }
 
-  // Standard Signal Output
   if (compositeScore >= 75) {
     return { compositeScore, depthScore, valScore, signal: 'BUY NOW', color: '#00C896', comment: `🟢 Strong score (${compositeScore}/100). Undervalued & good demand. ${trendStr}` };
   } else if (compositeScore >= 55) {
@@ -5700,6 +5693,63 @@ function calculateQuantSignal(row, fundScoreObj, holding, symbol) {
   }
 }
 
+async function evaluateCompanyForAlert(ticker, isOwned) {
+  const metrics = getCompanyMetricsForRadar(ticker);
+  if (!metrics || !metrics.currentPrice) return null;
+
+  const depthData = await fetchDepthData(ticker, 30);
+  const fundScore = calculateFundamentalScore(metrics, ticker);
+  const latestRow = depthData[0] || { close_price: metrics.currentPrice, outstanding_bid: 0, outstanding_offer: 0 };
+  const quant     = calculateQuantSignal(latestRow, fundScore, metrics, ticker, depthData);
+
+  const closes    = depthData.map(d => d.close_price).filter(v => v > 0);
+  const fourWkLow = closes.length ? Math.min(...closes) : null;
+  const nearLow   = fourWkLow !== null && metrics.currentPrice <= fourWkLow * 1.05;
+
+  const discountPct = metrics.fairValue > 0
+    ? ((metrics.fairValue - metrics.currentPrice) / metrics.fairValue) * 100
+    : null;
+  const undervalued = discountPct !== null && discountPct >= 20;
+
+  const reasons = [];
+  let profitPct = null;
+
+  if (isOwned && metrics.buy_price > 0) {
+    profitPct = ((metrics.currentPrice - metrics.buy_price) / metrics.buy_price) * 100;
+
+    if (profitPct >= 50) {
+      reasons.push(`up ${profitPct.toFixed(1)}% vs your average cost — past the 50% target, consider taking some profit`);
+    } else if (Math.abs(profitPct) <= 5 && quant.compositeScore >= 60) {
+      reasons.push(`trading close to your average cost with a strong score (${quant.compositeScore}/100) — a reasonable spot to add more`);
+    }
+  }
+
+  if (!isOwned && quant.signal !== 'AVOID') {
+    const whyEntry = [];
+    if (undervalued) whyEntry.push(`trading ${discountPct.toFixed(0)}% below fair value`);
+    if (nearLow)      whyEntry.push(`near its lowest price in the past ~4 weeks`);
+    if (whyEntry.length) reasons.push(`worth considering for your portfolio — ${whyEntry.join(' and ')}`);
+  }
+
+  if (quant.signal === 'WAIT / SELL')       reasons.push('heavy sell-side supply right now');
+  if (quant.signal === 'HOLD (Overvalued)') reasons.push("trading above fair value — don't chase this price");
+  if (quant.signal === 'WAIT (Overbought)') reasons.push('price moved up too fast, pullback risk');
+
+  if (!reasons.length) return null;
+
+  return {
+    ticker,
+    isOwned,
+    headline: `${ticker}: ${reasons[0]}`,
+    reasons,
+    compositeScore: quant.compositeScore,
+    signal: quant.signal,
+    profitPct,
+    discountPct,
+    nearLow,
+    currentPrice: metrics.currentPrice
+  };
+}
 
 // 6. Chart Image Embed Helper
 function addChartToPdf(doc, canvasId, x, y, maxWidth, maxHeight) {
