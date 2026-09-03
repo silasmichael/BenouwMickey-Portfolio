@@ -6736,7 +6736,6 @@ function generatePortfolioAlerts() {
 
   if (Array.isArray(stocks)) {
     stocks.forEach(s => {
-      // Calculate current position metrics
       const t = (typeof cS === 'function') ? cS(s) : { shares: 0, invested: 0, gain: 0, value: 0 };
       const currentPrice = parseFloat(s.currentPrice || 0);
       if (currentPrice <= 0) return;
@@ -6744,59 +6743,65 @@ function generatePortfolioAlerts() {
       const isOwned = t.shares > 0;
       const fv = s.fairValue || (s.fundamentals && s.fundamentals.raw && s.fundamentals.raw.fairValue);
 
-      // 1. CHECKS FOR OWNED STOCKS
+      // 1. Profit Target Alerts (+50% or higher)
       if (isOwned && t.invested > 0) {
-        const avgPrice = t.invested / t.shares;
         const profitPct = (t.gain / t.invested) * 100;
-        const priceVsAvgPct = ((currentPrice - avgPrice) / avgPrice) * 100;
+        const avgPrice = t.invested / t.shares;
 
-        // A. Profit Target (+50% or higher)
         if (profitPct >= 50) {
           alerts.push({
             type: 'profit', color: '#00C896', title: `🎯 Profit Target Hit: ${s.id}`,
-            msg: `${s.name || s.id} is up +${profitPct.toFixed(1)}% over your cost basis. Consider taking partial profits.`
+            msg: `${s.name || s.id} is up +${profitPct.toFixed(1)}% over your average cost. Consider taking partial profits.`
           });
         }
 
-        // B. Good DCA / Accumulation Zone (Trading near or below average buy price)
-        if (priceVsAvgPct <= 2) {
+        // 2. Accumulation / DCA Opportunity (Trading at or below cost basis)
+        if (currentPrice <= avgPrice) {
           alerts.push({
             type: 'buy', color: '#00C896', title: `🟢 DCA Entry: ${s.id}`,
-            msg: `Current price (TSh ${currentPrice.toLocaleString()}) is below/near your average cost (TSh ${Math.round(avgPrice).toLocaleString()}). Great opportunity to lower your average cost.`
+            msg: `Current price (TSh ${currentPrice.toLocaleString()}) is at or below your average cost (TSh ${Math.round(avgPrice).toLocaleString()}). Good opportunity to accumulate.`
           });
         }
 
-        // C. Avoid-Above Ceiling Cap
+        // 3. Avoid Above Ceiling Cap Reached
         if (s.avoidAbove && currentPrice >= s.avoidAbove) {
           alerts.push({
-            type: 'warning', color: '#E056A0', title: `⚠️ Near Limit / Cap Reached: ${s.id}`,
-            msg: `${s.id} is trading at TSh ${currentPrice.toLocaleString()}, which is above your recommended limit (TSh ${s.avoidAbove.toLocaleString()}). Avoid adding new capital.`
+            type: 'warning', color: '#E056A0', title: `⚠️ Near Cap / Avoid Above: ${s.id}`,
+            msg: `${s.id} is trading at TSh ${currentPrice.toLocaleString()}, reaching your ceiling limit (TSh ${s.avoidAbove.toLocaleString()}). Pause new purchases.`
           });
         }
       }
 
-      // 2. DISCOUNT TO FAIR VALUE (All Companies)
-      if (fv && fv > 0) {
-        const discount = ((fv - currentPrice) / fv) * 100;
-        if (discount >= 15) {
-          alerts.push({
-            type: 'fairValue', color: '#00C896', title: `💎 Undervalued Stock: ${s.id}`,
-            msg: `${s.id} is trading at TSh ${currentPrice.toLocaleString()}, a ${discount.toFixed(1)}% discount to its Fair Value of TSh ${Math.round(fv).toLocaleString()}.`
-          });
-        }
-      }
-
-      // 3. STRONG BUY SIGNAL ALERT
-      if (s.signal === 'STRONG BUY' || s.signal === 'BUY') {
+      // 4. In Buy Zone Alert (Owned or Watchlist)
+      if (typeof inBuyZone === 'function' && inBuyZone(s)) {
         alerts.push({
-          type: 'signal', color: '#10B981', title: `📢 Active Buy Signal: ${s.id}`,
-          msg: `${s.id} carries a active ${s.signal} signal at current price TSh ${currentPrice.toLocaleString()}.`
+          type: 'buyZone', color: '#00C896', title: `✅ In Buy Zone: ${s.id}`,
+          msg: `${s.id} (TSh ${currentPrice.toLocaleString()}) is currently trading within its target Buy Zone (${s.buyZone}).`
+        });
+      }
+
+      // 5. Fair Value Discount (20%+ Margin of Safety)
+      if (fv && fv > currentPrice) {
+        const discount = ((fv - currentPrice) / fv) * 100;
+        if (discount >= 20) {
+          alerts.push({
+            type: 'fairValue', color: '#4A90E2', title: `💎 Undervalued Stock: ${s.id}`,
+            msg: `${s.id} is trading at TSh ${currentPrice.toLocaleString()}, a ${discount.toFixed(1)}% discount below its Fair Value (TSh ${Math.round(fv).toLocaleString()}).`
+          });
+        }
+      }
+
+      // 6. Buy / Strong Buy / Accumulate Signals
+      if (s.signal === 'STRONG BUY' || s.signal === 'BUY' || s.signal === 'ACCUMULATE') {
+        alerts.push({
+          type: 'signal', color: '#10B981', title: `📢 Active Signal (${s.signal}): ${s.id}`,
+          msg: `${s.id} carries an active ${s.signal} signal at TSh ${currentPrice.toLocaleString()}.`
         });
       }
     });
   }
 
-  // 4. SECTOR CONCENTRATION CHECK
+  // 7. Sector Concentration Check (>60% in Banking)
   if (typeof totals === 'function') {
     const tot = totals();
     const gt = tot ? tot.gt : 0;
@@ -6812,8 +6817,8 @@ function generatePortfolioAlerts() {
       const bankPct = (bankVal / gt) * 100;
       if (bankPct > 60) {
         alerts.push({
-          type: 'risk', color: '#F4A623', title: `⚠️ High Sector Exposure`,
-          msg: `Banking sector represents ${bankPct.toFixed(1)}% of your portfolio value. Consider diversifying into non-bank sectors.`
+          type: 'risk', color: '#F4A623', title: `⚠️ Sector Exposure Risk`,
+          msg: `Banking sector represents ${bankPct.toFixed(1)}% of your total portfolio. Consider diversifying into other sectors.`
         });
       }
     }
@@ -6841,6 +6846,9 @@ function updateAlertBadge() {
 }
 
 function openAlertModal() {
+  // Regenerate alerts immediately when opening modal
+  if (typeof generatePortfolioAlerts === 'function') generatePortfolioAlerts();
+
   const container = document.getElementById('alerts-container') || document.getElementById('action-hub-container');
   if (!container) return;
 
