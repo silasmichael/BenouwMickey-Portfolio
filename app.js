@@ -4969,6 +4969,10 @@ function renderAll() {
   renderProjection();
   renderBonds();
   renderPlanner();
+
+  // Refresh price button state and active alerts whenever UI renders
+  if (typeof setPriceButtonState === 'function') setPriceButtonState();
+  if (typeof generatePortfolioAlerts === 'function') generatePortfolioAlerts();
 }
 
 // Render from cache immediately so screen isn't blank underneath
