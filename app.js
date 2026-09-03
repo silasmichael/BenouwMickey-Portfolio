@@ -5316,7 +5316,24 @@ function getCompanyMetricsForRadar(ticker) {
   };
 }
 
+async function fetchDepthData(ticker, days) {
+  let depthData = [];
+  try {
+    if (typeof sb !== 'undefined' && sb.from) {
+      const { data, error } = await sb
+        .from('market_depth_logs')
+        .select('snapshot_date, created_at, close_price, outstanding_bid, outstanding_offer, turnover, symbol')
+        .eq('symbol', ticker)
+        .order('snapshot_date', { ascending: false })
+        .limit(days);
 
+      if (!error && data) depthData = data;
+    }
+  } catch (err) {
+    console.error(`Depth data fetch error for ${ticker}:`, err);
+  }
+  return depthData;
+}
 // 2. Load Radar Data & Calculate Scores
 async function loadRadarData() {
   const ticker = document.getElementById('radar-stock-select')?.value;
