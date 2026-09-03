@@ -5011,10 +5011,11 @@ async function syncLivePrices() {
   ];
 
   // Check if we ALREADY have the closing prices for the latest valid session
+  const sessionTime = new Date(marketInfo.sessionDateStr).getTime();
   const alreadyUpToDate = expKeys.length > 0 && expKeys.every(k => {
     if (!priceDates[k]) return false;
-    const keyDay = new Date(priceDates[k]).toDateString();
-    return new Date(keyDay) >= new Date(marketInfo.sessionDateStr);
+    const keyDayStr = new Date(priceDates[k]).toDateString();
+    return new Date(keyDayStr).getTime() >= sessionTime;
   });
 
   if (alreadyUpToDate) {
@@ -5029,16 +5030,10 @@ async function syncLivePrices() {
   // Show Loading Spinners
   allBtns.forEach(b => {
     const iconId = b.id === 'sync-btn' ? 'sync-icon' : 'sync-icon-mob';
-    b.innerHTML     = '<span id="' + iconId + '" class="loading-spin"></span> Updating...';
+    b.innerHTML     = `<span id="${iconId}" class="loading-spin"></span> Updating...`;
     b.disabled      = true;
     b.style.opacity = '0.7';
-    b.style.background  = 'transparent';
-    b.style.color       = '#555';
-    b.style.borderColor = '#333';
   });
-
-  const iconFresh    = document.getElementById('sync-icon');
-  const iconMobFresh = document.getElementById('sync-icon-mob');
 
   try {
     const response = await fetch('https://brwkhnqnsoormvpjqcmd.supabase.co/functions/v1/get-prices', {
@@ -5048,9 +5043,8 @@ async function syncLivePrices() {
 
     if (!response.ok) throw new Error('Server error ' + response.status);
     const result = await response.json();
-    const p = result.prices || result; // handles either { prices: {...} } or direct object
+    const p = result.prices || result;
 
-    // Create a normalized case-insensitive dictionary
     const normP = {};
     if (p && typeof p === 'object') {
       Object.keys(p).forEach(k => {
@@ -5130,26 +5124,14 @@ async function syncLivePrices() {
     setStatus('synced');
     showToast(`Updated ${stocksUpdated} stocks & ${fundsUpdated} funds for session ${marketInfo.sessionDateStr}`);
 
-    if (iconFresh)    iconFresh.classList.remove('loading-spin');
-    if (iconMobFresh) iconMobFresh.classList.remove('loading-spin');
-
-    allBtns.forEach(b => {
-      b.textContent      = 'Updated';
-      b.style.background = 'var(--g)';
-      b.style.color      = '#000';
-      b.style.borderColor= 'var(--g)';
-      b.style.opacity    = '1';
-      b.style.cursor     = 'pointer';
-      b.disabled         = false;
-    });
-
+    // Update Price Button Visual State
     setPriceButtonState();
+
+    // Generate alerts after price sync
+    if (typeof generatePortfolioAlerts === 'function') generatePortfolioAlerts();
 
   } catch (err) {
     console.error("Price sync error:", err);
-    if (iconFresh)    iconFresh.classList.remove('loading-spin');
-    if (iconMobFresh) iconMobFresh.classList.remove('loading-spin');
-    
     allBtns.forEach(b => {
       b.textContent      = 'Failed — Retry';
       b.style.color      = 'var(--r)';
@@ -5161,16 +5143,11 @@ async function syncLivePrices() {
     });
 
     setTimeout(() => {
-      allBtns.forEach(b => {
-        if (b.textContent && b.textContent.includes('Retry')) {
-          b.innerHTML        = '<span id="' + (b.id === 'sync-btn' ? 'sync-icon' : 'sync-icon-mob') + '"></span> Update Prices';
-          b.style.color      = '#555';
-          b.style.borderColor= '#333';
-        }
-      });
-    }, 8000);
+      setPriceButtonState();
+    }, 6000);
   }
 }
+
 
 // Reveal page once JS is fully loaded — prevents CSS flash on open
 document.addEventListener('DOMContentLoaded', () => {
