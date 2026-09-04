@@ -6827,80 +6827,40 @@ let activeAlerts = [];
 let hasUnreadAlerts = false;
 
 
+// Runs only after a price sync — updates the persisted alert inbox, one card per ticker
 async function generatePortfolioAlerts() {
-  // 1. Build the full list of tickers to check: everything owned, plus everything watchlisted
-  //    that isn't already owned (owned status wins if a ticker is in both).
   const tickers = [];
   const seen = new Set();
 
   if (Array.isArray(stocks)) {
     stocks.forEach(s => {
       const t = typeof cS === 'function' ? cS(s) : { shares: parseFloat(s.shares || 0) };
-      if (t.shares > 0 && !seen.has(s.id)) {
-        tickers.push({ ticker: s.id, isOwned: true });
-        seen.add(s.id);
-      }
+      if (t.shares > 0 && !seen.has(s.id)) { tickers.push({ ticker: s.id, isOwned: true }); seen.add(s.id); }
     });
   }
-
   if (snapshots && snapshots._watchlist) {
     Object.keys(snapshots._watchlist).forEach(ticker => {
-      if (!seen.has(ticker)) {
-        tickers.push({ ticker, isOwned: false });
-        seen.add(ticker);
-      }
+      if (!seen.has(ticker)) { tickers.push({ ticker, isOwned: false }); seen.add(ticker); }
     });
   }
 
-  // 2. Evaluate every ticker in parallel (each one fetches its own depth data independently now)
-  const results = await Promise.all(
-    tickers.map(({ ticker, isOwned }) => evaluateCompanyForAlert(ticker, isOwned))
-  );
-
-  // 3. Turns one evaluation into a card matching the format the bell modal already renders
-  const buildAlertCard = (evalResult) => {
-    let color = '#4A90E2';
-    let emoji = '🔔';
-
-    if (evalResult.profitPct !== null && evalResult.profitPct >= 50) {
-      color = '#00C896'; emoji = '🎯';
-    } else if (['WAIT / SELL', 'HOLD (Overvalued)', 'WAIT (Overbought)'].includes(evalResult.signal)) {
-      color = '#E05656'; emoji = '⚠️';
-    } else if (evalResult.isOwned) {
-      color = '#00C896'; emoji = '🟢';
-    } else {
-      color = '#00C896'; emoji = '💎';
-    }
-
-    return {
-      type: evalResult.isOwned ? 'portfolio' : 'watchlist',
-      ticker: evalResult.ticker,
-      color,
-      title: `${emoji} ${evalResult.ticker}`,
-      msg: evalResult.reasons.map(r => r.charAt(0).toUpperCase() + r.slice(1)).join('. ') + '.'
-    };
-  };
-
-  const alerts = [];
-  let anyNew = false;
+  const results = await Promise.all(tickers.map(({ ticker, isOwned }) => evaluateCompanyForAlert(ticker, isOwned)));
+  if (!snapshots._activeAlerts) snapshots._activeAlerts = [];
 
   results.forEach((evalResult, i) => {
     const ticker = tickers[i].ticker;
-
-    // If nothing is currently triggered for this ticker, clear its saved state so that if the
-    // same condition returns later, it counts as new again instead of matching a stale bucket.
     if (!evalResult) {
-      if (snapshots._alertState && snapshots._alertState[ticker]) {
-        delete snapshots._alertState[ticker];
-      }
+      if (snapshots._alertState && snapshots._alertState[ticker]) delete snapshots._alertState[ticker];
       return;
     }
+    if (!shouldSurfaceAlert(evalResult)) return; // unchanged — leave any existing card exactly as it is
 
-    if (shouldSurfaceAlert(evalResult)) anyNew = true;
-    alerts.push(buildAlertCard(evalResult));
+    const card = buildAlertCard(evalResult);
+    const idx = snapshots._activeAlerts.findIndex(a => a.id === ticker);
+    if (idx >= 0) snapshots._activeAlerts[idx] = card; else snapshots._activeAlerts.push(card);
   });
 
-  // 4. Sector Concentration Risk Check (unchanged from before)
+  // Sector concentration warning — clears itself once resolved, unlike company alerts (flag if you want it identical)
   if (typeof totals === 'function') {
     const tot = totals();
     const gt = tot ? tot.gt : 0;
@@ -6914,20 +6874,21 @@ async function generatePortfolioAlerts() {
         }
       });
       const bankPct = (bankVal / gt) * 100;
+      const idx = snapshots._activeAlerts.findIndex(a => a.id === '_sectorRisk');
       if (bankPct > 60) {
-        alerts.push({
-          type: 'risk', color: '#F4A623', title: `⚠️ Sector Exposure Risk`,
-          msg: `Banking sector makes up ${bankPct.toFixed(1)}% of your total portfolio weight. Consider diversifying.`
-        });
+        const card = { id: '_sectorRisk', ticker: 'PORTFOLIO', color: '#F4A623', msg: `Banking sector makes up ${bankPct.toFixed(1)}% of your total weight. Consider diversifying.`, date: new Date().toISOString(), seen: false };
+        if (idx >= 0) snapshots._activeAlerts[idx] = card; else snapshots._activeAlerts.push(card);
+      } else if (idx >= 0) {
+        snapshots._activeAlerts.splice(idx, 1);
       }
     }
   }
 
-  activeAlerts = alerts;
-  hasUnreadAlerts = anyNew;
-  saveToCache();
-  if (typeof updateAlertBadge === 'function') updateAlertBadge();
+  activeAlerts = snapshots._activeAlerts;
+  updateAlertBadge();
+  persist();
 }
+
 
 
 // ── UI BADGE & MODAL RENDERERS ─────────────────────────────────────────────
