@@ -6889,59 +6889,93 @@ async function generatePortfolioAlerts() {
   persist();
 }
 
+// Turns one evaluation into a persisted card: company, message, date, seen status
+function buildAlertCard(evalResult) {
+  let color = '#4A90E2';
+  if (evalResult.profitPct !== null && evalResult.profitPct >= 50) color = '#00C896';
+  else if (['WAIT / SELL', 'HOLD (Overvalued)', 'WAIT (Overbought)'].includes(evalResult.signal)) color = '#E05656';
+  else color = '#00C896';
 
-
-// ── UI BADGE & MODAL RENDERERS ─────────────────────────────────────────────
-function updateAlertBadge() {
-  const deskBadge = document.getElementById('alert-badge-desk');
-  const mobBadge  = document.getElementById('alert-badge-mob');
-  const count     = activeAlerts.length;
-
-  if (deskBadge) {
-    deskBadge.textContent = count;
-    deskBadge.style.display = (hasUnreadAlerts && count > 0) ? 'inline-block' : 'none';
-  }
-  if (mobBadge) {
-    mobBadge.textContent = count;
-    mobBadge.style.display = (hasUnreadAlerts && count > 0) ? 'inline-block' : 'none';
-  }
+  return {
+    id: evalResult.ticker,
+    ticker: evalResult.ticker,
+    color,
+    msg: evalResult.reasons.map(r => r.charAt(0).toUpperCase() + r.slice(1)).join('. ') + '.',
+    date: new Date().toISOString(),
+    seen: false
+  };
 }
 
-function openAlertModal() {
+// Draws the alert list from the current activeAlerts array — company tag, message, date bottom-right
+function renderAlertList() {
   const container = document.getElementById('alerts-container') || document.getElementById('action-hub-container');
   if (!container) return;
 
   if (activeAlerts.length === 0) {
     container.innerHTML = `<div style="text-align:center;color:#555;padding:30px;font-size:11px">🎉 No active alerts. All positions and watchlist stocks are operating within normal parameters.</div>`;
-  } else {
-    container.innerHTML = activeAlerts.map((a, i) => `
-      <div style="background:#111118;border-left:3px solid ${a.color};border:1px solid #1E2A3A;border-radius:8px;padding:10px 12px;margin-bottom:8px">
-        <div style="font-size:12px;font-weight:800;color:${a.color};margin-bottom:3px">${a.title}</div>
-        <div style="font-size:11px;color:#AAA;line-height:1.4">${a.msg}</div>
-        <div style="text-align:right;margin-top:6px">
-          <button onclick="dismissAlert(${i})" style="background:transparent;border:none;color:#555;font-size:9px;cursor:pointer">Dismiss</button>
-        </div>
-      </div>
-    `).join('');
+    return;
   }
 
-  hasUnreadAlerts = false;
-  updateAlertBadge();
+  container.innerHTML = activeAlerts.map(a => {
+    const bg = a.seen ? '#111118' : '#08080C';
+    const dateStr = new Date(a.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+    return `
+      <div style="background:${bg};border:1px solid #1E2A3A;border-radius:8px;padding:10px 12px;margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <span style="display:inline-block;border:1px solid ${a.color};color:${a.color};font-size:10px;font-weight:800;padding:2px 8px;border-radius:5px">${a.ticker}</span>
+          <button onclick="dismissAlert('${a.id}')" style="background:transparent;border:none;color:#555;font-size:12px;cursor:pointer">✕</button>
+        </div>
+        <div style="font-size:11px;color:#AAA;line-height:1.4">${a.msg}</div>
+        <div style="text-align:right;font-size:9px;color:#555;margin-top:6px">${dateStr}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+
+
+
+// ── UI BADGE & MODAL RENDERERS ─────────────────────────────────────────────
+// Shows the unseen-alert count on the bell, hides it once nothing's unseen
+function updateAlertBadge() {
+  const deskBadge = document.getElementById('alert-badge-desk');
+  const mobBadge  = document.getElementById('alert-badge-mob');
+  const unseenCount = (activeAlerts || []).filter(a => !a.seen).length;
+
+  if (deskBadge) { deskBadge.textContent = unseenCount; deskBadge.style.display = unseenCount > 0 ? 'inline-block' : 'none'; }
+  if (mobBadge)  { mobBadge.textContent  = unseenCount; mobBadge.style.display  = unseenCount > 0 ? 'inline-block' : 'none'; }
+}
+
+
+// Opens the bell modal from stored alerts only, then marks them seen
+function openAlertModal() {
+  activeAlerts = snapshots._activeAlerts || [];
+  renderAlertList();
   if (typeof openModal === 'function') openModal('modal-alerts');
-}
-
-function dismissAlert(idx) {
-  activeAlerts.splice(idx, 1);
+  activeAlerts.forEach(a => a.seen = true);
   updateAlertBadge();
-  openAlertModal();
+  persist();
 }
 
+// Removes one alert by id and redraws the list without closing the modal
+function dismissAlert(id) {
+  snapshots._activeAlerts = (snapshots._activeAlerts || []).filter(a => a.id !== id);
+  activeAlerts = snapshots._activeAlerts;
+  renderAlertList();
+  updateAlertBadge();
+  persist();
+}
+
+
+// Clears every stored alert and closes the modal
 function dismissAllAlerts() {
+  snapshots._activeAlerts = [];
   activeAlerts = [];
-  hasUnreadAlerts = false;
   updateAlertBadge();
   if (typeof closeModal === 'function') closeModal('modal-alerts');
+  persist();
 }
+
 
 // ── PRICE SYNC HOOK ─────────────────────────────────────────────────────────
 // Automatically re-evaluate alerts whenever price sync completes
