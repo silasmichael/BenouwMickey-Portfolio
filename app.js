@@ -1,3 +1,8 @@
+// TEMPORARY — shows any hidden JavaScript error as a popup, since iPad has no console
+window.onerror = function(message, source, lineno) {
+  alert('JS Error: ' + message + ' (line ' + lineno + ')');
+};
+
 // ── SEED DATA (intentionally empty — all data lives in Supabase)
 // ── STOCK METADATA (fundamentals & signals — code, not data) ─────────────────
 const SEED_STOCKS = [];
