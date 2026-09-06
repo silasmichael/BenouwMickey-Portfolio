@@ -560,7 +560,7 @@ function getLatestReportPeriod(s) {
     Object.assign(reports, snapshots._watchlist[s.id].reports);
   }
 
-  const keys = Object.keys(reports).sort();
+const keys = sortPeriodKeys(Object.keys(reports));
 
   if (keys.length === 0) {
     return s.fundamentals ? s.fundamentals.reportPeriod : null;
@@ -3194,7 +3194,7 @@ function renderStockReportHistory() {
     Object.assign(reports, snapshots._watchlist[_efStockId].reports);
   }
 
-  const periodKeys = Object.keys(reports).sort();
+  const periodKeys = sortPeriodKeys(Object.keys(reports), true);
 
   if (periodKeys.length === 0) {
     container.innerHTML = `<div style="text-align:center;color:#555;padding:20px;font-size:11px">No saved report periods yet for ${s.id}. Switch to "From Report" tab to add one.</div>`;
@@ -5283,7 +5283,7 @@ function getCompanyMetricsForRadar(ticker) {
   if (snapshots && snapshots._watchlist && snapshots._watchlist[cleanTicker]) {
     const wl = snapshots._watchlist[cleanTicker];
     const reports = wl.reports || {};
-    const keys = Object.keys(reports).sort();
+    const keys = sortPeriodKeys(Object.keys(reports));
     
     if (keys.length > 0) {
       periodKey = keys[keys.length - 1];
@@ -6460,7 +6460,7 @@ function renderWatchlistReportHistory() {
     Object.assign(reports, owned.reports);
   }
 
-  const periodKeys = Object.keys(reports).sort();
+  const periodKeys = sortPeriodKeys(Object.keys(reports), true);
 
   if (periodKeys.length === 0) {
     container.innerHTML = `<div style="text-align:center;color:#555;padding:20px;font-size:11px">No saved report periods yet for ${ticker}.</div>`;
@@ -6755,7 +6755,7 @@ function onPeerCompanyChange(triggeredBy) {
   collectReports(tickerB, reportsB);
 
   // Combine unique periods from both companies
-  const allPeriods = Array.from(new Set([...Object.keys(reportsA), ...Object.keys(reportsB)])).sort().reverse();
+  const allPeriods = sortPeriodKeys(Array.from(new Set([...Object.keys(reportsA), ...Object.keys(reportsB)])), true);
 
   let opts = '<option value="">Select Period...</option>';
   allPeriods.forEach(p => {
