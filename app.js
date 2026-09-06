@@ -5520,10 +5520,10 @@ function renderRadarTableOnly(fundScoreObj = null, userHolding = null) {
   `;
 }
 
-// 4. Fundamental Score Matrix (Weighted Architecture - Max 60 Points)
+// Sector-specific fundamental score out of 60, now also reports how many metrics actually had data
 function calculateFundamentalScore(stock, symbol) {
   if (!stock || typeof stock !== 'object') {
-    return { score: 0, hasData: false, sector: 'General' };
+    return { score: 0, hasData: false, matchesFound: 0, sector: 'General' };
   }
 
   let score = 0;
@@ -5532,7 +5532,6 @@ function calculateFundamentalScore(stock, symbol) {
   const symUpper = (symbol || stock.id || '').toUpperCase();
   const sector = (stock.sector || stock.type || '').toLowerCase();
   
-  // Sector Classification
   const isBank = sector.includes('bank') || sector.includes('commercial') || ["CRDB", "NMB", "DCB", "MCB"].includes(symUpper);
   const isHolding = sector.includes('holding') || ["NICOL", "NICO"].includes(symUpper);
   const isETF = sector.includes('etf') || sector.includes('unit trust') || ["IEACLC"].includes(symUpper);
@@ -5586,7 +5585,6 @@ function calculateFundamentalScore(stock, symbol) {
     if (de !== null && de >= 0 && de < 0.5) { score += 10; matchesFound++; }
     else if (de !== null && de <= 1.0) { score += 5; matchesFound++; }
   } else if (isETF) {
-    // Dynamic ETF / Unit Trust Scoring
     if (pNav !== null && pNav > 0 && pNav <= 1.0) { score += 25; matchesFound++; }
     else if (pNav !== null && pNav <= 1.05) { score += 15; matchesFound++; }
     
@@ -5611,7 +5609,6 @@ function calculateFundamentalScore(stock, symbol) {
     if (de !== null && de >= 0 && de < 0.5) { score += 10; matchesFound++; }
     else if (de !== null && de <= 1.2) { score += 5; matchesFound++; }
   } else {
-    // General
     if (pe !== null && pe > 0 && pe < 12) { score += 15; matchesFound++; }
     if (roe !== null && roe >= 12) { score += 15; matchesFound++; }
     if (divYield !== null && divYield >= 3) { score += 10; matchesFound++; }
@@ -5622,11 +5619,13 @@ function calculateFundamentalScore(stock, symbol) {
   return {
     score: isNaN(score) ? 0 : Math.min(score, 60),
     hasData,
+    matchesFound,
     sector: isBank ? 'Banking' : isHolding ? 'Holding' : isETF ? 'ETF' : 'Industrial/General'
   };
 }
 
-// 5. Signal Decision Engine (Valuation & Trend Aware)
+
+// Composite score + signal, now tags whether fundamentals were full, partial, or missing
 function calculateQuantSignal(row, fundScoreObj, holding, symbol, depthArray) {
   const closePx = row.close_price || 0;
   const bids = row.outstanding_bid || 0;
@@ -5657,7 +5656,6 @@ function calculateQuantSignal(row, fundScoreObj, holding, symbol, depthArray) {
     valScore = 15;
   }
 
-  // 3. Price Trend (14-day momentum check)
   let trendPenalty = 0;
   let trendStr = "";
   const srcData = depthArray || (typeof currentRadarData !== 'undefined' ? currentRadarData : []);
@@ -5683,23 +5681,32 @@ function calculateQuantSignal(row, fundScoreObj, holding, symbol, depthArray) {
     }
   }
 
-  let baseComposite = fundScoreObj.hasData ? (fundScoreObj.score + depthScore + valScore) : Math.round(((depthScore + valScore) / 40) * 100);
+  let dataQuality = 'full';
+  if (!fundScoreObj.hasData) dataQuality = 'none';
+  else if ((fundScoreObj.matchesFound || 0) < 3) dataQuality = 'partial';
+
+  let baseComposite;
+  if (dataQuality === 'none') {
+    baseComposite = Math.round(((depthScore + valScore) / 40) * 100 * 0.7);
+  } else {
+    baseComposite = fundScoreObj.score + depthScore + valScore;
+  }
   let compositeScore = Math.max(0, Math.min(100, baseComposite - trendPenalty));
 
   if (holding && holding.buy_price && holding.buy_price > 0) {
     const profitPct = ((closePx - holding.buy_price) / holding.buy_price) * 100;
     if (profitPct >= 50) {
-      return { compositeScore, depthScore, valScore, signal: 'SELL (50%+ Target)', color: '#E05656', comment: `🔴 Target reached! +${profitPct.toFixed(1)}% profit vs buy price. ${trendStr}` };
+      return { compositeScore, depthScore, valScore, dataQuality, signal: 'SELL (50%+ Target)', color: '#E05656', comment: `🔴 Target reached! +${profitPct.toFixed(1)}% profit vs buy price. ${trendStr}` };
     }
   }
 
   if (offers > (bids * 3) && offers > 50000) {
-    return { compositeScore, depthScore, valScore, signal: 'WAIT / SELL', color: '#E05656', comment: `🔴 Heavy supply overhang. ${trendStr}` };
+    return { compositeScore, depthScore, valScore, dataQuality, signal: 'WAIT / SELL', color: '#E05656', comment: `🔴 Heavy supply overhang. ${trendStr}` };
   }
 
   if (isOvervalued && compositeScore >= 60) {
     return {
-      compositeScore: Math.min(compositeScore, 65), depthScore, valScore,
+      compositeScore: Math.min(compositeScore, 65), depthScore, valScore, dataQuality,
       signal: 'HOLD (Overvalued)', color: '#F4A623',
       comment: `🟡 Price exceeds Fair Value. Do not chase despite demand. ${trendStr}`
     };
@@ -5707,23 +5714,25 @@ function calculateQuantSignal(row, fundScoreObj, holding, symbol, depthArray) {
   
   if (trendPenalty > 0) {
      return {
-      compositeScore, depthScore, valScore,
+      compositeScore, depthScore, valScore, dataQuality,
       signal: 'WAIT (Overbought)', color: '#E056A0',
       comment: `🔴 Price surged too fast. High pullback risk. ${trendStr}`
     };
   }
 
   if (compositeScore >= 75) {
-    return { compositeScore, depthScore, valScore, signal: 'BUY NOW', color: '#00C896', comment: `🟢 Strong score (${compositeScore}/100). Undervalued & good demand. ${trendStr}` };
+    return { compositeScore, depthScore, valScore, dataQuality, signal: 'BUY NOW', color: '#00C896', comment: `🟢 Strong score (${compositeScore}/100). Undervalued & good demand. ${trendStr}` };
   } else if (compositeScore >= 55) {
-    return { compositeScore, depthScore, valScore, signal: 'HOLD / ACCUMULATE', color: '#4A90E2', comment: `🔵 Solid score (${compositeScore}/100). Fair valuation. ${trendStr}` };
+    return { compositeScore, depthScore, valScore, dataQuality, signal: 'HOLD / ACCUMULATE', color: '#4A90E2', comment: `🔵 Solid score (${compositeScore}/100). Fair valuation. ${trendStr}` };
   } else if (compositeScore >= 35) {
-    return { compositeScore, depthScore, valScore, signal: 'WAIT', color: '#F4A623', comment: `🟡 Fair score (${compositeScore}/100). ${trendStr}` };
+    return { compositeScore, depthScore, valScore, dataQuality, signal: 'WAIT', color: '#F4A623', comment: `🟡 Fair score (${compositeScore}/100). ${trendStr}` };
   } else {
-    return { compositeScore, depthScore, valScore, signal: 'AVOID', color: '#E05656', comment: `🔴 Low score (${compositeScore}/100). Weak fundamentals or supply. ${trendStr}` };
+    return { compositeScore, depthScore, valScore, dataQuality, signal: 'AVOID', color: '#E05656', comment: `🔴 Low score (${compositeScore}/100). Weak fundamentals or supply. ${trendStr}` };
   }
 }
 
+
+// Checks every signal independently; a fundamentals-less score now needs 70+, not 60+, to count
 async function evaluateCompanyForAlert(ticker, isOwned) {
   const metrics = getCompanyMetricsForRadar(ticker);
   if (!metrics || !metrics.currentPrice) return null;
@@ -5742,24 +5751,34 @@ async function evaluateCompanyForAlert(ticker, isOwned) {
     : null;
   const undervalued = discountPct !== null && discountPct >= 20;
 
+  const money = v => typeof fT === 'function' ? fT(v) : v;
   const reasons = [];
   let profitPct = null;
 
   if (isOwned && metrics.buy_price > 0) {
     profitPct = ((metrics.currentPrice - metrics.buy_price) / metrics.buy_price) * 100;
-
     if (profitPct >= 50) {
       reasons.push(`up ${profitPct.toFixed(1)}% vs your average cost — past the 50% target, consider taking some profit`);
-    } else if (Math.abs(profitPct) <= 5 && quant.compositeScore >= 60) {
-      reasons.push(`trading close to your average cost with a strong score (${quant.compositeScore}/100) — a reasonable spot to add more`);
+    }
+    if (Math.abs(profitPct) <= 5) {
+      reasons.push(`trading close to your average cost (${money(metrics.currentPrice)} vs your ${money(metrics.buy_price)} average)`);
     }
   }
 
-  if (!isOwned && quant.signal !== 'AVOID') {
-    const whyEntry = [];
-    if (undervalued) whyEntry.push(`trading ${discountPct.toFixed(0)}% below fair value`);
-    if (nearLow)      whyEntry.push(`near its lowest price in the past ~4 weeks`);
-    if (whyEntry.length) reasons.push(`worth considering for your portfolio — ${whyEntry.join(' and ')}`);
+  const canSuggestEntry = isOwned || quant.signal !== 'AVOID';
+  const scoreThreshold  = quant.dataQuality === 'none' ? 70 : 60;
+
+  if (canSuggestEntry && quant.compositeScore >= scoreThreshold) {
+    const qualityNote = quant.dataQuality === 'none'    ? ' — based on price/liquidity only, no fundamentals on file'
+                       : quant.dataQuality === 'partial' ? ' — limited fundamental data'
+                       : '';
+    reasons.push(`strong composite score (${quant.compositeScore}/100)${qualityNote}`);
+  }
+  if (canSuggestEntry && undervalued) {
+    reasons.push(`trading ${discountPct.toFixed(0)}% below fair value`);
+  }
+  if (canSuggestEntry && nearLow) {
+    reasons.push(`near its lowest price in the past ~4 weeks`);
   }
 
   if (quant.signal === 'WAIT / SELL')       reasons.push('heavy sell-side supply right now');
@@ -5769,61 +5788,46 @@ async function evaluateCompanyForAlert(ticker, isOwned) {
   if (!reasons.length) return null;
 
   return {
-    ticker,
-    isOwned,
+    ticker, isOwned, canSuggestEntry,
     headline: `${ticker}: ${reasons[0]}`,
     reasons,
     compositeScore: quant.compositeScore,
+    dataQuality: quant.dataQuality,
     signal: quant.signal,
-    profitPct,
-    discountPct,
-    nearLow,
+    profitPct, discountPct, nearLow,
     currentPrice: metrics.currentPrice
   };
 }
-// Compares today's evaluation for one company against what was last actually shown for it
-// (stored in snapshots._alertState). Only returns true when a value has crossed into a new
-// step/bucket, or a flag has flipped from off to on — so the same unchanged condition doesn't
-// re-notify you every single sync. When it decides something IS new, it saves today's state
-// as the new baseline for next time.
+// Compares today's signals against what was last shown; score step uses the same quality-aware bar
 function shouldSurfaceAlert(evalResult) {
   if (!snapshots._alertState) snapshots._alertState = {};
   const prev = snapshots._alertState[evalResult.ticker] || {};
   const curr = {};
 
-  // A. Profit target: re-surface every +10% once past the 50% trigger
   if (evalResult.profitPct !== null && evalResult.profitPct >= 50) {
     curr.profitStep = Math.floor(evalResult.profitPct / 10) * 10;
   }
+  if (evalResult.isOwned && evalResult.profitPct !== null && Math.abs(evalResult.profitPct) <= 5) {
+    curr.nearCost = true;
+  }
 
-  // B. DCA add-more (owned, near your average cost, decent score): re-surface every +5 score points
-  const dcaEligible = evalResult.isOwned
-    && evalResult.profitPct !== null
-    && evalResult.profitPct < 50
-    && Math.abs(evalResult.profitPct) <= 5
-    && evalResult.compositeScore >= 60;
-  if (dcaEligible) {
+  const scoreThreshold = evalResult.dataQuality === 'none' ? 70 : 60;
+  if (evalResult.canSuggestEntry && evalResult.compositeScore >= scoreThreshold) {
     curr.scoreStep = Math.floor(evalResult.compositeScore / 5) * 5;
   }
-
-  // C. Watchlist entry: re-surface every +10% deeper discount, or a fresh near-4-week-low flag
-  if (!evalResult.isOwned) {
-    if (evalResult.discountPct !== null && evalResult.discountPct >= 20) {
-      curr.discountStep = Math.floor(evalResult.discountPct / 10) * 10;
-    }
-    if (evalResult.nearLow) curr.lowFlag = true;
+  if (evalResult.canSuggestEntry && evalResult.discountPct !== null && evalResult.discountPct >= 20) {
+    curr.discountStep = Math.floor(evalResult.discountPct / 10) * 10;
   }
-
-  // D. Warning signals (oversupply / overvalued / overbought): re-surface only when the category itself changes
+  if (evalResult.canSuggestEntry && evalResult.nearLow) curr.lowFlag = true;
   if (['WAIT / SELL', 'HOLD (Overvalued)', 'WAIT (Overbought)'].includes(evalResult.signal)) {
     curr.warnSignal = evalResult.signal;
   }
 
   const isNew = Object.keys(curr).some(k => curr[k] !== prev[k]);
   if (isNew) snapshots._alertState[evalResult.ticker] = curr;
-
   return isNew;
 }
+
 
 // 6. Chart Image Embed Helper
 function addChartToPdf(doc, canvasId, x, y, maxWidth, maxHeight) {
