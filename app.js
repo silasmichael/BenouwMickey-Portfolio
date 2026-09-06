@@ -5624,6 +5624,68 @@ function calculateFundamentalScore(stock, symbol) {
   };
 }
 
+// Sorts period keys like "2024 FY"/"2024 Q1" in true chronological order, not alphabetical
+function sortPeriodKeys(keys, latestFirst) {
+  const order = { 'Q1': 1, 'H1': 2, '9M': 3, 'FY': 4 };
+  const toValue = key => {
+    const parts = String(key).trim().split(' ');
+    return (parseInt(parts[0], 10) || 0) * 10 + (order[parts[1]] || 4);
+  };
+  const sorted = [...keys].sort((a, b) => toValue(a) - toValue(b));
+  return latestFirst ? sorted.reverse() : sorted;
+}
+
+
+// Compares ROE/NPL/CIR across saved report periods to see if the business is improving or declining
+function getFundamentalTrend(ticker) {
+  const s  = Array.isArray(stocks) ? stocks.find(st => st.id === ticker) : null;
+  const wl = snapshots._watchlist && snapshots._watchlist[ticker];
+  const reports = Object.assign({}, (wl && wl.reports) || {}, (s && s.reports) || {});
+  const periodKeys = Object.keys(reports);
+  if (periodKeys.length < 2) return { trend: 'insufficient', periods: periodKeys.length };
+
+  const order = { 'Q1': 1, 'H1': 2, '9M': 3, 'FY': 4 };
+  const toValue = key => {
+    const parts = String(key).trim().split(' ');
+    return (parseInt(parts[0], 10) || 0) * 10 + (order[parts[1]] || 4);
+  };
+  const sortedKeys = periodKeys.sort((a, b) => toValue(a) - toValue(b));
+
+  const num = v => (typeof v === 'number' && !isNaN(v) ? v : null);
+  const readings = sortedKeys.map(key => ({
+    period: key,
+    roe: num(reports[key].roe),
+    npl: num(reports[key].npl),
+    cir: num(reports[key].cir)
+  }));
+
+  const latest = readings[readings.length - 1];
+  const previous = readings[readings.length - 2];
+  const signals = [];
+
+  if (latest.roe !== null && previous.roe !== null) {
+    if (latest.roe - previous.roe >= 2) signals.push('ROE improving');
+    else if (latest.roe - previous.roe <= -2) signals.push('ROE declining');
+  }
+  if (latest.npl !== null && previous.npl !== null) {
+    if (latest.npl - previous.npl <= -0.5) signals.push('asset quality improving (NPL falling)');
+    else if (latest.npl - previous.npl >= 0.5) signals.push('asset quality weakening (NPL rising)');
+  }
+  if (latest.cir !== null && previous.cir !== null) {
+    if (latest.cir - previous.cir <= -2) signals.push('efficiency improving (CIR falling)');
+    else if (latest.cir - previous.cir >= 2) signals.push('efficiency slipping (CIR rising)');
+  }
+
+  const improving = signals.filter(x => x.includes('improving')).length;
+  const declining = signals.length - improving;
+
+  let trend = 'flat';
+  if (improving > declining) trend = 'improving';
+  else if (declining > improving) trend = 'declining';
+
+  return { trend, signals, fromPeriod: previous.period, toPeriod: latest.period, periods: readings.length };
+}
+
 
 // Composite score + signal, now tags whether fundamentals were full, partial, or missing
 function calculateQuantSignal(row, fundScoreObj, holding, symbol, depthArray) {
@@ -5732,7 +5794,7 @@ function calculateQuantSignal(row, fundScoreObj, holding, symbol, depthArray) {
 }
 
 
-// Checks every signal independently; a fundamentals-less score now needs 70+, not 60+, to count
+// Checks every signal independently, now including whether fundamentals are trending up or down
 async function evaluateCompanyForAlert(ticker, isOwned) {
   const metrics = getCompanyMetricsForRadar(ticker);
   if (!metrics || !metrics.currentPrice) return null;
@@ -5741,6 +5803,7 @@ async function evaluateCompanyForAlert(ticker, isOwned) {
   const fundScore = calculateFundamentalScore(metrics, ticker);
   const latestRow = depthData[0] || { close_price: metrics.currentPrice, outstanding_bid: 0, outstanding_offer: 0 };
   const quant     = calculateQuantSignal(latestRow, fundScore, metrics, ticker, depthData);
+  const trendInfo = typeof getFundamentalTrend === 'function' ? getFundamentalTrend(ticker) : { trend: 'insufficient' };
 
   const closes    = depthData.map(d => d.close_price).filter(v => v > 0);
   const fourWkLow = closes.length ? Math.min(...closes) : null;
@@ -5780,10 +5843,18 @@ async function evaluateCompanyForAlert(ticker, isOwned) {
   if (canSuggestEntry && nearLow) {
     reasons.push(`near its lowest price in the past ~4 weeks`);
   }
+  if (canSuggestEntry && trendInfo.trend === 'improving') {
+    reasons.push(`fundamentals improving (${trendInfo.signals.join(', ')}) since ${trendInfo.fromPeriod}`);
+  }
 
   if (quant.signal === 'WAIT / SELL')       reasons.push('heavy sell-side supply right now');
   if (quant.signal === 'HOLD (Overvalued)') reasons.push("trading above fair value — don't chase this price");
   if (quant.signal === 'WAIT (Overbought)') reasons.push('price moved up too fast, pullback risk');
+
+  // If something else already triggered a reason, flag a declining fundamental trend as a caution, not a separate opportunity
+  if (trendInfo.trend === 'declining' && reasons.length) {
+    reasons.push(`caution: fundamentals declining (${trendInfo.signals.join(', ')}) since ${trendInfo.fromPeriod} — verify before acting`);
+  }
 
   if (!reasons.length) return null;
 
@@ -5794,11 +5865,14 @@ async function evaluateCompanyForAlert(ticker, isOwned) {
     compositeScore: quant.compositeScore,
     dataQuality: quant.dataQuality,
     signal: quant.signal,
+    fundamentalTrend: trendInfo.trend,
     profitPct, discountPct, nearLow,
     currentPrice: metrics.currentPrice
   };
 }
-// Compares today's signals against what was last shown; score step uses the same quality-aware bar
+
+
+// Compares today's signals against what was last shown; trend direction is now one of the tracked steps
 function shouldSurfaceAlert(evalResult) {
   if (!snapshots._alertState) snapshots._alertState = {};
   const prev = snapshots._alertState[evalResult.ticker] || {};
@@ -5819,6 +5893,9 @@ function shouldSurfaceAlert(evalResult) {
     curr.discountStep = Math.floor(evalResult.discountPct / 10) * 10;
   }
   if (evalResult.canSuggestEntry && evalResult.nearLow) curr.lowFlag = true;
+  if (evalResult.fundamentalTrend && evalResult.fundamentalTrend !== 'insufficient') {
+    curr.trendDirection = evalResult.fundamentalTrend;
+  }
   if (['WAIT / SELL', 'HOLD (Overvalued)', 'WAIT (Overbought)'].includes(evalResult.signal)) {
     curr.warnSignal = evalResult.signal;
   }
@@ -5827,6 +5904,7 @@ function shouldSurfaceAlert(evalResult) {
   if (isNew) snapshots._alertState[evalResult.ticker] = curr;
   return isNew;
 }
+
 
 
 // 6. Chart Image Embed Helper
