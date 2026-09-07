@@ -5624,6 +5624,41 @@ function calculateFundamentalScore(stock, symbol) {
   };
 }
 
+// Depth score scaled by how normal today's volume is for this stock, and whether the imbalance has held for days
+function computeDepthRead(row, depthArray) {
+  const bids = row.outstanding_bid || 0;
+  const offers = row.outstanding_offer || 0;
+  const totalDepth = bids + offers;
+
+  let ratioScore = 7;
+  if (totalDepth > 0) ratioScore = Math.round((bids / totalDepth) * 15);
+  else if (bids > 0 && offers === 0) ratioScore = 15;
+
+  const history = Array.isArray(depthArray) ? depthArray : [];
+  const recentTotals = history.slice(0, 10)
+    .map(d => (d.outstanding_bid || 0) + (d.outstanding_offer || 0))
+    .filter(v => v > 0);
+  const avgDepth = recentTotals.length ? recentTotals.reduce((a, b) => a + b, 0) / recentTotals.length : totalDepth;
+  const liquidityRatio = avgDepth > 0 ? totalDepth / avgDepth : 1;
+
+  let confidence = 1;
+  if (liquidityRatio < 0.3) confidence = 0.5;
+  else if (liquidityRatio < 0.6) confidence = 0.75;
+
+  const todayLeansBid = totalDepth > 0 ? (bids / totalDepth) >= 0.5 : true;
+  const recentRows = history.slice(0, 5);
+  let agreeing = 0;
+  recentRows.forEach(d => {
+    const t = (d.outstanding_bid || 0) + (d.outstanding_offer || 0);
+    if (t <= 0) return;
+    if (((d.outstanding_bid || 0) / t >= 0.5) === todayLeansBid) agreeing++;
+  });
+  const persistent = recentRows.length >= 3 && agreeing >= Math.ceil(recentRows.length * 0.7);
+
+  const depthScore = Math.max(0, Math.min(15, Math.round(ratioScore * confidence)));
+  return { depthScore, liquidityRatio, persistent, thin: confidence < 1 };
+}
+
 // Sorts period keys like "2024 FY"/"2024 Q1" in true chronological order, not alphabetical
 function sortPeriodKeys(keys, latestFirst) {
   const order = { 'Q1': 1, 'H1': 2, '9M': 3, 'FY': 4 };
@@ -5718,19 +5753,14 @@ function computeAllSectorStats() {
   return stats;
 }
 
-// Composite score + signal, now tags whether fundamentals were full, partial, or missing
+// Composite score + signal; oversupply now requires sustained, non-thin depth instead of a fixed number
 function calculateQuantSignal(row, fundScoreObj, holding, symbol, depthArray) {
   const closePx = row.close_price || 0;
   const bids = row.outstanding_bid || 0;
   const offers = row.outstanding_offer || 0;
-  const totalDepth = bids + offers;
-  
-  let depthScore = 7; 
-  if (totalDepth > 0) {
-    depthScore = Math.round((bids / totalDepth) * 15);
-  } else if (bids > 0 && offers === 0) {
-    depthScore = 15;
-  }
+
+  const depthRead = computeDepthRead(row, depthArray);
+  const depthScore = depthRead.depthScore;
 
   let valScore = 10;
   let isOvervalued = false;
@@ -5738,7 +5768,6 @@ function calculateQuantSignal(row, fundScoreObj, holding, symbol, depthArray) {
   if (holding && holding.fairValue) {
     const fv = holding.fairValue;
     const avoid = holding.avoidAbove || (fv * 1.1);
-    const buyLow = fv * 0.6;
     const buyHigh = fv * 0.8;
 
     if (closePx <= buyHigh) valScore = 25;
@@ -5763,12 +5792,8 @@ function calculateQuantSignal(row, fundScoreObj, holding, symbol, depthArray) {
         if (historicalPx > 0) {
           const pctChange = ((closePx - historicalPx) / historicalPx) * 100;
           trendStr = `14d trend: ${(pctChange>=0?'+':'')}${pctChange.toFixed(1)}%. `;
-          
-          if (pctChange > 10 && isOvervalued) {
-            trendPenalty = 20; 
-          } else if (pctChange > 15) {
-            trendPenalty = 10;
-          }
+          if (pctChange > 10 && isOvervalued) trendPenalty = 20;
+          else if (pctChange > 15) trendPenalty = 10;
         }
       }
     }
@@ -5793,8 +5818,8 @@ function calculateQuantSignal(row, fundScoreObj, holding, symbol, depthArray) {
     }
   }
 
-  if (offers > (bids * 3) && offers > 50000) {
-    return { compositeScore, depthScore, valScore, dataQuality, signal: 'WAIT / SELL', color: '#E05656', comment: `🔴 Heavy supply overhang. ${trendStr}` };
+  if (offers > (bids * 3) && depthRead.liquidityRatio >= 0.5 && depthRead.persistent) {
+    return { compositeScore, depthScore, valScore, dataQuality, signal: 'WAIT / SELL', color: '#E05656', comment: `🔴 Heavy, sustained sell-side supply (held several sessions). ${trendStr}` };
   }
 
   if (isOvervalued && compositeScore >= 60) {
@@ -5898,7 +5923,7 @@ async function evaluateCompanyForAlert(ticker, isOwned, sectorStats) {
     reasons.push(`trading ${peerDiscountPct.toFixed(0)}% below its ${fundScore.sector} peers on ${peerMetricLabel}`);
   }
 
-  if (quant.signal === 'WAIT / SELL')       reasons.push('heavy sell-side supply right now');
+  if (quant.signal === 'WAIT / SELL')       reasons.push('heavy, sustained sell-side supply — held for several sessions, not just today');
   if (quant.signal === 'HOLD (Overvalued)') reasons.push("trading above fair value — don't chase this price");
   if (quant.signal === 'WAIT (Overbought)') reasons.push('price moved up too fast, pullback risk');
   if (pricierVsPeers) {
