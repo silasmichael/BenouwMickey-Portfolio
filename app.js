@@ -6968,8 +6968,7 @@ fetchDynamicTickers();
 let activeAlerts = [];
 let hasUnreadAlerts = false;
 
-
-// Runs only after a price sync — updates the persisted alert inbox, one card per ticker
+// Runs only after a price sync — computes sector peer stats once, then updates the persisted alert inbox
 async function generatePortfolioAlerts() {
   const tickers = [];
   const seen = new Set();
@@ -6986,7 +6985,8 @@ async function generatePortfolioAlerts() {
     });
   }
 
-  const results = await Promise.all(tickers.map(({ ticker, isOwned }) => evaluateCompanyForAlert(ticker, isOwned)));
+  const sectorStats = computeAllSectorStats();
+  const results = await Promise.all(tickers.map(({ ticker, isOwned }) => evaluateCompanyForAlert(ticker, isOwned, sectorStats)));
   if (!snapshots._activeAlerts) snapshots._activeAlerts = [];
 
   results.forEach((evalResult, i) => {
@@ -6995,14 +6995,13 @@ async function generatePortfolioAlerts() {
       if (snapshots._alertState && snapshots._alertState[ticker]) delete snapshots._alertState[ticker];
       return;
     }
-    if (!shouldSurfaceAlert(evalResult)) return; // unchanged — leave any existing card exactly as it is
+    if (!shouldSurfaceAlert(evalResult)) return;
 
     const card = buildAlertCard(evalResult);
     const idx = snapshots._activeAlerts.findIndex(a => a.id === ticker);
     if (idx >= 0) snapshots._activeAlerts[idx] = card; else snapshots._activeAlerts.push(card);
   });
 
-  // Sector concentration warning — clears itself once resolved, unlike company alerts (flag if you want it identical)
   if (typeof totals === 'function') {
     const tot = totals();
     const gt = tot ? tot.gt : 0;
