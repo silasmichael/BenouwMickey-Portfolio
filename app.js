@@ -5686,6 +5686,37 @@ function getFundamentalTrend(ticker) {
   return { trend, signals, fromPeriod: previous.period, toPeriod: latest.period, periods: readings.length };
 }
 
+// Computes median P/E and P/B across every known company, grouped by sector — run once per sync, not per company
+function computeAllSectorStats() {
+  const tickers = new Set();
+  if (Array.isArray(stocks)) stocks.forEach(s => tickers.add(s.id));
+  if (snapshots._watchlist) Object.keys(snapshots._watchlist).forEach(t => tickers.add(t));
+
+  const bySector = {};
+  tickers.forEach(ticker => {
+    const metrics = getCompanyMetricsForRadar(ticker);
+    if (!metrics) return;
+    const fundScore = calculateFundamentalScore(metrics, ticker);
+    const sec = fundScore.sector;
+    if (!bySector[sec]) bySector[sec] = { pe: [], pb: [], count: 0 };
+    if (typeof metrics.pe_ratio === 'number' && metrics.pe_ratio > 0) bySector[sec].pe.push(metrics.pe_ratio);
+    if (typeof metrics.pb_ratio === 'number' && metrics.pb_ratio > 0) bySector[sec].pb.push(metrics.pb_ratio);
+    bySector[sec].count++;
+  });
+
+  const median = arr => {
+    if (!arr.length) return null;
+    const sorted = [...arr].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  };
+
+  const stats = {};
+  Object.keys(bySector).forEach(sec => {
+    stats[sec] = { peMedian: median(bySector[sec].pe), pbMedian: median(bySector[sec].pb), peerCount: bySector[sec].count };
+  });
+  return stats;
+}
 
 // Composite score + signal, now tags whether fundamentals were full, partial, or missing
 function calculateQuantSignal(row, fundScoreObj, holding, symbol, depthArray) {
@@ -5794,8 +5825,8 @@ function calculateQuantSignal(row, fundScoreObj, holding, symbol, depthArray) {
 }
 
 
-// Checks every signal independently, now including whether fundamentals are trending up or down
-async function evaluateCompanyForAlert(ticker, isOwned) {
+// Checks every signal independently; peer comparison now fires from 1 real peer, but always says how many
+async function evaluateCompanyForAlert(ticker, isOwned, sectorStats) {
   const metrics = getCompanyMetricsForRadar(ticker);
   if (!metrics || !metrics.currentPrice) return null;
 
@@ -5813,6 +5844,23 @@ async function evaluateCompanyForAlert(ticker, isOwned) {
     ? ((metrics.fairValue - metrics.currentPrice) / metrics.fairValue) * 100
     : null;
   const undervalued = discountPct !== null && discountPct >= 20;
+
+  const peerInfo = sectorStats && sectorStats[fundScore.sector];
+  let peerDiscountPct = null;
+  let peerMetricLabel = '';
+  if (peerInfo && peerInfo.peerCount >= 2) {
+    const otherPeers = peerInfo.peerCount - 1;
+    const peerWord = otherPeers === 1 ? 'peer' : 'peers';
+    if (peerInfo.peMedian > 0 && metrics.pe_ratio > 0) {
+      peerDiscountPct = ((peerInfo.peMedian - metrics.pe_ratio) / peerInfo.peMedian) * 100;
+      peerMetricLabel = `P/E (${metrics.pe_ratio.toFixed(1)}x vs ${peerInfo.peMedian.toFixed(1)}x median of ${otherPeers} ${peerWord})`;
+    } else if (peerInfo.pbMedian > 0 && metrics.pb_ratio > 0) {
+      peerDiscountPct = ((peerInfo.pbMedian - metrics.pb_ratio) / peerInfo.pbMedian) * 100;
+      peerMetricLabel = `P/B (${metrics.pb_ratio.toFixed(1)}x vs ${peerInfo.pbMedian.toFixed(1)}x median of ${otherPeers} ${peerWord})`;
+    }
+  }
+  const cheapVsPeers   = peerDiscountPct !== null && peerDiscountPct >= 20;
+  const pricierVsPeers = peerDiscountPct !== null && peerDiscountPct <= -20;
 
   const money = v => typeof fT === 'function' ? fT(v) : v;
   const reasons = [];
@@ -5846,12 +5894,17 @@ async function evaluateCompanyForAlert(ticker, isOwned) {
   if (canSuggestEntry && trendInfo.trend === 'improving') {
     reasons.push(`fundamentals improving (${trendInfo.signals.join(', ')}) since ${trendInfo.fromPeriod}`);
   }
+  if (canSuggestEntry && cheapVsPeers) {
+    reasons.push(`trading ${peerDiscountPct.toFixed(0)}% below its ${fundScore.sector} peers on ${peerMetricLabel}`);
+  }
 
   if (quant.signal === 'WAIT / SELL')       reasons.push('heavy sell-side supply right now');
   if (quant.signal === 'HOLD (Overvalued)') reasons.push("trading above fair value — don't chase this price");
   if (quant.signal === 'WAIT (Overbought)') reasons.push('price moved up too fast, pullback risk');
+  if (pricierVsPeers) {
+    reasons.push(`priced ${Math.abs(peerDiscountPct).toFixed(0)}% above its ${fundScore.sector} peers on ${peerMetricLabel} — richly valued relative to the group`);
+  }
 
-  // If something else already triggered a reason, flag a declining fundamental trend as a caution, not a separate opportunity
   if (trendInfo.trend === 'declining' && reasons.length) {
     reasons.push(`caution: fundamentals declining (${trendInfo.signals.join(', ')}) since ${trendInfo.fromPeriod} — verify before acting`);
   }
@@ -5866,13 +5919,15 @@ async function evaluateCompanyForAlert(ticker, isOwned) {
     dataQuality: quant.dataQuality,
     signal: quant.signal,
     fundamentalTrend: trendInfo.trend,
+    peerDiscountPct,
     profitPct, discountPct, nearLow,
     currentPrice: metrics.currentPrice
   };
 }
 
 
-// Compares today's signals against what was last shown; trend direction is now one of the tracked steps
+
+// Compares today's signals against what was last shown; peer-relative valuation now steps too
 function shouldSurfaceAlert(evalResult) {
   if (!snapshots._alertState) snapshots._alertState = {};
   const prev = snapshots._alertState[evalResult.ticker] || {};
@@ -5896,6 +5951,9 @@ function shouldSurfaceAlert(evalResult) {
   if (evalResult.fundamentalTrend && evalResult.fundamentalTrend !== 'insufficient') {
     curr.trendDirection = evalResult.fundamentalTrend;
   }
+  if (evalResult.peerDiscountPct !== null) {
+    curr.peerStep = Math.floor(evalResult.peerDiscountPct / 10) * 10;
+  }
   if (['WAIT / SELL', 'HOLD (Overvalued)', 'WAIT (Overbought)'].includes(evalResult.signal)) {
     curr.warnSignal = evalResult.signal;
   }
@@ -5904,7 +5962,6 @@ function shouldSurfaceAlert(evalResult) {
   if (isNew) snapshots._alertState[evalResult.ticker] = curr;
   return isNew;
 }
-
 
 
 // 6. Chart Image Embed Helper
