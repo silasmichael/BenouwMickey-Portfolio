@@ -5818,8 +5818,19 @@ function calculateQuantSignal(row, fundScoreObj, holding, symbol, depthArray) {
     }
   }
 
-  if (offers > (bids * 3) && depthRead.liquidityRatio >= 0.5 && depthRead.persistent) {
-    return { compositeScore, depthScore, valScore, dataQuality, signal: 'WAIT / SELL', color: '#E05656', comment: `🔴 Heavy, sustained sell-side supply (held several sessions). ${trendStr}` };
+    const severeToday       = offers > (bids * 6) && depthRead.liquidityRatio >= 0.5;
+  const sustainedModerate = offers > (bids * 3) && depthRead.liquidityRatio >= 0.5 && depthRead.persistent;
+
+  if (severeToday || sustainedModerate) {
+    return {
+      compositeScore, depthScore, valScore, dataQuality,
+      signal: 'WAIT / SELL',
+      depthCase: severeToday ? 'severe' : 'sustained',
+      color: '#E05656',
+      comment: severeToday
+        ? `🔴 Sharp one-day sell-side imbalance (${(offers/Math.max(bids,1)).toFixed(1)}x bids). ${trendStr}`
+        : `🔴 Heavy, sustained sell-side supply (held several sessions). ${trendStr}`
+    };
   }
 
   if (isOvervalued && compositeScore >= 60) {
@@ -5923,7 +5934,12 @@ async function evaluateCompanyForAlert(ticker, isOwned, sectorStats) {
     reasons.push(`trading ${peerDiscountPct.toFixed(0)}% below its ${fundScore.sector} peers on ${peerMetricLabel}`);
   }
 
-  if (quant.signal === 'WAIT / SELL')       reasons.push('heavy, sustained sell-side supply — held for several sessions, not just today');
+  if (quant.signal === 'WAIT / SELL') {
+    reasons.push(quant.depthCase === 'severe'
+    ? 'sharp one-day sell-side imbalance — worth watching closely, may just be a single large trade'
+    : 'heavy, sustained sell-side supply — held for several sessions, not just today');
+  }
+
   if (quant.signal === 'HOLD (Overvalued)') reasons.push("trading above fair value — don't chase this price");
   if (quant.signal === 'WAIT (Overbought)') reasons.push('price moved up too fast, pullback risk');
   if (pricierVsPeers) {
