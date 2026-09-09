@@ -7099,10 +7099,11 @@ function renderAlertList() {
   }
 
   container.innerHTML = activeAlerts.map(a => {
-    const bg = a.seen ? '#111118' : '#08080C';
+    const bg = a.seen ? '#0A0A0E' : '#1B2333';
+    const leftEdge = a.seen ? '1px solid #1E2A3A' : `3px solid ${a.color}`;
     const dateStr = new Date(a.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
     return `
-      <div style="background:${bg};border:1px solid #1E2A3A;border-radius:8px;padding:10px 12px;margin-bottom:8px">
+      <div style="background:${bg};border:1px solid #1E2A3A;border-left:${leftEdge};border-radius:8px;padding:10px 12px;margin-bottom:8px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
           <span style="display:inline-block;border:1px solid ${a.color};color:${a.color};font-size:10px;font-weight:800;padding:2px 8px;border-radius:5px">${a.ticker}</span>
           <button onclick="dismissAlert('${a.id}')" style="background:transparent;border:none;color:#555;font-size:12px;cursor:pointer">✕</button>
