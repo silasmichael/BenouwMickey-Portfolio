@@ -5659,6 +5659,47 @@ function computeDepthRead(row, depthArray) {
   return { depthScore, liquidityRatio, persistent, thin: confidence < 1 };
 }
 
+// Detects a supply/demand-driven trend that has cleared and reversed for 2 straight sessions
+function getReversalSignal(depthArray) {
+  const rows = Array.isArray(depthArray) ? depthArray : [];
+  if (rows.length < 16) return null;
+
+  const closeAt = i => (rows[i] && rows[i].close_price > 0) ? rows[i].close_price : null;
+  const today = closeAt(0), y1 = closeAt(1), y2 = closeAt(2), anchor = closeAt(14);
+  if (!today || !y1 || !y2 || !anchor) return null;
+
+  const pctChange = ((today - anchor) / anchor) * 100;
+  const wasDeclining = pctChange <= -8;
+  const wasRallying = pctChange >= 8;
+  if (!wasDeclining && !wasRallying) return null;
+
+  const window = rows.slice(0, 14);
+  let sellHeavyDays = 0, buyHeavyDays = 0, countedDays = 0;
+  window.forEach(r => {
+    const b = r.outstanding_bid || 0, o = r.outstanding_offer || 0;
+    if (b + o <= 0) return;
+    countedDays++;
+    if (o > b * 3) sellHeavyDays++;
+    if (b > o * 3) buyHeavyDays++;
+  });
+  if (countedDays < 5) return null;
+
+  const wasSupplyDriven = wasDeclining && (sellHeavyDays / countedDays) >= 0.5;
+  const wasDemandDriven = wasRallying && (buyHeavyDays / countedDays) >= 0.5;
+  if (!wasSupplyDriven && !wasDemandDriven) return null;
+
+  const b0 = rows[0].outstanding_bid || 0, o0 = rows[0].outstanding_offer || 0;
+  const clearedSupply = wasSupplyDriven && !(o0 > b0 * 2);
+  const clearedDemand = wasDemandDriven && !(b0 > o0 * 2);
+  if (!clearedSupply && !clearedDemand) return null;
+
+  const turnedUp = wasSupplyDriven && today > y1 && y1 > y2;
+  const turnedDown = wasDemandDriven && today < y1 && y1 < y2;
+  if (!turnedUp && !turnedDown) return null;
+
+  return { direction: turnedUp ? 'up' : 'down', cause: wasSupplyDriven ? 'supply' : 'demand', pctChange };
+}
+
 // Sorts period keys like "2024 FY"/"2024 Q1" in true chronological order, not alphabetical
 function sortPeriodKeys(keys, latestFirst) {
   const order = { 'Q1': 1, 'H1': 2, '9M': 3, 'FY': 4 };
@@ -5875,7 +5916,8 @@ async function evaluateCompanyForAlert(ticker, isOwned, sectorStats) {
   const closes    = depthData.map(d => d.close_price).filter(v => v > 0);
   const fourWkLow = closes.length ? Math.min(...closes) : null;
   const nearLow   = fourWkLow !== null && metrics.currentPrice <= fourWkLow * 1.05;
-
+  const reversal  = getReversalSignal(depthData);
+  
   const discountPct = metrics.fairValue > 0
     ? ((metrics.fairValue - metrics.currentPrice) / metrics.fairValue) * 100
     : null;
@@ -5933,7 +5975,12 @@ async function evaluateCompanyForAlert(ticker, isOwned, sectorStats) {
   if (canSuggestEntry && cheapVsPeers) {
     reasons.push(`trading ${peerDiscountPct.toFixed(0)}% below its ${fundScore.sector} peers on ${peerMetricLabel}`);
   }
-
+  if (canSuggestEntry && reversal && reversal.direction === 'up') {
+    const hasOtherSupport = reasons.length > 0;
+    reasons.push(hasOtherSupport
+      ? `was in a supply-driven decline (${reversal.pctChange.toFixed(1)}% over 14d) — sell-side pressure has cleared and price has turned up for 2 straight sessions; worth considering a buy given the other signals above`
+      : `was in a supply-driven decline (${reversal.pctChange.toFixed(1)}% over 14d) — sell-side pressure has cleared and price has turned up for 2 straight sessions, but nothing else here backs it yet; wait for a second signal before buying`);
+  }
   if (quant.signal === 'WAIT / SELL') {
     reasons.push(quant.depthCase === 'severe'
     ? 'sharp one-day sell-side imbalance — worth watching closely, may just be a single large trade'
@@ -5942,8 +5989,11 @@ async function evaluateCompanyForAlert(ticker, isOwned, sectorStats) {
 
   if (quant.signal === 'HOLD (Overvalued)') reasons.push("trading above fair value — don't chase this price");
   if (quant.signal === 'WAIT (Overbought)') reasons.push('price moved up too fast, pullback risk');
-  if (pricierVsPeers) {
+    if (pricierVsPeers) {
     reasons.push(`priced ${Math.abs(peerDiscountPct).toFixed(0)}% above its ${fundScore.sector} peers on ${peerMetricLabel} — richly valued relative to the group`);
+  }
+  if (reversal && reversal.direction === 'down') {
+    reasons.push(`was in a demand-driven rally (${reversal.pctChange.toFixed(1)}% over 14d) — buy-side pressure has cleared and price has turned down for 2 straight sessions`);
   }
 
   if (trendInfo.trend === 'declining' && reasons.length) {
@@ -5960,7 +6010,7 @@ async function evaluateCompanyForAlert(ticker, isOwned, sectorStats) {
     dataQuality: quant.dataQuality,
     signal: quant.signal,
     fundamentalTrend: trendInfo.trend,
-    peerDiscountPct,
+    peerDiscountPct, reversal,
     profitPct, discountPct, nearLow,
     currentPrice: metrics.currentPrice
   };
@@ -5997,6 +6047,9 @@ function shouldSurfaceAlert(evalResult) {
   }
   if (['WAIT / SELL', 'HOLD (Overvalued)', 'WAIT (Overbought)'].includes(evalResult.signal)) {
     curr.warnSignal = evalResult.signal;
+  }
+  if (evalResult.reversal) {
+    curr.reversalSignal = `${evalResult.reversal.direction}-${evalResult.reversal.cause}`;
   }
 
   const isNew = Object.keys(curr).some(k => curr[k] !== prev[k]);
