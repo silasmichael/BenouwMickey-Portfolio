@@ -5343,9 +5343,19 @@ function getCompanyMetricsForRadar(ticker) {
     de: parseNum(raw.de || computed['D/E']),
     fairValue: parseNum(raw.fairValue || s?.fairValue),
     avoidAbove: parseNum(raw.avoidAbove || s?.avoidAbove),
-    buy_price: s && s.tranches && s.tranches.length > 0 ? cS(s).avgBuy : curPx
+    buy_price: s && s.tranches && s.tranches.length > 0 ? cS(s).avgBuy : curPx,
+    roa: parseNum(raw.roa),
+    dupontNetProfit: parseNum(raw.netProfit),
+    dupontNii: parseNum(raw.nii),
+    dupontNiinc: parseNum(raw.niinc),
+    dupontAssets: parseNum(raw.assets),
+    dupontAssetsPrior: parseNum(raw.assetsPrior),
+    dupontEquity: parseNum(raw.equity),
+    dupontEquityPrior: parseNum(raw.equityPrior),
+    dupontPeriodFactor: parseNum(raw.periodFactor) || 1
   };
 }
+
 
 async function fetchDepthData(ticker, days) {
   let depthData = [];
