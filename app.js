@@ -5529,8 +5529,7 @@ function renderRadarTableOnly(fundScoreObj = null, userHolding = null) {
     </div>
   `;
 }
-
-// Sector-specific fundamental score out of 60, now also reports how many metrics actually had data
+// Sector-specific fundamental score out of 60 — Valuation(20) + Profitability&Quality(20) + Growth(20) — reports how many metrics had data
 function calculateFundamentalScore(stock, symbol) {
   if (!stock || typeof stock !== 'object') {
     return { score: 0, hasData: false, matchesFound: 0, sector: 'General' };
@@ -5538,10 +5537,11 @@ function calculateFundamentalScore(stock, symbol) {
 
   let score = 0;
   let matchesFound = 0;
+  let valuationPts = 0, profitabilityPts = 0, growthPts = 0;
 
   const symUpper = (symbol || stock.id || '').toUpperCase();
   const sector = (stock.sector || stock.type || '').toLowerCase();
-  
+
   const isBank = sector.includes('bank') || sector.includes('commercial') || ["CRDB", "NMB", "DCB", "MCB"].includes(symUpper);
   const isHolding = sector.includes('holding') || ["NICOL", "NICO"].includes(symUpper);
   const isETF = sector.includes('etf') || sector.includes('unit trust') || ["IEACLC"].includes(symUpper);
@@ -5553,6 +5553,7 @@ function calculateFundamentalScore(stock, symbol) {
   const pe = num(stock.pe_ratio);
   const pb = num(stock.pb_ratio);
   const roe = num(stock.roe);
+  const roa = num(stock.roa);
   const divYield = num(stock.div_yield);
   const navDisc = num(stock.nav_discount);
   const pNav = num(stock.p_nav);
@@ -5560,69 +5561,141 @@ function calculateFundamentalScore(stock, symbol) {
   const npl = num(stock.npl);
   const cir = num(stock.cir);
 
+  const growth = getGrowthProfile(symUpper);
+  const profitG = num(growth.profitGrowthPct);
+  const bvG     = num(growth.bookValueGrowthPct);
+  const divG    = num(growth.dividendGrowthPct);
+  const assetG  = num(growth.assetGrowthPct);
+  const debtG   = num(growth.debtGrowthPct);
+  const navG    = num(growth.navGrowthPct);
+
+  // DuPont breakdown — banks only, diagnostic (doesn't add to score), explains whether ROE is margin- or leverage-driven
+  let netMarginPct = null, assetTurnover = null, equityMultiplier = null, roeQuality = null;
+  if (isBank && stock.dupontNetProfit && stock.dupontPeriodFactor) {
+    const annNP  = stock.dupontNetProfit * stock.dupontPeriodFactor;
+    const annGI  = ((stock.dupontNii || 0) + (stock.dupontNiinc || 0)) * stock.dupontPeriodFactor;
+    const avgAst = (stock.dupontAssets && stock.dupontAssetsPrior) ? (stock.dupontAssets + stock.dupontAssetsPrior) / 2 : stock.dupontAssets;
+    const avgEq  = (stock.dupontEquity && stock.dupontEquityPrior) ? (stock.dupontEquity + stock.dupontEquityPrior) / 2 : stock.dupontEquity;
+    if (annGI > 0) netMarginPct = (annNP / annGI) * 100;
+    if (annGI > 0 && avgAst > 0) assetTurnover = annGI / avgAst;
+    if (avgAst > 0 && avgEq > 0) equityMultiplier = avgAst / avgEq;
+    if (roe !== null && equityMultiplier !== null) {
+      roeQuality = (equityMultiplier >= 8 && (netMarginPct === null || netMarginPct < 25)) ? 'leverage-driven' : 'margin-driven';
+    }
+  }
+
   if (isBank) {
-    if (pe !== null && pe > 0 && pe < 8) { score += 10; matchesFound++; }
-    else if (pe !== null && pe <= 12 && pe > 0) { score += 5; matchesFound++; }
+    if (pe !== null && pe > 0 && pe < 8) { score += 8; valuationPts += 8; matchesFound++; }
+    else if (pe !== null && pe <= 12 && pe > 0) { score += 4; valuationPts += 4; matchesFound++; }
 
-    if (pb !== null && pb > 0 && pb < 1.0) { score += 10; matchesFound++; }
-    else if (pb !== null && pb <= 1.5 && pb > 0) { score += 5; matchesFound++; }
+    if (pb !== null && pb > 0 && pb < 1.0) { score += 8; valuationPts += 8; matchesFound++; }
+    else if (pb !== null && pb <= 1.5 && pb > 0) { score += 4; valuationPts += 4; matchesFound++; }
 
-    if (roe !== null && roe >= 20) { score += 15; matchesFound++; }
-    else if (roe !== null && roe >= 15) { score += 10; matchesFound++; }
-    else if (roe !== null && roe >= 10) { score += 5; matchesFound++; }
+    if (divYield !== null && divYield >= 5) { score += 4; valuationPts += 4; matchesFound++; }
+    else if (divYield !== null && divYield >= 3) { score += 2; valuationPts += 2; matchesFound++; }
 
-    if (divYield !== null && divYield >= 5) { score += 5; matchesFound++; }
-    else if (divYield !== null && divYield >= 3) { score += 3; matchesFound++; }
+    if (roe !== null && roe >= 20) { score += 8; profitabilityPts += 8; matchesFound++; }
+    else if (roe !== null && roe >= 15) { score += 5; profitabilityPts += 5; matchesFound++; }
+    else if (roe !== null && roe >= 10) { score += 2; profitabilityPts += 2; matchesFound++; }
 
-    if (npl !== null && npl < 3.5) { score += 10; matchesFound++; }
-    else if (npl !== null && npl <= 5.0) { score += 5; matchesFound++; }
+    if (roa !== null && roa >= 3) { score += 4; profitabilityPts += 4; matchesFound++; }
+    else if (roa !== null && roa >= 1.5) { score += 2; profitabilityPts += 2; matchesFound++; }
 
-    if (cir !== null && cir < 45) { score += 10; matchesFound++; }
-    else if (cir !== null && cir <= 55) { score += 5; matchesFound++; }
+    if (cir !== null && cir < 45) { score += 4; profitabilityPts += 4; matchesFound++; }
+    else if (cir !== null && cir <= 55) { score += 2; profitabilityPts += 2; matchesFound++; }
+
+    if (npl !== null && npl < 3.5) { score += 4; profitabilityPts += 4; matchesFound++; }
+    else if (npl !== null && npl <= 5.0) { score += 2; profitabilityPts += 2; matchesFound++; }
+
+    if (profitG !== null && profitG >= 15) { score += 8; growthPts += 8; matchesFound++; }
+    else if (profitG !== null && profitG >= 5) { score += 4; growthPts += 4; matchesFound++; }
+
+    if (bvG !== null && bvG >= 10) { score += 4; growthPts += 4; matchesFound++; }
+    else if (bvG !== null && bvG >= 5) { score += 2; growthPts += 2; matchesFound++; }
+
+    if (divG !== null && divG >= 10) { score += 4; growthPts += 4; matchesFound++; }
+    else if (divG !== null && divG >= 0) { score += 2; growthPts += 2; matchesFound++; }
+
+    if (assetG !== null && assetG >= 10) { score += 4; growthPts += 4; matchesFound++; }
+    else if (assetG !== null && assetG >= 5) { score += 2; growthPts += 2; matchesFound++; }
+
   } else if (isHolding) {
-    if (pNav !== null && pNav > 0 && pNav < 0.75) { score += 15; matchesFound++; }
-    else if (pNav !== null && pNav <= 0.95 && pNav > 0) { score += 8; matchesFound++; }
+    if (navDisc !== null && navDisc >= 25) { score += 12; valuationPts += 12; matchesFound++; }
+    else if (navDisc !== null && navDisc >= 10) { score += 6; valuationPts += 6; matchesFound++; }
 
-    if (navDisc !== null && navDisc >= 25) { score += 15; matchesFound++; }
-    else if (navDisc !== null && navDisc >= 10) { score += 8; matchesFound++; }
+    if (divYield !== null && divYield >= 4) { score += 8; valuationPts += 8; matchesFound++; }
+    else if (divYield !== null && divYield >= 2) { score += 4; valuationPts += 4; matchesFound++; }
 
-    if (roe !== null && roe >= 15) { score += 15; matchesFound++; }
-    else if (roe !== null && roe >= 10) { score += 8; matchesFound++; }
+    if (roe !== null && roe >= 15) { score += 14; profitabilityPts += 14; matchesFound++; }
+    else if (roe !== null && roe >= 10) { score += 7; profitabilityPts += 7; matchesFound++; }
 
-    if (divYield !== null && divYield >= 4) { score += 5; matchesFound++; }
-    else if (divYield !== null && divYield >= 2) { score += 3; matchesFound++; }
+    if (de !== null && de >= 0 && de < 0.5) { score += 6; profitabilityPts += 6; matchesFound++; }
+    else if (de !== null && de <= 1.0) { score += 3; profitabilityPts += 3; matchesFound++; }
 
-    if (de !== null && de >= 0 && de < 0.5) { score += 10; matchesFound++; }
-    else if (de !== null && de <= 1.0) { score += 5; matchesFound++; }
+    if (profitG !== null && profitG >= 15) { score += 6; growthPts += 6; matchesFound++; }
+    else if (profitG !== null && profitG >= 5) { score += 3; growthPts += 3; matchesFound++; }
+
+    if (bvG !== null && bvG >= 10) { score += 4; growthPts += 4; matchesFound++; }
+    else if (bvG !== null && bvG >= 5) { score += 2; growthPts += 2; matchesFound++; }
+
+    if (divG !== null && divG >= 10) { score += 4; growthPts += 4; matchesFound++; }
+    else if (divG !== null && divG >= 0) { score += 2; growthPts += 2; matchesFound++; }
+
+    if (debtG !== null && debtG <= -10) { score += 6; growthPts += 6; matchesFound++; }
+    else if (debtG !== null && debtG <= 0) { score += 3; growthPts += 3; matchesFound++; }
+
   } else if (isETF) {
-    if (pNav !== null && pNav > 0 && pNav <= 1.0) { score += 25; matchesFound++; }
-    else if (pNav !== null && pNav <= 1.05) { score += 15; matchesFound++; }
-    
-    if (divYield !== null && divYield >= 4) { score += 15; matchesFound++; }
-    else if (divYield !== null && divYield >= 2) { score += 10; matchesFound++; }
+    if (pNav !== null && pNav > 0 && pNav <= 1.0) { score += 14; valuationPts += 14; matchesFound++; }
+    else if (pNav !== null && pNav <= 1.05) { score += 8; valuationPts += 8; matchesFound++; }
 
-    if (roe !== null && roe >= 10) { score += 20; matchesFound++; }
-    else { score += 10; matchesFound++; }
+    if (divYield !== null && divYield >= 4) { score += 6; valuationPts += 6; matchesFound++; }
+    else if (divYield !== null && divYield >= 2) { score += 3; valuationPts += 3; matchesFound++; }
+
+    if (roe !== null && roe >= 10) { score += 20; profitabilityPts += 20; matchesFound++; }
+    else { score += 10; profitabilityPts += 10; matchesFound++; }
+
+    if (navG !== null && navG >= 10) { score += 20; growthPts += 20; matchesFound++; }
+    else if (navG !== null && navG >= 5) { score += 12; growthPts += 12; matchesFound++; }
+    else if (navG !== null && navG >= 0) { score += 6; growthPts += 6; matchesFound++; }
+
   } else if (isIndustrial || isInsurance) {
-    if (pe !== null && pe > 0 && pe < 10) { score += 15; matchesFound++; }
-    else if (pe !== null && pe <= 15 && pe > 0) { score += 8; matchesFound++; }
+    if (pe !== null && pe > 0 && pe < 10) { score += 10; valuationPts += 10; matchesFound++; }
+    else if (pe !== null && pe <= 15 && pe > 0) { score += 5; valuationPts += 5; matchesFound++; }
 
-    if (pb !== null && pb > 0 && pb < 1.5) { score += 10; matchesFound++; }
-    else if (pb !== null && pb <= 2.5 && pb > 0) { score += 5; matchesFound++; }
+    if (pb !== null && pb > 0 && pb < 1.5) { score += 6; valuationPts += 6; matchesFound++; }
+    else if (pb !== null && pb <= 2.5 && pb > 0) { score += 3; valuationPts += 3; matchesFound++; }
 
-    if (roe !== null && roe >= 15) { score += 15; matchesFound++; }
-    else if (roe !== null && roe >= 10) { score += 8; matchesFound++; }
+    if (divYield !== null && divYield >= 5) { score += 4; valuationPts += 4; matchesFound++; }
+    else if (divYield !== null && divYield >= 3) { score += 2; valuationPts += 2; matchesFound++; }
 
-    if (divYield !== null && divYield >= 5) { score += 10; matchesFound++; }
-    else if (divYield !== null && divYield >= 3) { score += 5; matchesFound++; }
+    if (roe !== null && roe >= 15) { score += 14; profitabilityPts += 14; matchesFound++; }
+    else if (roe !== null && roe >= 10) { score += 7; profitabilityPts += 7; matchesFound++; }
 
-    if (de !== null && de >= 0 && de < 0.5) { score += 10; matchesFound++; }
-    else if (de !== null && de <= 1.2) { score += 5; matchesFound++; }
+    if (de !== null && de >= 0 && de < 0.5) { score += 6; profitabilityPts += 6; matchesFound++; }
+    else if (de !== null && de <= 1.2) { score += 3; profitabilityPts += 3; matchesFound++; }
+
+    if (profitG !== null && profitG >= 15) { score += 6; growthPts += 6; matchesFound++; }
+    else if (profitG !== null && profitG >= 5) { score += 3; growthPts += 3; matchesFound++; }
+
+    if (bvG !== null && bvG >= 10) { score += 4; growthPts += 4; matchesFound++; }
+    else if (bvG !== null && bvG >= 5) { score += 2; growthPts += 2; matchesFound++; }
+
+    if (divG !== null && divG >= 10) { score += 4; growthPts += 4; matchesFound++; }
+    else if (divG !== null && divG >= 0) { score += 2; growthPts += 2; matchesFound++; }
+
+    if (debtG !== null && debtG <= -10) { score += 6; growthPts += 6; matchesFound++; }
+    else if (debtG !== null && debtG <= 0) { score += 3; growthPts += 3; matchesFound++; }
+
   } else {
-    if (pe !== null && pe > 0 && pe < 12) { score += 15; matchesFound++; }
-    if (roe !== null && roe >= 12) { score += 15; matchesFound++; }
-    if (divYield !== null && divYield >= 3) { score += 10; matchesFound++; }
-    if (de !== null && de <= 1.0) { score += 10; matchesFound++; }
+    if (pe !== null && pe > 0 && pe < 12) { score += 12; valuationPts += 12; matchesFound++; }
+    if (divYield !== null && divYield >= 3) { score += 8; valuationPts += 8; matchesFound++; }
+
+    if (roe !== null && roe >= 12) { score += 14; profitabilityPts += 14; matchesFound++; }
+    if (de !== null && de <= 1.0) { score += 6; profitabilityPts += 6; matchesFound++; }
+
+    if (profitG !== null && profitG >= 10) { score += 8; growthPts += 8; matchesFound++; }
+    if (bvG !== null && bvG >= 5) { score += 6; growthPts += 6; matchesFound++; }
+    if (divG !== null && divG >= 0) { score += 6; growthPts += 6; matchesFound++; }
   }
 
   const hasData = matchesFound > 0 || stock.fairValue != null;
@@ -5630,9 +5703,13 @@ function calculateFundamentalScore(stock, symbol) {
     score: isNaN(score) ? 0 : Math.min(score, 60),
     hasData,
     matchesFound,
-    sector: isBank ? 'Banking' : isHolding ? 'Holding' : isETF ? 'ETF' : 'Industrial/General'
+    sector: isBank ? 'Banking' : isHolding ? 'Holding' : isETF ? 'ETF' : 'Industrial/General',
+    valuationPts, profitabilityPts, growthPts,
+    netMarginPct, assetTurnover, equityMultiplier, roeQuality,
+    growthPeriods: growth.periods || 0
   };
 }
+
 
 // Depth score scaled by how normal today's volume is for this stock, and whether the imbalance has held for days
 function computeDepthRead(row, depthArray) {
