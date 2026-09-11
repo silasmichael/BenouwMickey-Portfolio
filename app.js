@@ -6036,6 +6036,7 @@ async function evaluateCompanyForAlert(ticker, isOwned, sectorStats) {
 
   const depthData = await fetchDepthData(ticker, 30);
   const fundScore = calculateFundamentalScore(metrics, ticker);
+  const growth    = getGrowthProfile(ticker);
   const latestRow = depthData[0] || { close_price: metrics.currentPrice, outstanding_bid: 0, outstanding_offer: 0 };
   const quant     = calculateQuantSignal(latestRow, fundScore, metrics, ticker, depthData);
   const trendInfo = typeof getFundamentalTrend === 'function' ? getFundamentalTrend(ticker) : { trend: 'insufficient' };
@@ -6066,6 +6067,11 @@ async function evaluateCompanyForAlert(ticker, isOwned, sectorStats) {
   }
   const cheapVsPeers   = peerDiscountPct !== null && peerDiscountPct >= 20;
   const pricierVsPeers = peerDiscountPct !== null && peerDiscountPct <= -20;
+
+  const peerRoeGap    = (peerInfo && peerInfo.roeMedian != null && metrics.roe != null) ? metrics.roe - peerInfo.roeMedian : null;
+  const peerGrowthGap = (peerInfo && peerInfo.profitGrowthMedian != null && growth.hasGrowthData && growth.profitGrowthPct != null) ? growth.profitGrowthPct - peerInfo.profitGrowthMedian : null;
+  const peerFundamentalsLag  = (peerRoeGap !== null && peerRoeGap < -3) || (peerGrowthGap !== null && peerGrowthGap < -5);
+  const peerFundamentalsHold = (peerRoeGap === null || peerRoeGap >= 0) && (peerGrowthGap === null || peerGrowthGap >= 0) && (peerRoeGap !== null || peerGrowthGap !== null);
 
   const money = v => typeof fT === 'function' ? fT(v) : v;
   const reasons = [];
@@ -6098,9 +6104,12 @@ async function evaluateCompanyForAlert(ticker, isOwned, sectorStats) {
   }
   if (canSuggestEntry && trendInfo.trend === 'improving') {
     reasons.push(`fundamentals improving (${trendInfo.signals.join(', ')}) since ${trendInfo.fromPeriod}`);
-  }
+  }  
   if (canSuggestEntry && cheapVsPeers) {
-    reasons.push(`trading ${peerDiscountPct.toFixed(0)}% below its ${fundScore.sector} peers on ${peerMetricLabel}`);
+    const note = peerFundamentalsLag ? ' — but profitability/growth trail the same peer group; check whether the discount is deserved before treating this as a bargain'
+               : peerFundamentalsHold ? ' — and profitability/growth hold up against the same peers, so this looks like a genuine discount'
+               : '';
+    reasons.push(`trading ${peerDiscountPct.toFixed(0)}% below its ${fundScore.sector} peers on ${peerMetricLabel}${note}`);
   }
   if (canSuggestEntry && reversal && reversal.direction === 'up') {
     const hasOtherSupport = reasons.length > 0;
@@ -6116,9 +6125,14 @@ async function evaluateCompanyForAlert(ticker, isOwned, sectorStats) {
 
   if (quant.signal === 'HOLD (Overvalued)') reasons.push("trading above fair value — don't chase this price");
   if (quant.signal === 'WAIT (Overbought)') reasons.push('price moved up too fast, pullback risk');
-    if (pricierVsPeers) {
-    reasons.push(`priced ${Math.abs(peerDiscountPct).toFixed(0)}% above its ${fundScore.sector} peers on ${peerMetricLabel} — richly valued relative to the group`);
+    
+  if (pricierVsPeers) {
+    const note = peerFundamentalsLag ? ' — and profitability/growth also trail peers, so the premium looks hard to justify'
+               : peerFundamentalsHold ? ' — though profitability/growth are ahead of the same peers, which may partly justify the premium'
+               : '';
+    reasons.push(`priced ${Math.abs(peerDiscountPct).toFixed(0)}% above its ${fundScore.sector} peers on ${peerMetricLabel}${note}`);
   }
+
   if (reversal && reversal.direction === 'down') {
     reasons.push(`was in a demand-driven rally (${reversal.pctChange.toFixed(1)}% over 14d) — buy-side pressure has cleared and price has turned down for 2 straight sessions`);
   }
