@@ -5762,6 +5762,36 @@ function getFundamentalTrend(ticker) {
   return { trend, signals, fromPeriod: previous.period, toPeriod: latest.period, periods: readings.length };
 }
 
+// Compares the two most recent saved report periods to measure profit, book value, dividend, asset, debt, and NAV growth
+function getGrowthProfile(ticker) {
+  const s  = Array.isArray(stocks) ? stocks.find(st => st.id === ticker) : null;
+  const wl = snapshots._watchlist && snapshots._watchlist[ticker];
+  const reports = Object.assign({}, (wl && wl.reports) || {}, (s && s.reports) || {});
+  const periodKeys = Object.keys(reports);
+  if (periodKeys.length < 2) return { hasGrowthData: false, periods: periodKeys.length };
+
+  const sortedKeys = sortPeriodKeys(periodKeys, false);
+  const latest = reports[sortedKeys[sortedKeys.length - 1]] || {};
+  const previous = reports[sortedKeys[sortedKeys.length - 2]] || {};
+
+  const pctChange = (curr, prev) => (typeof curr === 'number' && typeof prev === 'number' && prev !== 0)
+    ? ((curr - prev) / Math.abs(prev)) * 100 : null;
+
+  return {
+    hasGrowthData: true,
+    periods: periodKeys.length,
+    profitGrowthPct: pctChange(latest.eps, previous.eps),
+    bookValueGrowthPct: pctChange(latest.bvps, previous.bvps),
+    dividendGrowthPct: pctChange(latest.divPerShare, previous.divPerShare),
+    assetGrowthPct: pctChange(latest.assets, previous.assets),
+    debtGrowthPct: pctChange(latest.totalDebt, previous.totalDebt),
+    navGrowthPct: pctChange(latest.navPerShare, previous.navPerShare),
+    fromPeriod: sortedKeys[sortedKeys.length - 2],
+    toPeriod: sortedKeys[sortedKeys.length - 1]
+  };
+}
+
+
 // Computes median P/E and P/B across every known company, grouped by sector — run once per sync, not per company
 function computeAllSectorStats() {
   const tickers = new Set();
