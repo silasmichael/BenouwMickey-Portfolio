@@ -6094,11 +6094,10 @@ async function evaluateCompanyForAlert(ticker, isOwned, sectorStats) {
     const qualityNote = quant.dataQuality === 'none'    ? ' — based on price/liquidity only, no fundamentals on file'
                        : quant.dataQuality === 'partial' ? ' — limited fundamental data'
                        : '';
-    reasons.push(`strong composite score (${quant.compositeScore}/100)${qualityNote}`);
+    const roeNote = fundScore.roeQuality === 'leverage-driven' ? ' — note: ROE here is leverage-driven rather than margin-driven, so the quality behind the number is weaker than it looks' : '';
+    reasons.push(`strong composite score (${quant.compositeScore}/100)${qualityNote}${roeNote}`);
   }
-  if (canSuggestEntry && undervalued) {
-    reasons.push(`trading ${discountPct.toFixed(0)}% below fair value`);
-  }
+
   if (canSuggestEntry && nearLow) {
     reasons.push(`near its lowest price in the past ~4 weeks`);
   }
@@ -6111,6 +6110,16 @@ async function evaluateCompanyForAlert(ticker, isOwned, sectorStats) {
                : '';
     reasons.push(`trading ${peerDiscountPct.toFixed(0)}% below its ${fundScore.sector} peers on ${peerMetricLabel}${note}`);
   }
+  const growthUpNotes = [];
+  if (growth.hasGrowthData) {
+    if (growth.profitGrowthPct !== null && growth.profitGrowthPct >= 15) growthUpNotes.push(`profit up ${growth.profitGrowthPct.toFixed(0)}%`);
+    if (growth.bookValueGrowthPct !== null && growth.bookValueGrowthPct >= 10) growthUpNotes.push(`book value up ${growth.bookValueGrowthPct.toFixed(0)}%`);
+    if (growth.dividendGrowthPct !== null && growth.dividendGrowthPct >= 10) growthUpNotes.push(`dividend up ${growth.dividendGrowthPct.toFixed(0)}%`);
+  }
+  if (canSuggestEntry && growthUpNotes.length) {
+    reasons.push(`${growthUpNotes.join(', ')} since ${growth.fromPeriod} → ${growth.toPeriod}`);
+  }
+
   if (canSuggestEntry && reversal && reversal.direction === 'up') {
     const hasOtherSupport = reasons.length > 0;
     reasons.push(hasOtherSupport
@@ -6131,6 +6140,15 @@ async function evaluateCompanyForAlert(ticker, isOwned, sectorStats) {
                : peerFundamentalsHold ? ' — though profitability/growth are ahead of the same peers, which may partly justify the premium'
                : '';
     reasons.push(`priced ${Math.abs(peerDiscountPct).toFixed(0)}% above its ${fundScore.sector} peers on ${peerMetricLabel}${note}`);
+  }
+
+  const growthDownNotes = [];
+  if (growth.hasGrowthData) {
+    if (growth.profitGrowthPct !== null && growth.profitGrowthPct <= -15) growthDownNotes.push(`profit down ${Math.abs(growth.profitGrowthPct).toFixed(0)}%`);
+    if (growth.bookValueGrowthPct !== null && growth.bookValueGrowthPct <= -10) growthDownNotes.push(`book value down ${Math.abs(growth.bookValueGrowthPct).toFixed(0)}%`);
+  }
+  if (growthDownNotes.length) {
+    reasons.push(`${growthDownNotes.join(', ')} since ${growth.fromPeriod} → ${growth.toPeriod} — worth checking why`);
   }
 
   if (reversal && reversal.direction === 'down') {
