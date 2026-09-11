@@ -5879,7 +5879,7 @@ function getGrowthProfile(ticker) {
 }
 
 
-// Computes median P/E and P/B across every known company, grouped by sector — run once per sync, not per company
+// Computes median P/E, P/B, ROE, and profit growth across every known company, grouped by sector — run once per sync, not per company
 function computeAllSectorStats() {
   const tickers = new Set();
   if (Array.isArray(stocks)) stocks.forEach(s => tickers.add(s.id));
@@ -5890,10 +5890,13 @@ function computeAllSectorStats() {
     const metrics = getCompanyMetricsForRadar(ticker);
     if (!metrics) return;
     const fundScore = calculateFundamentalScore(metrics, ticker);
+    const growth = getGrowthProfile(ticker);
     const sec = fundScore.sector;
-    if (!bySector[sec]) bySector[sec] = { pe: [], pb: [], count: 0 };
+    if (!bySector[sec]) bySector[sec] = { pe: [], pb: [], roe: [], profitGrowth: [], count: 0 };
     if (typeof metrics.pe_ratio === 'number' && metrics.pe_ratio > 0) bySector[sec].pe.push(metrics.pe_ratio);
     if (typeof metrics.pb_ratio === 'number' && metrics.pb_ratio > 0) bySector[sec].pb.push(metrics.pb_ratio);
+    if (typeof metrics.roe === 'number') bySector[sec].roe.push(metrics.roe);
+    if (growth.hasGrowthData && typeof growth.profitGrowthPct === 'number') bySector[sec].profitGrowth.push(growth.profitGrowthPct);
     bySector[sec].count++;
   });
 
@@ -5906,10 +5909,17 @@ function computeAllSectorStats() {
 
   const stats = {};
   Object.keys(bySector).forEach(sec => {
-    stats[sec] = { peMedian: median(bySector[sec].pe), pbMedian: median(bySector[sec].pb), peerCount: bySector[sec].count };
+    stats[sec] = {
+      peMedian: median(bySector[sec].pe),
+      pbMedian: median(bySector[sec].pb),
+      roeMedian: median(bySector[sec].roe),
+      profitGrowthMedian: median(bySector[sec].profitGrowth),
+      peerCount: bySector[sec].count
+    };
   });
   return stats;
 }
+
 
 // Composite score + signal; oversupply now requires sustained, non-thin depth instead of a fixed number
 function calculateQuantSignal(row, fundScoreObj, holding, symbol, depthArray) {
