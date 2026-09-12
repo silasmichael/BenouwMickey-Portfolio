@@ -6293,8 +6293,7 @@ function downloadRadarPDF() {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(15);
   doc.setTextColor(0, 200, 150);
-  doc.text("MARKET RADAR & QUANT REPORT", marginX, 15);
-
+  doc.text("STOCKS RADAR & QUANT REPORT", marginX, 15);
   doc.setFontSize(9);
   doc.setFont("helvetica", "normal");
   doc.setTextColor(170, 170, 170);
