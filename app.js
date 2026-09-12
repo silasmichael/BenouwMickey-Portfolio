@@ -6848,6 +6848,8 @@ function initRadarCharts(depthData) {
 
 // Initial Call
 renderRadar();
+renderFundRadar();
+
 
 // Master Ticker Helper — reads from Radar select, Supabase cache, Watchlist, and Portfolio
 function getFullMarketTickers() {
