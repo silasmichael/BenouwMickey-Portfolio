@@ -5172,6 +5172,10 @@ let currentRadarData = [];
 let currentRadarTicker = '';
 let currentRadarFundScore = null;
 let currentRadarHolding = null;
+let fundRadarChartInstance = null;
+let currentFundRadarData = [];
+let currentFundRadarSymbol = '';
+
 
 // Default exchange tickers
 const DEFAULT_TICKERS = ["CRDB", "NMB", "NICOL", "SWIS", "TBL", "TCCL", "VODA", "DSE", "MCB", "DCB", "TICL", "IEACLC"];
