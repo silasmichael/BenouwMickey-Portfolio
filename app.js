@@ -2001,6 +2001,7 @@ function showTab(name, btn) {
   document.getElementById('pane-'+name).classList.add('on');
   btn.classList.add('on');
   renderAll();
+  if (name === 'fund-radar' && typeof refreshFundRadarOptions === 'function') refreshFundRadarOptions();
 }
 
 function toggleExp(id) {
