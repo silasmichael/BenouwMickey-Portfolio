@@ -5185,7 +5185,7 @@ function renderRadar() {
       
       <!-- Top Title & Action Buttons -->
       <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:16px;">
-        <div style="font-size:18px;font-weight:900;color:var(--g);">📡 Market Radar & Quantitative Scoring Engine</div>
+        <div style="font-size:18px;font-weight:900;color:var(--g);">📡 Stocks Radar & Quantitative Scoring Engine</div>
         <div style="display:flex; gap:8px;">
           <button onclick="openWatchlistModal()" style="background:#4A90E222; color:#4A90E2; border:1px solid #4A90E244; border-radius:6px; padding:8px 12px; font-size:11px; font-weight:bold; cursor:pointer;">+ Add Watchlist</button>
           <button onclick="downloadRadarPDF()" style="background:#00C89622; color:var(--g); border:1px solid #00C89644; border-radius:6px; padding:8px 12px; font-size:11px; font-weight:bold; cursor:pointer;">📄 Export PDF</button>
