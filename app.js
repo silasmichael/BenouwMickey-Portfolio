@@ -5534,6 +5534,342 @@ function renderRadarTableOnly(fundScoreObj = null, userHolding = null) {
     </div>
   `;
 }
+
+// Builds the Fund Performance tab shell — mirrors renderRadar() minus the watchlist button and second chart
+function renderFundRadar() {
+  const pane = document.getElementById('pane-fund-radar');
+  if (!pane) return;
+
+  pane.innerHTML = `
+    <div style="padding: 16px; max-width: 1200px; margin: 0 auto;">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:16px;">
+        <div style="font-size:18px;font-weight:900;color:var(--g);">📈 Fund Performance</div>
+        <div style="display:flex; gap:8px;">
+          <button onclick="downloadFundRadarPDF()" style="background:#00C89622; color:var(--g); border:1px solid #00C89644; border-radius:6px; padding:8px 12px; font-size:11px; font-weight:bold; cursor:pointer;">📄 Export PDF</button>
+          <button onclick="downloadFundRadarCSV()" style="background:#00C89622; color:var(--g); border:1px solid #00C89644; border-radius:6px; padding:8px 12px; font-size:11px; font-weight:bold; cursor:pointer;">📊 Export CSV</button>
+        </div>
+      </div>
+
+      <div style="display:flex; flex-wrap:wrap; gap:12px; margin-bottom: 20px; background: #0D1117; padding: 15px; border-radius: 8px; border: 1px solid #1E2A3A; align-items:flex-end;">
+        <div style="flex: 1; min-width: 160px;">
+          <div style="margin-bottom:5px; color:#888; font-size:11px; text-transform:uppercase; font-weight:bold;">Select Fund</div>
+          <select id="fund-radar-select" onchange="loadFundRadarData()" style="width:100%;background:#1A1A28;border:1px solid #2A2A3A;border-radius:6px;padding:8px;color:#F0EAD6;font-size:12px;outline:none;">
+            <option value="">-- Choose Fund --</option>
+            ${funds.map(f => `<option value="${f.id}">${f.name}</option>`).join('')}
+          </select>
+        </div>
+        <div style="flex: 1; min-width: 140px;">
+          <div style="margin-bottom:5px; color:#888; font-size:11px; text-transform:uppercase; font-weight:bold;">Timeframe</div>
+          <select id="fund-radar-timeframe" onchange="loadFundRadarData()" style="width:100%;background:#1A1A28;border:1px solid #2A2A3A;border-radius:6px;padding:8px;color:#F0EAD6;font-size:12px;outline:none;">
+            <option value="30">30 Days</option>
+            <option value="90" selected>90 Days (3 Months)</option>
+            <option value="180">180 Days (6 Months)</option>
+          </select>
+        </div>
+        <div style="flex: 1; min-width: 120px;">
+          <div style="margin-bottom:5px; color:#888; font-size:11px; text-transform:uppercase; font-weight:bold;">Rows Displayed</div>
+          <select id="fund-radar-row-limit" onchange="renderFundRadarTableOnly()" style="width:100%;background:#1A1A28;border:1px solid #2A2A3A;border-radius:6px;padding:8px;color:#F0EAD6;font-size:12px;outline:none;">
+            <option value="15" selected>Latest 15</option>
+            <option value="30">Latest 30</option>
+            <option value="90">Latest 90</option>
+            <option value="ALL">Show All</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="fund-radar-results">
+        <div style="text-align:center; padding: 40px; color: #555; font-size: 12px; border: 1px dashed #333; border-radius: 8px;">
+          Select a fund above to view NAV history and performance.
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// Rebuilds the fund dropdown from the current funds array without redrawing the whole tab — called on tab click so a newly added fund shows up automatically
+function refreshFundRadarOptions() {
+  const select = document.getElementById('fund-radar-select');
+  if (!select) return;
+  const currentVal = select.value;
+  select.innerHTML = `<option value="">-- Choose Fund --</option>` +
+    funds.map(f => `<option value="${f.id}" ${f.id === currentVal ? 'selected' : ''}>${f.name}</option>`).join('');
+}
+
+// Fetches NAV history for the selected fund and renders tiles, chart, and table
+async function loadFundRadarData() {
+  const symbol = document.getElementById('fund-radar-select')?.value;
+  const days = parseInt(document.getElementById('fund-radar-timeframe')?.value || 90);
+  const resultsDiv = document.getElementById('fund-radar-results');
+  if (!symbol || !resultsDiv) return;
+
+  resultsDiv.innerHTML = `<div style="text-align:center; padding:30px; color:#F4A623;">⚡ Loading NAV history...</div>`;
+
+  let navData = [];
+  try {
+    if (typeof sb !== 'undefined' && sb.from) {
+      const { data, error } = await sb
+        .from('fund_nav_logs')
+        .select('symbol, snapshot_date, nav')
+        .eq('symbol', symbol)
+        .order('snapshot_date', { ascending: false })
+        .limit(days);
+      if (!error && data) navData = data;
+    }
+  } catch (err) {
+    console.error("Fund NAV fetch error:", err);
+  }
+
+  currentFundRadarData = navData;
+  currentFundRadarSymbol = symbol;
+
+  if (navData.length === 0) {
+    resultsDiv.innerHTML = `
+      <div style="text-align:center; padding: 30px; color: #888; background: #0D1117; border: 1px solid #1E2A3A; border-radius: 8px;">
+        ⚠️ No NAV history found for <strong>${symbol}</strong> yet.
+      </div>
+    `;
+    return;
+  }
+
+  const fn = funds.find(f => f.id === symbol);
+  const color = fn ? fn.color : '#00C896';
+  const holding = fn ? cFR(fn) : null;
+
+  const latestNav = navData[0].nav;
+  const oldestNav = navData[navData.length - 1].nav;
+  const periodGrowthPct = oldestNav > 0 ? ((latestNav - oldestNav) / oldestNav) * 100 : null;
+  const growthColor = periodGrowthPct === null ? '#888' : periodGrowthPct >= 0 ? '#00C896' : '#E05656';
+
+  resultsDiv.innerHTML = `
+    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap:10px; margin-bottom:15px;">
+      <div style="background:#0D1117; border:1px solid ${color}30; padding:12px; border-radius:8px;">
+        <div style="font-size:9px; color:#666; text-transform:uppercase;">Current NAV</div>
+        <div style="font-size:18px; font-weight:800; color:${color}; font-family:Georgia,serif;">${latestNav.toFixed(4)}</div>
+      </div>
+      <div style="background:#0D1117; border:1px solid ${color}30; padding:12px; border-radius:8px;">
+        <div style="font-size:9px; color:#666; text-transform:uppercase;">NAV Growth (period)</div>
+        <div style="font-size:18px; font-weight:800; color:${growthColor};">${periodGrowthPct === null ? '—' : (periodGrowthPct >= 0 ? '+' : '') + periodGrowthPct.toFixed(2) + '%'}</div>
+      </div>
+      <div style="background:#0D1117; border:1px solid ${color}30; padding:12px; border-radius:8px;">
+        <div style="font-size:9px; color:#666; text-transform:uppercase;">Your Position</div>
+        <div style="font-size:18px; font-weight:800; color:#F0EAD6;">${holding ? fT(Math.round(holding.cv)) : 'Not Held'}</div>
+      </div>
+      <div style="background:#0D1117; border:1px solid ${color}30; padding:12px; border-radius:8px;">
+        <div style="font-size:9px; color:#666; text-transform:uppercase;">Unrealised Gain / ROI</div>
+        <div style="font-size:13px; font-weight:800; color:${holding ? (holding.gain >= 0 ? '#00C896' : '#E05656') : '#888'}; margin-top:3px;">${holding ? `${fT(Math.round(holding.gain))} (${holding.roi.toFixed(1)}%)` : '—'}</div>
+      </div>
+    </div>
+
+    <div style="background:#0D1117; border:1px solid #1E2A3A; padding:15px; border-radius:8px; margin-bottom:20px;">
+      <div style="font-size:12px; font-weight:700; color:${color}; margin-bottom:10px;">NAV Trend</div>
+      <div style="height:220px; position:relative;"><canvas id="fund-radar-chart"></canvas></div>
+    </div>
+
+    <div id="fund-radar-table-container"></div>
+  `;
+
+  initFundRadarChart(navData, color);
+  renderFundRadarTableOnly();
+}
+
+// Single-line NAV chart, colored to match the fund's own accent color
+function initFundRadarChart(navData, color) {
+  if (typeof Chart === 'undefined') return;
+  const reversedData = [...navData].reverse();
+  const labels = reversedData.map(d => d.snapshot_date);
+  const navs = reversedData.map(d => d.nav);
+
+  const ctx = document.getElementById('fund-radar-chart')?.getContext('2d');
+  if (!ctx) return;
+  if (fundRadarChartInstance) fundRadarChartInstance.destroy();
+  fundRadarChartInstance = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'NAV per Unit',
+        data: navs,
+        borderColor: color,
+        backgroundColor: `${color}15`,
+        fill: true,
+        tension: 0.2,
+        pointRadius: 2
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#666', font: { size: 9 } }, grid: { color: '#1A2A3A' } },
+        y: { ticks: { color: '#666', font: { size: 9 } }, grid: { color: '#1A2A3A' } }
+      }
+    }
+  });
+}
+
+// Date / NAV / day-change% table, color-coded like every other gain/loss figure in the app
+function renderFundRadarTableOnly() {
+  const container = document.getElementById('fund-radar-table-container');
+  if (!container || currentFundRadarData.length === 0) return;
+
+  const limitVal = document.getElementById('fund-radar-row-limit')?.value || "15";
+  const displayRows = limitVal === "ALL" ? currentFundRadarData : currentFundRadarData.slice(0, parseInt(limitVal));
+
+  const rowsHTML = displayRows.map((row, i) => {
+    const prevRow = currentFundRadarData[displayRows === currentFundRadarData ? i + 1 : currentFundRadarData.indexOf(row) + 1];
+    const dayChangePct = (prevRow && prevRow.nav > 0) ? ((row.nav - prevRow.nav) / prevRow.nav) * 100 : null;
+    const changeColor = dayChangePct === null ? '#888' : dayChangePct >= 0 ? '#00C896' : '#E05656';
+    return `
+      <tr style="border-bottom: 1px solid #1A2A3A;">
+        <td style="padding: 10px; font-size: 11px; color:#888;">${row.snapshot_date}</td>
+        <td style="padding: 10px; font-size: 11px; font-weight:bold; color:#F0EAD6;">${row.nav.toFixed(4)}</td>
+        <td style="padding: 10px; font-size: 11px; font-weight:bold; color:${changeColor};">${dayChangePct === null ? '—' : (dayChangePct >= 0 ? '+' : '') + dayChangePct.toFixed(2) + '%'}</td>
+      </tr>
+    `;
+  }).join('');
+
+  container.innerHTML = `
+    <div style="background: #0D1117; border: 1px solid #1E2A3A; border-radius: 8px; overflow-x: auto;">
+      <table style="width: 100%; border-collapse: collapse; text-align: left;">
+        <thead style="background: #161B27; border-bottom: 2px solid #1E2A3A;">
+          <tr>
+            <th style="padding: 10px; font-size: 10px; color: #666; text-transform: uppercase;">Date</th>
+            <th style="padding: 10px; font-size: 10px; color: #666; text-transform: uppercase;">NAV per Unit</th>
+            <th style="padding: 10px; font-size: 10px; color: #666; text-transform: uppercase;">Day Change</th>
+          </tr>
+        </thead>
+        <tbody>${rowsHTML}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+// CSV export of the currently loaded NAV history
+function downloadFundRadarCSV() {
+  const symbol = currentFundRadarSymbol || document.getElementById('fund-radar-select')?.value;
+  if (!currentFundRadarData || currentFundRadarData.length === 0) {
+    alert("Please select a fund with NAV data before exporting CSV.");
+    return;
+  }
+  try {
+    const headers = ["Symbol", "Date", "NAV per Unit"];
+    const csvRows = [
+      headers.join(","),
+      ...currentFundRadarData.map(d => `"${d.symbol}","${d.snapshot_date}",${d.nav}`)
+    ];
+    const blob = new Blob([csvRows.join("\n")], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const downloadLink = document.createElement("a");
+    downloadLink.href = url;
+    downloadLink.setAttribute("download", `${symbol}_nav_history_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(downloadLink);
+    downloadLink.click();
+    document.body.removeChild(downloadLink);
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    console.error("Fund CSV Export Error:", err);
+    alert("An error occurred while generating the CSV file.");
+  }
+}
+
+// PDF export — same jsPDF/autoTable stack as the stock report, one chart instead of two
+function downloadFundRadarPDF() {
+  const symbol = currentFundRadarSymbol || document.getElementById('fund-radar-select')?.value;
+  if (!currentFundRadarData || currentFundRadarData.length === 0) {
+    alert("Please select a fund with NAV data before exporting PDF.");
+    return;
+  }
+
+  let doc = null;
+  try {
+    if (window.jspdf && window.jspdf.jsPDF) {
+      doc = new window.jspdf.jsPDF('p', 'mm', 'a4');
+    } else if (typeof window.jsPDF === 'function') {
+      doc = new window.jsPDF('p', 'mm', 'a4');
+    } else if (window.jsPDF && window.jsPDF.default) {
+      doc = new window.jsPDF.default('p', 'mm', 'a4');
+    }
+  } catch (e) {
+    console.error("jsPDF initialization failed:", e);
+  }
+  if (!doc || typeof doc.autoTable !== 'function') {
+    alert("PDF generator library is not loaded properly.");
+    return;
+  }
+
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const marginX = 14;
+
+  doc.setFillColor(13, 17, 23);
+  doc.rect(0, 0, pageWidth, 24, 'F');
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(15);
+  doc.setTextColor(0, 200, 150);
+  doc.text("FUND PERFORMANCE REPORT", marginX, 15);
+  doc.setFontSize(9);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(170, 170, 170);
+  doc.text(`Generated: ${dateStr}`, pageWidth - marginX, 15, { align: "right" });
+
+  doc.setFillColor(245, 247, 250);
+  doc.roundedRect(marginX, 29, pageWidth - marginX * 2, 16, 2, 2, 'F');
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.setTextColor(20, 30, 45);
+  doc.text(`Fund: ${symbol}`, marginX + 4, 37);
+  const latest = currentFundRadarData[0] || {};
+  doc.setFontSize(9.5);
+  doc.setFont("helvetica", "normal");
+  doc.text(`Latest NAV: ${(latest.nav || 0).toFixed(4)}`, marginX + 4, 42.5);
+  doc.text(`Total Snapshots: ${currentFundRadarData.length} Days`, pageWidth - marginX - 4, 42.5, { align: "right" });
+
+  const chartsTop = 50;
+  const chartsHeight = 55;
+  doc.setFontSize(9);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(20, 30, 45);
+  doc.text("NAV Trend", marginX, chartsTop - 2);
+  doc.setDrawColor(220, 220, 225);
+  doc.roundedRect(marginX, chartsTop, pageWidth - marginX * 2, chartsHeight, 1.5, 1.5);
+  addChartToPdf(doc, 'fund-radar-chart', marginX + 2, chartsTop + 2, pageWidth - marginX * 2 - 4, chartsHeight - 4);
+
+  const tableHead = [["Date", "NAV per Unit", "Day Change"]];
+  const tableRows = currentFundRadarData.map((row, i) => {
+    const prev = currentFundRadarData[i + 1];
+    const chg = (prev && prev.nav > 0) ? ((row.nav - prev.nav) / prev.nav) * 100 : null;
+    return [row.snapshot_date, row.nav.toFixed(4), chg === null ? "—" : `${chg >= 0 ? '+' : ''}${chg.toFixed(2)}%`];
+  });
+
+  doc.autoTable({
+    startY: chartsTop + chartsHeight + 8,
+    head: tableHead,
+    body: tableRows,
+    theme: 'grid',
+    styles: { font: 'helvetica', fontSize: 8, cellPadding: 2.5 },
+    headStyles: { fillColor: [22, 27, 39], textColor: [240, 234, 214], fontSize: 8.5, fontStyle: 'bold', halign: 'center' },
+    columnStyles: { 0: { halign: 'center' }, 1: { halign: 'right', fontStyle: 'bold' }, 2: { halign: 'right' } },
+    alternateRowStyles: { fillColor: [250, 252, 255] },
+    margin: { left: marginX, right: marginX },
+    didParseCell: function (data) {
+      if (data.section === 'body' && data.column.index === 2) {
+        const val = tableRows[data.row.index][2];
+        if (val.startsWith('+')) data.cell.styles.textColor = [0, 150, 100];
+        else if (val.startsWith('-')) data.cell.styles.textColor = [200, 50, 50];
+      }
+    }
+  });
+
+  const pageHeight = doc.internal.pageSize.getHeight();
+  doc.setFontSize(8);
+  doc.setTextColor(150, 150, 150);
+  doc.text(`Page 1 of 1`, pageWidth / 2, pageHeight - 8, { align: 'center' });
+
+  doc.save(`${symbol}_Fund_Performance_Statement.pdf`);
+}
+
 // Sector-specific fundamental score out of 60 — Valuation(20) + Profitability&Quality(20) + Growth(20) — reports how many metrics had data
 function calculateFundamentalScore(stock, symbol) {
   if (!stock || typeof stock !== 'object') {
