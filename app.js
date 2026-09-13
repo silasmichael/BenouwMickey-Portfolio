@@ -6203,6 +6203,96 @@ function getReversalSignal(depthArray) {
   return { direction: turnedUp ? 'up' : 'down', cause: wasSupplyDriven ? 'supply' : 'demand', pctChange };
 }
 
+// Fetches recent NAV history for one fund — same shape as fetchDepthData, reads fund_nav_logs instead
+async function fetchFundNavData(symbol, days) {
+  try {
+    if (typeof sb !== 'undefined' && sb.from) {
+      const { data, error } = await sb
+        .from('fund_nav_logs')
+        .select('symbol, snapshot_date, nav')
+        .eq('symbol', symbol)
+        .order('snapshot_date', { ascending: false })
+        .limit(days);
+      if (!error && data) return data;
+    }
+  } catch (err) {
+    console.error("Fund NAV fetch error:", err);
+  }
+  return [];
+}
+
+// Detects a NAV trend reversing for 2 straight sessions — simpler than the stock version since funds have no order book to confirm a cause
+function getFundReversalSignal(navData) {
+  if (navData.length < 16) return null;
+  const navAt = i => (navData[i] && navData[i].nav > 0) ? navData[i].nav : null;
+  const today = navAt(0), y1 = navAt(1), y2 = navAt(2), anchor = navAt(14);
+  if (!today || !y1 || !y2 || !anchor) return null;
+
+  const pctChange = ((today - anchor) / anchor) * 100;
+  const wasDeclining = pctChange <= -3; // lower bar than stocks (8%) — funds move slower by design
+  const wasRising = pctChange >= 3;
+  if (!wasDeclining && !wasRising) return null;
+
+  const turnedUp = wasDeclining && today > y1 && y1 > y2;
+  const turnedDown = wasRising && today < y1 && y1 < y2;
+  if (!turnedUp && !turnedDown) return null;
+
+  return { direction: turnedUp ? 'up' : 'down', pctChange };
+}
+
+// Fund counterpart to evaluateCompanyForAlert — covers staleness, drawdown, reversal, and your own position in one pass
+async function evaluateFundForAlert(fn) {
+  const navData = await fetchFundNavData(fn.id, 90);
+  const reasons = [];
+  const latestRow = navData[0] || null;
+  const holding = cFR(fn);
+
+  const daysSinceUpdate = latestRow ? Math.floor((Date.now() - new Date(latestRow.snapshot_date).getTime()) / 86400000) : null;
+  const isStale = daysSinceUpdate !== null && daysSinceUpdate > 3; // >3 calendar days tolerates a normal weekend gap
+  if (isStale) reasons.push(`NAV hasn't updated in ${daysSinceUpdate} days (last recorded: ${latestRow.snapshot_date}) — worth checking the fund sync`);
+  if (!latestRow) reasons.push(`No NAV history recorded yet for ${fn.name}`);
+
+  let drawdownPct = null, reversal = null, nearAvgCost = false;
+  if (navData.length > 0) {
+    const peakNav = Math.max(...navData.map(d => d.nav));
+    const currentNav = latestRow.nav;
+    drawdownPct = peakNav > 0 ? ((currentNav - peakNav) / peakNav) * 100 : null;
+    if (drawdownPct !== null && drawdownPct <= -8) {
+      reasons.push(`${Math.abs(drawdownPct).toFixed(1)}% below its peak NAV (${peakNav.toFixed(4)}) over the last ${navData.length} sessions`);
+    }
+
+    reversal = getFundReversalSignal(navData);
+    if (reversal) {
+      reasons.push(reversal.direction === 'up'
+        ? `NAV had been declining but turned up for 2 straight sessions`
+        : `NAV had been rising but turned down for 2 straight sessions`);
+    }
+
+    if (holding && holding.avg > 0) {
+      nearAvgCost = Math.abs((currentNav - holding.avg) / holding.avg) <= 0.03;
+      if (nearAvgCost) reasons.push(`NAV is back within 3% of your average cost (${holding.avg.toFixed(4)})`);
+    }
+  }
+
+  if (holding && holding.roi >= 30) {
+    reasons.push(`up ${holding.roi.toFixed(1)}% on your position — a profit-taking point worth considering`);
+  }
+
+  if (reasons.length === 0) return null;
+
+  const signal = isStale ? 'STALE'
+    : (drawdownPct !== null && drawdownPct <= -8) ? 'DRAWDOWN'
+    : (reversal && reversal.direction === 'down') ? 'REVERSAL_DOWN'
+    : 'OK';
+
+  return {
+    ticker: fn.id, fundName: fn.name, reasons,
+    profitPct: holding ? holding.roi : null,
+    isOwned: !!holding, isStale, daysSinceUpdate, drawdownPct, reversal, nearAvgCost, signal
+  };
+}
+
+
 // Sorts period keys like "2024 FY"/"2024 Q1" in true chronological order, not alphabetical
 function sortPeriodKeys(keys, latestFirst) {
   const order = { 'Q1': 1, 'H1': 2, '9M': 3, 'FY': 4 };
@@ -6632,6 +6722,26 @@ function shouldSurfaceAlert(evalResult) {
   return isNew;
 }
 
+// Step-gated re-alert logic for funds — same _alertState store as stocks, no key collision since fund ids are lowercase and stock tickers aren't
+function shouldSurfaceFundAlert(evalResult) {
+  if (!snapshots._alertState) snapshots._alertState = {};
+  const prev = snapshots._alertState[evalResult.ticker] || {};
+  const curr = {};
+
+  if (evalResult.isStale) curr.staleFlag = true;
+  if (evalResult.drawdownPct !== null && evalResult.drawdownPct <= -8) {
+    curr.drawdownStep = Math.floor(Math.abs(evalResult.drawdownPct) / 5) * 5;
+  }
+  if (evalResult.reversal) curr.reversalSignal = evalResult.reversal.direction;
+  if (evalResult.profitPct !== null && evalResult.profitPct >= 30) {
+    curr.profitStep = Math.floor(evalResult.profitPct / 10) * 10;
+  }
+  if (evalResult.nearAvgCost) curr.nearCost = true;
+
+  const isNew = Object.keys(curr).some(k => curr[k] !== prev[k]);
+  if (isNew) snapshots._alertState[evalResult.ticker] = curr;
+  return isNew;
+}
 
 // 6. Chart Image Embed Helper
 function addChartToPdf(doc, canvasId, x, y, maxWidth, maxHeight) {
@@ -7672,6 +7782,21 @@ async function generatePortfolioAlerts() {
     if (idx >= 0) snapshots._activeAlerts[idx] = card; else snapshots._activeAlerts.push(card);
   });
 
+  if (Array.isArray(funds)) {
+    const fundResults = await Promise.all(funds.map(fn => evaluateFundForAlert(fn)));
+    funds.forEach((fn, i) => {
+      const evalResult = fundResults[i];
+      if (!evalResult) {
+        if (snapshots._alertState && snapshots._alertState[fn.id]) delete snapshots._alertState[fn.id];
+        return;
+      }
+      if (!shouldSurfaceFundAlert(evalResult)) return;
+      const card = buildFundAlertCard(evalResult);
+      const idx = snapshots._activeAlerts.findIndex(a => a.id === fn.id);
+      if (idx >= 0) snapshots._activeAlerts[idx] = card; else snapshots._activeAlerts.push(card);
+    });
+  }
+
   if (typeof totals === 'function') {
     const tot = totals();
     const gt = tot ? tot.gt : 0;
@@ -7710,6 +7835,19 @@ function buildAlertCard(evalResult) {
   return {
     id: evalResult.ticker,
     ticker: evalResult.ticker,
+    color,
+    msg: evalResult.reasons.map(r => r.charAt(0).toUpperCase() + r.slice(1)).join('. ') + '.',
+    date: new Date().toISOString(),
+    seen: false
+  };
+}
+
+// Fund counterpart to buildAlertCard — identical card shape, fund-specific color rule
+function buildFundAlertCard(evalResult) {
+  const color = (evalResult.isStale || evalResult.signal === 'DRAWDOWN' || evalResult.signal === 'REVERSAL_DOWN') ? '#E05656' : '#00C896';
+  return {
+    id: evalResult.ticker,
+    ticker: evalResult.fundName,
     color,
     msg: evalResult.reasons.map(r => r.charAt(0).toUpperCase() + r.slice(1)).join('. ') + '.',
     date: new Date().toISOString(),
