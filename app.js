@@ -1035,12 +1035,16 @@ function renderOverview() {
   const alpha = portfolioXIRR - benchmarkRate;
   const alphaColor = alpha >= 0 ? 'var(--g)' : 'var(--r)';
 
-  // Weighted return on all money currently invested — sum(gain)/sum(invested), not an average of percentages
+  // Headline number is XIRR — annualized, timing-aware, answers "how good were my decisions." The plain ratio is kept as a secondary line, not the headline.
   const stockROI = ts.i > 0 ? (sUnreal / ts.i) * 100 : null;
   const fundROI  = fI   > 0 ? (fUnreal / fI)   * 100 : null;
-  const maxAbsRoi    = Math.max(Math.abs(stockROI || 0), Math.abs(fundROI || 0), 1);
-  const stockBarPct  = Math.abs(stockROI || 0) / maxAbsRoi * 100;
-  const fundBarPct   = Math.abs(fundROI  || 0) / maxAbsRoi * 100;
+  const stockXirr = computeAssetClassXIRR('stocks');
+  const fundXirr  = computeAssetClassXIRR('funds');
+  const stockRate = stockXirr ? stockXirr.rate : null;
+  const fundRate  = fundXirr  ? fundXirr.rate  : null;
+  const maxAbsRate   = Math.max(Math.abs(stockRate || 0), Math.abs(fundRate || 0), 1);
+  const stockBarPct  = Math.abs(stockRate || 0) / maxAbsRate * 100;
+  const fundBarPct   = Math.abs(fundRate  || 0) / maxAbsRate * 100;
 
 
   document.getElementById('pane-overview').innerHTML = `
@@ -1099,27 +1103,29 @@ function renderOverview() {
 
     <!-- Weighted Return: Stocks vs Funds -->
     <div class="card">
-      <div class="sec">Weighted Return — Stocks vs Funds (all money currently invested)</div>
+      <div class="sec">Weighted Return — Stocks vs Funds (annualized, timing-aware — XIRR)</div>
       <div class="g2">
         <div>
           <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
             <span style="font-size:11px;color:#888;font-weight:700">Stocks</span>
-            <span style="font-size:20px;font-weight:900;color:${stockROI===null?'#555':cl(stockROI)}">${stockROI===null?'—':pc(stockROI)}</span>
+            <span style="font-size:20px;font-weight:900;color:${stockRate===null?'#555':cl(stockRate)}">${stockRate===null?'—':pc(stockRate)}</span>
           </div>
-          <div class="bar-bg"><div class="bar-fill" style="width:${stockBarPct}%;background:${stockROI===null?'#555':cl(stockROI)}"></div></div>
+          <div class="bar-bg"><div class="bar-fill" style="width:${stockBarPct}%;background:${stockRate===null?'#555':cl(stockRate)}"></div></div>
           <div class="zrow"><span style="color:#666">Invested</span><span style="font-weight:700">${fT(Math.round(ts.i))}</span></div>
           <div class="zrow"><span style="color:#666">Unrealised Gain</span><span style="font-weight:700;color:${cl(sUnreal)}">${sUnreal>=0?'+':''}${fT(Math.round(sUnreal))}</span></div>
           ${sReal!==0?`<div class="zrow"><span style="color:#666">Realised Profit</span><span style="font-weight:700;color:${cl(sReal)}">${sReal>=0?'+':''}${fT(Math.round(sReal))}</span></div>`:''}
+          <div class="zrow"><span style="color:#666">Unrealised ROI <span style="font-size:9px">(not annualized)</span></span><span style="color:${stockROI===null?'#555':cl(stockROI)}">${stockROI===null?'—':pc(stockROI)}</span></div>
         </div>
         <div>
           <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
             <span style="font-size:11px;color:#888;font-weight:700">Funds</span>
-            <span style="font-size:20px;font-weight:900;color:${fundROI===null?'#555':cl(fundROI)}">${fundROI===null?'—':pc(fundROI)}</span>
+            <span style="font-size:20px;font-weight:900;color:${fundRate===null?'#555':cl(fundRate)}">${fundRate===null?'—':pc(fundRate)}</span>
           </div>
-          <div class="bar-bg"><div class="bar-fill" style="width:${fundBarPct}%;background:${fundROI===null?'#555':cl(fundROI)}"></div></div>
+          <div class="bar-bg"><div class="bar-fill" style="width:${fundBarPct}%;background:${fundRate===null?'#555':cl(fundRate)}"></div></div>
           <div class="zrow"><span style="color:#666">Invested</span><span style="font-weight:700">${fT(Math.round(fI))}</span></div>
           <div class="zrow"><span style="color:#666">Unrealised Gain</span><span style="font-weight:700;color:${cl(fUnreal)}">${fUnreal>=0?'+':''}${fT(Math.round(fUnreal))}</span></div>
           ${fReal!==0?`<div class="zrow"><span style="color:#666">Realised Profit</span><span style="font-weight:700;color:${cl(fReal)}">${fReal>=0?'+':''}${fT(Math.round(fReal))}</span></div>`:''}
+          <div class="zrow"><span style="color:#666">Unrealised ROI <span style="font-size:9px">(not annualized)</span></span><span style="color:${fundROI===null?'#555':cl(fundROI)}">${fundROI===null?'—':pc(fundROI)}</span></div>
         </div>
       </div>
     </div>
