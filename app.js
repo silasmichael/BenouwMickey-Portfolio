@@ -725,6 +725,11 @@ function computeXIRR() {
   const terminal = ts.v + tf;
   if (terminal <= 0) return null;
   flows.push({ d: new Date(), amt: terminal });
+  return solveXIRR(flows);
+}
+
+// Newton's method with a bisection fallback — shared by computeXIRR and computeAssetClassXIRR so the math exists exactly once
+function solveXIRR(flows) {
   flows.sort((a,b) => a.d - b.d);
   const t0 = flows[0].d.getTime();
   const cfs = flows.map(f => ({ amt: f.amt, t: (f.d.getTime()-t0)/(365*86400000) }));
@@ -754,6 +759,44 @@ function computeXIRR() {
   }
   if (!ok) return null;
   return { rate: rate*100, flows: cfs.length, spanDays: Math.round(cfs[cfs.length-1].t*365) };
+}
+
+// Same XIRR math, scoped to one asset class — answers "how good was the timing of my decisions in stocks/funds specifically," not just how much is currently sitting in gains
+function computeAssetClassXIRR(which) {
+  const flows = [];
+  if (which === 'stocks') {
+    stocks.forEach(s => {
+      s.tranches.forEach(tr => {
+        const d = new Date(tr.date);
+        if (isNaN(d)) return;
+        if (tr.type === 'sell') flows.push({ d, amt: tr.shares*tr.price - (tr.commission||0) });
+        else flows.push({ d, amt: -(tr.shares*tr.price) });
+      });
+    });
+    dividends.forEach(dv => {
+      const d = new Date(dv.date);
+      if (isNaN(d)) return;
+      flows.push({ d, amt: Math.round((dv.total||0) * 0.95) });
+    });
+  } else {
+    funds.forEach(fn => {
+      fn.tranches.forEach(tr => {
+        const d = new Date(tr.date);
+        if (isNaN(d)) return;
+        if (tr.type === 'sell') flows.push({ d, amt: tr.amount||0 });
+        else {
+          const amt = (tr.amount!=null) ? tr.amount : tr.units*(fn.baselineNav||tr.nav||fn.nav);
+          flows.push({ d, amt: -amt });
+        }
+      });
+    });
+  }
+  if (flows.length < 1) return null;
+  const { ts, tf } = totals();
+  const terminal = which === 'stocks' ? ts.v : tf;
+  if (terminal <= 0) return null;
+  flows.push({ d: new Date(), amt: terminal });
+  return solveXIRR(flows);
 }
 
 // Per-tranche annualized return. A single buy vs today's value doesn't need Newton's
