@@ -6221,23 +6221,37 @@ async function fetchFundNavData(symbol, days) {
   return [];
 }
 
-// Detects a NAV trend reversing for 2 straight sessions — simpler than the stock version since funds have no order book to confirm a cause
+// Average absolute day-over-day NAV % change — each fund's own baseline, since a "big move" for Liquid isn't remotely the same thing as a "big move" for iGrowth
+function getFundTypicalDailyMovePct(navData) {
+  if (navData.length < 6) return null;
+  const moves = [];
+  for (let i = 0; i < navData.length - 1; i++) {
+    const prev = navData[i + 1].nav;
+    if (prev > 0) moves.push(Math.abs((navData[i].nav - prev) / prev) * 100);
+  }
+  return moves.length ? moves.reduce((a, b) => a + b, 0) / moves.length : null;
+}
+
+// Detects a NAV trend reversing for 2 straight sessions — threshold scales to the fund's own typical daily move instead of one fixed number
 function getFundReversalSignal(navData) {
   if (navData.length < 16) return null;
   const navAt = i => (navData[i] && navData[i].nav > 0) ? navData[i].nav : null;
   const today = navAt(0), y1 = navAt(1), y2 = navAt(2), anchor = navAt(14);
   if (!today || !y1 || !y2 || !anchor) return null;
 
+  const typicalMove = getFundTypicalDailyMovePct(navData);
+  const trendThreshold = typicalMove !== null ? Math.max(typicalMove * 5, 0.05) : 3;
+
   const pctChange = ((today - anchor) / anchor) * 100;
-  const wasDeclining = pctChange <= -3; // lower bar than stocks (8%) — funds move slower by design
-  const wasRising = pctChange >= 3;
+  const wasDeclining = pctChange <= -trendThreshold;
+  const wasRising = pctChange >= trendThreshold;
   if (!wasDeclining && !wasRising) return null;
 
   const turnedUp = wasDeclining && today > y1 && y1 > y2;
   const turnedDown = wasRising && today < y1 && y1 < y2;
   if (!turnedUp && !turnedDown) return null;
 
-  return { direction: turnedUp ? 'up' : 'down', pctChange };
+  return { direction: turnedUp ? 'up' : 'down', pctChange, threshold: trendThreshold };
 }
 
 // Fund counterpart to evaluateCompanyForAlert — covers staleness, drawdown, reversal, and your own position in one pass
