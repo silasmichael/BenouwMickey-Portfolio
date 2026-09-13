@@ -1036,8 +1036,6 @@ function renderOverview() {
   const alphaColor = alpha >= 0 ? 'var(--g)' : 'var(--r)';
 
   // Headline number is XIRR — annualized, timing-aware, answers "how good were my decisions." The plain ratio is kept as a secondary line, not the headline.
-  const stockROI = ts.i > 0 ? (sUnreal / ts.i) * 100 : null;
-  const fundROI  = fI   > 0 ? (fUnreal / fI)   * 100 : null;
   const stockXirr = computeAssetClassXIRR('stocks');
   const fundXirr  = computeAssetClassXIRR('funds');
   const stockRate = stockXirr ? stockXirr.rate : null;
@@ -1111,10 +1109,6 @@ function renderOverview() {
             <span style="font-size:20px;font-weight:900;color:${stockRate===null?'#555':cl(stockRate)}">${stockRate===null?'—':pc(stockRate)}</span>
           </div>
           <div class="bar-bg"><div class="bar-fill" style="width:${stockBarPct}%;background:${stockRate===null?'#555':cl(stockRate)}"></div></div>
-          <div class="zrow"><span style="color:#666">Invested</span><span style="font-weight:700">${fT(Math.round(ts.i))}</span></div>
-          <div class="zrow"><span style="color:#666">Unrealised Gain</span><span style="font-weight:700;color:${cl(sUnreal)}">${sUnreal>=0?'+':''}${fT(Math.round(sUnreal))}</span></div>
-          ${sReal!==0?`<div class="zrow"><span style="color:#666">Realised Profit</span><span style="font-weight:700;color:${cl(sReal)}">${sReal>=0?'+':''}${fT(Math.round(sReal))}</span></div>`:''}
-          <div class="zrow"><span style="color:#666">Unrealised ROI <span style="font-size:9px">(not annualized)</span></span><span style="color:${stockROI===null?'#555':cl(stockROI)}">${stockROI===null?'—':pc(stockROI)}</span></div>
         </div>
         <div>
           <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
@@ -1122,12 +1116,7 @@ function renderOverview() {
             <span style="font-size:20px;font-weight:900;color:${fundRate===null?'#555':cl(fundRate)}">${fundRate===null?'—':pc(fundRate)}</span>
           </div>
           <div class="bar-bg"><div class="bar-fill" style="width:${fundBarPct}%;background:${fundRate===null?'#555':cl(fundRate)}"></div></div>
-          <div class="zrow"><span style="color:#666">Invested</span><span style="font-weight:700">${fT(Math.round(fI))}</span></div>
-          <div class="zrow"><span style="color:#666">Unrealised Gain</span><span style="font-weight:700;color:${cl(fUnreal)}">${fUnreal>=0?'+':''}${fT(Math.round(fUnreal))}</span></div>
-          ${fReal!==0?`<div class="zrow"><span style="color:#666">Realised Profit</span><span style="font-weight:700;color:${cl(fReal)}">${fReal>=0?'+':''}${fT(Math.round(fReal))}</span></div>`:''}
-          <div class="zrow"><span style="color:#666">Unrealised ROI <span style="font-size:9px">(not annualized)</span></span><span style="color:${fundROI===null?'#555':cl(fundROI)}">${fundROI===null?'—':pc(fundROI)}</span></div>
         </div>
-      </div>
     </div>
 
     <!-- P&L & Reserves -->
