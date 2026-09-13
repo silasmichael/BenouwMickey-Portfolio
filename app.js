@@ -1108,7 +1108,7 @@ function renderOverview() {
             <span style="font-size:11px;color:#888;font-weight:700;display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:var(--g);display:inline-block"></span>Stocks</span>
             <span style="font-size:20px;font-weight:900;color:${stockRate===null?'#555':'var(--g)'}">${stockRate===null?'—':pc(stockRate)}</span>
           </div>
-          <div class="bar-bg"><div class="bar-fill" style="width:${stockBarPct}%;background:${stockRate===null?'#555':cl(stockRate)}"></div></div>
+          <div class="bar-bg"><div class="bar-fill" style="width:${stockBarPct}%;background:${stockRate===null?'#555':'var(--g)'}"></div></div>
           <div style="font-size:10px;color:#555;margin-top:4px">on ${fT(Math.round(ts.i))} invested</div>
         </div>
         <div>
@@ -1116,7 +1116,7 @@ function renderOverview() {
             <span style="font-size:11px;color:#888;font-weight:700;display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:var(--t);display:inline-block"></span>Funds</span>
             <span style="font-size:20px;font-weight:900;color:${fundRate===null?'#555':'var(--t)'}">${fundRate===null?'—':pc(fundRate)}</span>
           </div>
-          <div class="bar-bg"><div class="bar-fill" style="width:${fundBarPct}%;background:${fundRate===null?'#555':cl(fundRate)}"></div></div>
+          <div class="bar-bg"><div class="bar-fill" style="width:${fundBarPct}%;background:${fundRate===null?'#555':'var(--t)'}"></div></div>
           <div style="font-size:10px;color:#555;margin-top:4px">on ${fT(Math.round(fI))} invested</div>
         </div>
       </div>
