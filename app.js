@@ -992,6 +992,13 @@ function renderOverview() {
   const alpha = portfolioXIRR - benchmarkRate;
   const alphaColor = alpha >= 0 ? 'var(--g)' : 'var(--r)';
 
+  // Weighted return on all money currently invested — sum(gain)/sum(invested), not an average of percentages
+  const stockROI = ts.i > 0 ? (sUnreal / ts.i) * 100 : null;
+  const fundROI  = fI   > 0 ? (fUnreal / fI)   * 100 : null;
+  const maxAbsRoi    = Math.max(Math.abs(stockROI || 0), Math.abs(fundROI || 0), 1);
+  const stockBarPct  = Math.abs(stockROI || 0) / maxAbsRoi * 100;
+  const fundBarPct   = Math.abs(fundROI  || 0) / maxAbsRoi * 100;
+
 
   document.getElementById('pane-overview').innerHTML = `
   <div style="display:grid;gap:14px;min-width:0;max-width:100%">
@@ -1046,7 +1053,34 @@ function renderOverview() {
         </div>
       </div>
     </div>
-    
+
+    <!-- Weighted Return: Stocks vs Funds -->
+    <div class="card">
+      <div class="sec">Weighted Return — Stocks vs Funds (all money currently invested)</div>
+      <div class="g2">
+        <div>
+          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
+            <span style="font-size:11px;color:#888;font-weight:700">Stocks</span>
+            <span style="font-size:20px;font-weight:900;color:${stockROI===null?'#555':cl(stockROI)}">${stockROI===null?'—':pc(stockROI)}</span>
+          </div>
+          <div class="bar-bg"><div class="bar-fill" style="width:${stockBarPct}%;background:${stockROI===null?'#555':cl(stockROI)}"></div></div>
+          <div class="zrow"><span style="color:#666">Invested</span><span style="font-weight:700">${fT(Math.round(ts.i))}</span></div>
+          <div class="zrow"><span style="color:#666">Unrealised Gain</span><span style="font-weight:700;color:${cl(sUnreal)}">${sUnreal>=0?'+':''}${fT(Math.round(sUnreal))}</span></div>
+          ${sReal!==0?`<div class="zrow"><span style="color:#666">Realised Profit</span><span style="font-weight:700;color:${cl(sReal)}">${sReal>=0?'+':''}${fT(Math.round(sReal))}</span></div>`:''}
+        </div>
+        <div>
+          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
+            <span style="font-size:11px;color:#888;font-weight:700">Funds</span>
+            <span style="font-size:20px;font-weight:900;color:${fundROI===null?'#555':cl(fundROI)}">${fundROI===null?'—':pc(fundROI)}</span>
+          </div>
+          <div class="bar-bg"><div class="bar-fill" style="width:${fundBarPct}%;background:${fundROI===null?'#555':cl(fundROI)}"></div></div>
+          <div class="zrow"><span style="color:#666">Invested</span><span style="font-weight:700">${fT(Math.round(fI))}</span></div>
+          <div class="zrow"><span style="color:#666">Unrealised Gain</span><span style="font-weight:700;color:${cl(fUnreal)}">${fUnreal>=0?'+':''}${fT(Math.round(fUnreal))}</span></div>
+          ${fReal!==0?`<div class="zrow"><span style="color:#666">Realised Profit</span><span style="font-weight:700;color:${cl(fReal)}">${fReal>=0?'+':''}${fT(Math.round(fReal))}</span></div>`:''}
+        </div>
+      </div>
+    </div>
+
     <!-- P&L & Reserves -->
     <div style="background:linear-gradient(135deg,#0A1A12,#080810);border:1px solid #00C89630;border-radius:12px;padding:16px 20px">
       <div style="font-size:9px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px">P&L & Reserves</div>
