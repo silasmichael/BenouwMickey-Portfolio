@@ -1105,16 +1105,16 @@ function renderOverview() {
       <div class="g2">
         <div>
           <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
-            <span style="font-size:11px;color:#888;font-weight:700">Stocks</span>
-            <span style="font-size:20px;font-weight:900;color:${stockRate===null?'#555':cl(stockRate)}">${stockRate===null?'—':pc(stockRate)}</span>
+            <span style="font-size:11px;color:#888;font-weight:700;display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:var(--g);display:inline-block"></span>Stocks</span>
+            <span style="font-size:20px;font-weight:900;color:${stockRate===null?'#555':'var(--g)'}">${stockRate===null?'—':pc(stockRate)}</span>
           </div>
           <div class="bar-bg"><div class="bar-fill" style="width:${stockBarPct}%;background:${stockRate===null?'#555':cl(stockRate)}"></div></div>
           <div style="font-size:10px;color:#555;margin-top:4px">on ${fT(Math.round(ts.i))} invested</div>
         </div>
         <div>
           <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
-            <span style="font-size:11px;color:#888;font-weight:700">Funds</span>
-            <span style="font-size:20px;font-weight:900;color:${fundRate===null?'#555':cl(fundRate)}">${fundRate===null?'—':pc(fundRate)}</span>
+            <span style="font-size:11px;color:#888;font-weight:700;display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:var(--t);display:inline-block"></span>Funds</span>
+            <span style="font-size:20px;font-weight:900;color:${fundRate===null?'#555':'var(--t)'}">${fundRate===null?'—':pc(fundRate)}</span>
           </div>
           <div class="bar-bg"><div class="bar-fill" style="width:${fundBarPct}%;background:${fundRate===null?'#555':cl(fundRate)}"></div></div>
           <div style="font-size:10px;color:#555;margin-top:4px">on ${fT(Math.round(fI))} invested</div>
