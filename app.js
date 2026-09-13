@@ -6271,8 +6271,10 @@ async function evaluateFundForAlert(fn) {
     const peakNav = Math.max(...navData.map(d => d.nav));
     const currentNav = latestRow.nav;
     drawdownPct = peakNav > 0 ? ((currentNav - peakNav) / peakNav) * 100 : null;
-    if (drawdownPct !== null && drawdownPct <= -8) {
-      reasons.push(`${Math.abs(drawdownPct).toFixed(1)}% below its peak NAV (${peakNav.toFixed(4)}) over the last ${navData.length} sessions`);
+    const typicalMove = getFundTypicalDailyMovePct(navData);
+    const drawdownThreshold = typicalMove !== null ? Math.max(typicalMove * 10, 0.1) : 8;
+    if (drawdownPct !== null && drawdownPct <= -drawdownThreshold) {
+      reasons.push(`${Math.abs(drawdownPct).toFixed(1)}% below its peak NAV (${peakNav.toFixed(4)}) over the last ${navData.length} sessions — unusual for this fund's normal movement`);
     }
 
     reversal = getFundReversalSignal(navData);
