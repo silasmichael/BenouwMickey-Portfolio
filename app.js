@@ -5202,8 +5202,12 @@ async function syncLivePrices() {
 
     stampPriceUpdate(_now);
     setStatus('synced');
-    showToast(`Updated ${stocksUpdated} stocks & ${fundsUpdated} funds for session ${marketInfo.sessionDateStr}`);
-
+    if (fundsFullySynced) {
+      showToast(`Updated ${stocksUpdated} stocks & ${fundsUpdated} funds for session ${marketInfo.sessionDateStr}`);
+    } else {
+      showToast(`Updated ${stocksUpdated} stocks, but only ${fundsUpdated}/${funds.length} funds — tap Update Prices again to retry funds.`);
+    }
+    
     if (iconFresh)    iconFresh.classList.remove('loading-spin');
     if (iconMobFresh) iconMobFresh.classList.remove('loading-spin');
 
