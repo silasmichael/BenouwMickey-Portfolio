@@ -6515,20 +6515,27 @@ function calculateQuantSignal(row, fundScoreObj, holding, symbol, depthArray) {
       return { compositeScore, depthScore, valScore, dataQuality, signal: 'SELL (50%+ Target)', color: '#E05656', comment: `🔴 Target reached! +${profitPct.toFixed(1)}% profit vs buy price. ${trendStr}` };
     }
   }
-
-    const severeToday       = offers > (bids * 6) && depthRead.liquidityRatio >= 0.5;
-  const sustainedModerate = offers > (bids * 3) && depthRead.liquidityRatio >= 0.5 && depthRead.persistent;
+  const ratioToday         = offers / Math.max(bids, 1);
+  const severeToday         = offers > (bids * 6) && depthRead.liquidityRatio >= 0.5;
+  const sustainedModerate   = offers > (bids * 3) && depthRead.liquidityRatio >= 0.5 && depthRead.persistent;
+  const isIsolatedSpike     = severeToday && !depthRead.persistent;
+  const isSustainedSevere   = severeToday && depthRead.persistent;
 
   if (severeToday || sustainedModerate) {
+    const depthCase = isIsolatedSpike ? 'severe' : isSustainedSevere ? 'sustained-severe' : 'sustained';
     return {
       compositeScore, depthScore, valScore, dataQuality,
       signal: 'WAIT / SELL',
-      depthCase: severeToday ? 'severe' : 'sustained',
+      depthCase,
       color: '#E05656',
-      comment: severeToday
-        ? `🔴 Sharp one-day sell-side imbalance (${(offers/Math.max(bids,1)).toFixed(1)}x bids). ${trendStr}`
+      comment: depthCase === 'severe'
+        ? `🔴 Sharp one-day sell-side imbalance (${ratioToday.toFixed(1)}x bids). ${trendStr}`
+        : depthCase === 'sustained-severe'
+        ? `🔴 Severe sell-side imbalance, held for several sessions (${ratioToday.toFixed(1)}x bids today). ${trendStr}`
         : `🔴 Heavy, sustained sell-side supply (held several sessions). ${trendStr}`
     };
+  }
+
   }
 
   if (isOvervalued && compositeScore >= 60) {
@@ -6659,8 +6666,11 @@ async function evaluateCompanyForAlert(ticker, isOwned, sectorStats) {
   if (quant.signal === 'WAIT / SELL') {
     reasons.push(quant.depthCase === 'severe'
     ? 'sharp one-day sell-side imbalance — worth watching closely, may just be a single large trade'
+    : quant.depthCase === 'sustained-severe'
+    ? 'severe sell-side imbalance that has held for several sessions — not a one-day event, worth real caution'
     : 'heavy, sustained sell-side supply — held for several sessions, not just today');
   }
+
 
   if (quant.signal === 'HOLD (Overvalued)') reasons.push("trading above fair value — don't chase this price");
   if (quant.signal === 'WAIT (Overbought)') reasons.push('price moved up too fast, pullback risk');
