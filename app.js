@@ -5162,9 +5162,13 @@ async function syncLivePrices() {
       });
     }
 
-    snapshots._lastPriceTime      = _now;
-    snapshots._lastSyncSessionStr = marketInfo.sessionDateStr; // this sync attempt covers this session — full stop
-
+    snapshots._lastPriceTime = _now;
+    const fundsFullySynced = !Array.isArray(funds) || funds.length === 0 || fundsUpdated >= funds.length;
+    if (fundsFullySynced) {
+      snapshots._lastSyncSessionStr = marketInfo.sessionDateStr; // only lock the button once funds actually came through too — a stocks-only success shouldn't hide a fund fetch failure
+    } else {
+      console.warn(`Fund sync incomplete: ${fundsUpdated}/${funds.length} updated — button stays unlocked so it can be retried.`);
+    }
     if (typeof applyMigrations === 'function') applyMigrations(stocks, funds);
     if (typeof updateMonthlySnapshots === 'function') updateMonthlySnapshots();
 
