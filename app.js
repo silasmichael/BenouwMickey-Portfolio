@@ -6536,8 +6536,6 @@ function calculateQuantSignal(row, fundScoreObj, holding, symbol, depthArray) {
     };
   }
 
-  }
-
   if (isOvervalued && compositeScore >= 60) {
     return {
       compositeScore: Math.min(compositeScore, 65), depthScore, valScore, dataQuality,
