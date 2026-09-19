@@ -1,5 +1,6 @@
 // Supabase connection settings (both values are safe to be public).
 const CONFIG = {
-  SUPABASE_URL: 'https://gfwrkjohchppejaueckk.supabase.co',
-  SUPABASE_KEY: 'sb_publishable_IWfeM-zWkV45p8XPHVD3AA_nWv-t_F0'
+  SB_URL: 'https://brwkhnqnsoormvpjqcmd.supabase.co',
+  SB_KEY: 'sb_publishable_9CcM7fvOwyvNekAKwDv4UQ_f1QxeUr0'
+  
 };
