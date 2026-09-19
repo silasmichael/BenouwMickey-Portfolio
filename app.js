@@ -13,11 +13,8 @@ const PURPOSE_PALETTE = ['#F4A623','#A855F7','#E056A0','#06B6D4','#14B8A6','#FF6
 const SEED_FUNDS = [];
 
 // ── SUPABASE CLIENT
-
-const SB_URL = 'https://brwkhnqnsoormvpjqcmd.supabase.co';
-const SB_KEY = 'sb_publishable_9CcM7fvOwyvNekAKwDv4UQ_f1QxeUr0';
 const { createClient } = supabase;
-const sb = createClient(SB_URL, SB_KEY);
+const sb = createClient(CONFIG.SB_URL, CONFIG.SB_KEY);
 
 // ── APP STATE
 let currentToken = null; // stored on login, used by every sync
