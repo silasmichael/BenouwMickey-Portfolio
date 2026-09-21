@@ -5212,6 +5212,7 @@ async function syncLivePrices() {
 
   } catch (err) {
     console.error("Price sync error:", err);
+    alert("SYNC ERROR: " + (err?.message || err) + "\n\n" + (err?.stack || ''));
     if (iconFresh)    iconFresh.classList.remove('loading-spin');
     if (iconMobFresh) iconMobFresh.classList.remove('loading-spin');
     
