@@ -5117,7 +5117,7 @@ async function syncLivePrices() {
   try {
     const response = await fetch('https://brwkhnqnsoormvpjqcmd.supabase.co/functions/v1/get-prices', {
       method: 'GET',
-      headers: { 'Authorization': 'Bearer ' + SB_KEY }
+      headers: { 'Authorization': 'Bearer ' + CONFIG.SB_KEY }
     });
 
     if (!response.ok) throw new Error('Server error ' + response.status);
@@ -5177,11 +5177,11 @@ async function syncLivePrices() {
     snapshots.projYear   = projYear;
 
     if (currentToken && _dataReady) {
-      await fetch(SB_URL + '/rest/v1/portfolio?id=eq.1', {
+      await fetch(CONFIG.SB_URL + '/rest/v1/portfolio?id=eq.1', {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'apikey': SB_KEY,
+          'apikey': CONFIG.SB_KEY,
           'Authorization': 'Bearer ' + currentToken
         },
         body: JSON.stringify({ stocks, funds, snapshots, updated_at: new Date().toISOString() })
