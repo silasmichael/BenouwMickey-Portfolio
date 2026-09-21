@@ -328,11 +328,11 @@ async function syncToSupabase() {
   }
   setStatus('syncing');
   try {
-    const res = await fetch(SB_URL + '/rest/v1/portfolio?id=eq.1', {
+    const res = await fetch(CONFIG.SB_URL + '/rest/v1/portfolio?id=eq.1', {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
-        'apikey': SB_KEY,
+        'apikey': CONFIG.SB_KEY,
         'Authorization': 'Bearer ' + currentToken
       },
       body: JSON.stringify({ stocks, funds, snapshots, updated_at: new Date().toISOString() })
