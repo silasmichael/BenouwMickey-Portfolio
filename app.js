@@ -5115,7 +5115,7 @@ async function syncLivePrices() {
   const iconMobFresh = document.getElementById('sync-icon-mob');
 
   try {
-    const response = await fetch('https://brwkhnqnsoormvpjqcmd.supabase.co/functions/v1/get-prices', {
+    const response = await fetch(CONFIG.SB_URL + '/functions/v1/get-prices', {
       method: 'GET',
       headers: { 'Authorization': 'Bearer ' + CONFIG.SB_KEY }
     });
