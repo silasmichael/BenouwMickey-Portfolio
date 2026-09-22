@@ -126,23 +126,24 @@ function hideLogin() {
 // ── AUTH
 const ALLOWED_EMAIL = 'silasmichael27@gmail.com';
 
-async function sendMagicLink() {
+async function signInWithPassword() {
   const btn = document.getElementById('login-btn');
-  btn.disabled = true;
-  btn.textContent = 'Sending…';
-  showLoginMsg('', '');
-  const { error } = await sb.auth.signInWithOtp({
-    email: ALLOWED_EMAIL,
-    options: { emailRedirectTo: window.location.href.split('#')[0] }
-  });
-  if (error) {
-    showLoginMsg('Failed to send link: ' + error.message, 'err');
-    btn.disabled = false;
-    btn.textContent = 'Send Magic Link';
-  } else {
-    showLoginMsg('✅ Link sent to your email. Click it to log in.', 'ok');
-    btn.textContent = 'Link Sent ✓';
+  const pwInput = document.getElementById('login-password');
+  const password = pwInput ? pwInput.value : '';
+  if (!password) {
+    showLoginMsg('Enter your password.', 'err');
+    return;
   }
+  btn.disabled = true;
+  btn.textContent = 'Logging in…';
+  showLoginMsg('', '');
+  const { error } = await sb.auth.signInWithPassword({ email: ALLOWED_EMAIL, password });
+  if (error) {
+    showLoginMsg('Login failed: ' + error.message, 'err');
+    btn.disabled = false;
+    btn.textContent = 'Log In';
+  }
+  // success: onAuthStateChange (unchanged) picks up the session and hides this screen
 }
 
 function showLoginMsg(text, type) {
