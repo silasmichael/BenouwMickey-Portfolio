@@ -5048,14 +5048,12 @@ function renderAll() {
 renderAll();
 updateHeader();
 
-// Listen for auth state changes (handles magic link redirect)
-
-// ── AUTH STATE — magic link flow
-sb.auth.onAuthStateChange(async (event, session) => {
+// ── AUTH STATE — single source of truth; onAuthStateChange fires once immediately on registration, then again on any future change
+let _authResolved = false;
+async function handleAuthState(session) {
   if (session && session.user.email === ALLOWED_EMAIL) {
     currentToken = session.access_token;
     hideLogin();
-    // Reset any stuck sync state from previous session
     _syncFromRunning = false;
     _syncRetries = 0;
     loadFromCache();
@@ -5065,23 +5063,14 @@ sb.auth.onAuthStateChange(async (event, session) => {
     try { if (session) await sb.auth.signOut({ scope: 'local' }); } catch(_) {}
     showLogin();
   }
-});
-
-(async () => {
-  const { data: { session } } = await sb.auth.getSession();
-  if (session && session.user.email === ALLOWED_EMAIL) {
-    currentToken = session.access_token;
-    hideLogin();
-    _syncFromRunning = false;
-    _syncRetries = 0;
-    loadFromCache();
-    syncFromSupabase();
-  } else {
-    currentToken = null;
-    try { if (session) await sb.auth.signOut(); } catch(_) {}
-    showLogin();
+  if (!_authResolved) {
+    _authResolved = true;
+    document.body.style.visibility = 'visible'; // reveal only once login-vs-app is actually decided, never before
   }
-})();
+}
+
+sb.auth.onAuthStateChange((event, session) => { handleAuthState(session); });
+
 
 // --- SMART MARKET-AWARE PRICE SYNC ---
 async function syncLivePrices() {
