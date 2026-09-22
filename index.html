@@ -18,15 +18,16 @@
   <div class="login-box">
     <div class="login-logo">Tanzania Capital Markets</div>
     <div class="login-title">Michael's Portfolio</div>
-    <div class="login-sub">Tap below to receive your secure login link</div>
+    <div class="login-sub">Enter your password to continue</div>
     <div style="background:#111118;border:1px solid #1E2A3A;border-radius:8px;padding:10px 14px;margin-bottom:4px;font-size:13px;color:#888">
       <span style="color:#555;font-size:10px;display:block;margin-bottom:2px;text-transform:uppercase;letter-spacing:1px">Authorized account</span>
       silasmichael27@gmail.com
     </div>
-    <button class="login-btn" id="login-btn" onclick="sendMagicLink()">Send Magic Link</button>
+    <input type="password" id="login-password" placeholder="Password" style="width:100%;box-sizing:border-box;background:#111118;border:1px solid #1E2A3A;border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:14px;color:#F0EAD6;outline:none" onkeydown="if(event.key==='Enter') signInWithPassword()">
+    <button class="login-btn" id="login-btn" onclick="signInWithPassword()">Log In</button>
     <div class="login-msg" id="login-msg"></div>
     <hr class="login-divider">
-    <div class="login-note">A login link will be sent to your email · Valid for 60 minutes</div>
+    <div class="login-note">Password is set directly in Supabase — no email link involved</div>
   </div>
 </div>
 
