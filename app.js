@@ -5229,10 +5229,6 @@ async function syncLivePrices() {
 }
 
 
-// Reveal page once JS is fully loaded — prevents CSS flash on open
-document.addEventListener('DOMContentLoaded', () => {
-  document.body.style.visibility = 'visible';
-});
 // ============================================================================
 // 📡 MARKET RADAR & QUANTITATIVE ENGINE (FIXED PDF & PORTFOLIO METRICS)
 // ============================================================================
