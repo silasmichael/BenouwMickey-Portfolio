@@ -5050,26 +5050,33 @@ updateHeader();
 
 // ── AUTH STATE — single source of truth; onAuthStateChange fires once immediately on registration, then again on any future change
 let _authResolved = false;
+function revealPage() {
+  if (_authResolved) return;
+  _authResolved = true;
+  document.body.style.visibility = 'visible';
+}
 async function handleAuthState(session) {
-  if (session && session.user.email === ALLOWED_EMAIL) {
-    currentToken = session.access_token;
-    hideLogin();
-    _syncFromRunning = false;
-    _syncRetries = 0;
-    loadFromCache();
-    syncFromSupabase();
-  } else {
-    currentToken = null;
-    try { if (session) await sb.auth.signOut({ scope: 'local' }); } catch(_) {}
-    showLogin();
-  }
-  if (!_authResolved) {
-    _authResolved = true;
-    document.body.style.visibility = 'visible'; // reveal only once login-vs-app is actually decided, never before
+  try {
+    if (session && session.user.email === ALLOWED_EMAIL) {
+      currentToken = session.access_token;
+      hideLogin();
+      _syncFromRunning = false;
+      _syncRetries = 0;
+      loadFromCache();
+      syncFromSupabase();
+    } else {
+      currentToken = null;
+      try { if (session) await sb.auth.signOut({ scope: 'local' }); } catch(_) {}
+      showLogin();
+    }
+  } finally {
+    revealPage(); // runs even if something above threw
   }
 }
 
 sb.auth.onAuthStateChange((event, session) => { handleAuthState(session); });
+setTimeout(revealPage, 4000); // hard fallback — if onAuthStateChange never fires at all, don't leave the page stuck invisible
+
 
 
 // --- SMART MARKET-AWARE PRICE SYNC ---
